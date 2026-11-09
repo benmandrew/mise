@@ -18,14 +18,22 @@ header the same, so the `restat` generator keeps it), or change `cflags` in
 the DSL and regenerate the manifest. After a comment edit the harness also
 checks that only the generator ran (early cutoff).
 
-usage: props.py [--sequences N] [--seed S] [EXAMPLE...]
+Sequences are independent, so they run in parallel, each in its own
+directory with its own random generator seeded from the seed, the example and
+the sequence number. A run gives the same results whatever the number of
+workers. Clean builds are cached on disk by the hash of their sources and
+manifest, and shared between workers.
+
+usage: props.py [--sequences N] [--seed S] [--workers W] [EXAMPLE...]
 """
 import argparse
 import hashlib
+import os
 import random
 import shutil
 import subprocess
 import sys
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -118,25 +126,31 @@ def products(d, names):
 class Checker:
     def __init__(self, ex):
         self.ex = ex
-        self.cache = {}
         self.clean_builds = 0
 
     def clean(self, files, manifest):
+        """The products of a clean build, from the on-disk cache when another
+        sequence has already built the same sources and manifest."""
         h = hashlib.sha256()
         for name in sorted(files):
             h.update(name.encode() + b"\0" + files[name].encode() + b"\0")
         h.update(manifest)
-        key = h.hexdigest()
-        if key not in self.cache:
-            d = OUT / "clean" / self.ex.name
-            shutil.rmtree(d, ignore_errors=True)
-            d.mkdir(parents=True)
-            write_files(d, files)
-            (d / "build.ninja").write_bytes(manifest)
-            run(["ninja"], d)
-            self.cache[key] = products(d, self.ex.products)
-            self.clean_builds += 1
-        return self.cache[key]
+        d = OUT / "clean" / self.ex.name / h.hexdigest()
+        if not d.exists():
+            # Build in a private directory, then rename it into place; if
+            # another worker got there first, keep theirs.
+            tmp = d.with_name(f"{d.name}.{os.getpid()}")
+            shutil.rmtree(tmp, ignore_errors=True)
+            tmp.mkdir(parents=True)
+            write_files(tmp, files)
+            (tmp / "build.ninja").write_bytes(manifest)
+            run(["ninja"], tmp)
+            try:
+                tmp.rename(d)
+                self.clean_builds += 1
+            except OSError:
+                shutil.rmtree(tmp)
+        return products(d, self.ex.products)
 
     def check(self, d, files, where):
         expected = self.clean(files, (d / "build.ninja").read_bytes())
@@ -151,8 +165,12 @@ class Checker:
             raise AssertionError(f"{where}: missingdeps reported:\n{md}")
 
 
-def sequence(ex, checker, rng, idx):
-    d = OUT / "inc" / ex.name
+def sequence(name, seed, idx):
+    """Run one sequence; return its number of edits and of new clean builds."""
+    ex = EXAMPLES[name]()
+    checker = Checker(ex)
+    rng = random.Random(f"{seed}:{name}:{idx}")
+    d = OUT / "inc" / name / str(idx)
     shutil.rmtree(d, ignore_errors=True)
     d.mkdir(parents=True)
     state = ex.initial()
@@ -184,23 +202,33 @@ def sequence(ex, checker, rng, idx):
                 raise AssertionError(f"sequence {idx}, after {history}: no early cutoff:\n{out}")
         state, files = new, new_files
         checker.check(d, files, f"sequence {idx}, after {history}")
-    return len(history) - 1
+    shutil.rmtree(d)  # kept only when a check fails
+    return len(history) - 1, checker.clean_builds
+
+
+EXAMPLES = {"hello-c": HelloC, "gen-header": GenHeader}
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--sequences", type=int, default=200)
     ap.add_argument("--seed", type=int, default=1)
-    ap.add_argument("examples", nargs="*", default=["hello-c", "gen-header"])
+    ap.add_argument("--workers", type=int, default=os.cpu_count())
+    ap.add_argument("examples", nargs="*", default=list(EXAMPLES))
     args = ap.parse_args()
-    examples = {e.name: e for e in [HelloC(), GenHeader()]}
-    rng = random.Random(args.seed)
-    for name in args.examples:
-        ex = examples[name]
-        checker = Checker(ex)
-        edits = sum(sequence(ex, checker, rng, i) for i in range(args.sequences))
-        print(f"props {name}: {args.sequences} sequences, {edits} edits, "
-              f"{checker.clean_builds} distinct clean builds, all checks passed")
+    shutil.rmtree(OUT, ignore_errors=True)
+    with ProcessPoolExecutor(max_workers=args.workers) as pool:
+        for name in args.examples:
+            n = args.sequences
+            try:
+                results = list(pool.map(sequence, [name] * n, [args.seed] * n, range(n)))
+            except BaseException:
+                pool.shutdown(cancel_futures=True)  # stop at the first failure
+                raise
+            edits = sum(e for e, _ in results)
+            cleans = sum(c for _, c in results)
+            print(f"props {name}: {n} sequences, {edits} edits, "
+                  f"{cleans} distinct clean builds, all checks passed")
 
 
 if __name__ == "__main__":
