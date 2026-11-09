@@ -3,3 +3,4 @@
 /examples/*/build.ninja
 /examples/*/build/
 /examples/*/.ninja_*
+/.direnv/

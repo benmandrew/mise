@@ -5,6 +5,7 @@ A Lean 4 front end for Ninja. Users describe a build in Lean, `mise` emits `buil
 ## Conventions
 
 - Lean `v4.35.0`, no Mathlib, no Batteries so far. Ask before adding Mathlib.
+- Dependencies come from `flake.nix` (Lean, Ninja, Python, C compiler from nixpkgs); `.envrc` loads it. The flake fails if `lean-toolchain` and nixpkgs' `lean4` disagree, so bump both together.
 - Library `Mise`, one directory per stage: `Mise/Task` (1), `Mise/Spec` (2), `Mise/Syntax` (3), `Mise/Frontend` (4), `Mise/Model` (5–7). Each has a `NOTES.md` with definitions, deviations and assumptions.
 - No `axiom` declarations. Assumptions are structure fields or theorem hypotheses.
 - `README.md` stays minimal: a summary, the quick start and links. User documentation lives in `docs/` (usage, theorems, trust base, testing).

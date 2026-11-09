@@ -1,5 +1,7 @@
 # Testing
 
+Run the tests in the Nix shell (`nix develop`, or direnv with `.envrc`), so that they use the Ninja, Python and compiler pinned by `flake.lock`.
+
 - `scripts/check.sh` is the acceptance gate: it builds everything, rejects `sorry` and `admit`, and checks the axioms of every headline theorem. The Lean tests in `test/MiseTest/` are `#guard` checks that run during the build.
 - `test/stage3-diff.sh` compares the parser and evaluation models with real Ninja on 100 random manifests, and checks that both reject 17 malformed ones.
 - `test/stage4-hello.sh` builds and runs `examples/hello-c`, and checks that the DSL's commands match `ninja -t commands`.
