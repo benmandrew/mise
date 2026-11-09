@@ -1,0 +1,14 @@
+name = "mise"
+version = "0.1.0"
+defaultTargets = ["Mise", "MiseTest", "gen"]
+
+[[lean_lib]]
+name = "Mise"
+
+[[lean_exe]]
+name = "gen"
+root = "Main"
+
+[[lean_lib]]
+name = "MiseTest"
+srcDir = "test"

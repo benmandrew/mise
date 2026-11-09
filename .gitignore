@@ -1,0 +1,5 @@
+/.lake/
+/test/out/
+/examples/*/build.ninja
+/examples/*/build/
+/examples/*/.ninja_*
