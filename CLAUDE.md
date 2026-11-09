@@ -18,3 +18,4 @@ Adding Mathlib, weakening a headline theorem, adding an `Env` assumption the pla
 ## Status
 
 - Stage 1: done.
+- Stage 2: done. `Acyclic` is data, not a Prop (see `Mise/Spec/NOTES.md`).

@@ -9,3 +9,7 @@ fails if any theorem depends on an axiom outside the standard three. -/
 #print axioms Mise.Task.run_eq_interp
 #print axioms Mise.Task.deps_eq_interp
 #print axioms Mise.Task.FetchesOnly.deps_sat
+
+-- Stage 2
+#print axioms Mise.BuildSpec.cleanBuild_correct
+#print axioms Mise.BuildSpec.correct_unique
