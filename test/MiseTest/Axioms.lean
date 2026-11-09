@@ -13,3 +13,8 @@ fails if any theorem depends on an axiom outside the standard three. -/
 -- Stage 2
 #print axioms Mise.BuildSpec.cleanBuild_correct
 #print axioms Mise.BuildSpec.correct_unique
+
+-- Stage 3
+#print axioms Mise.Syntax.parse_print
+#print axioms Mise.Syntax.unescape_escPath
+#print axioms Mise.Syntax.unescape_renderVal

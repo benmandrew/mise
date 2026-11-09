@@ -12,3 +12,8 @@ root = "Main"
 [[lean_lib]]
 name = "MiseTest"
 srcDir = "test"
+
+[[lean_exe]]
+name = "difftest"
+srcDir = "test"
+root = "MiseTest.DiffTest"
