@@ -1,5 +1,6 @@
 import Mise.Syntax.Print
 import Mise.Syntax.Parse
+import Mise.Frontend.Eval
 
 /-!
 # Stage 3 differential test generator
@@ -90,7 +91,8 @@ def genManifest : GenM Manifest := do
   let mut stmts : List Stmt := [.binding "ninja_required_version" [.lit "1.10"]]
   let mut topVars : List String := []
   for _ in [0:(← rand 3)] do
-    let k ← genIdent
+    -- A top-level `command` shadows the rule's command on edges without bindings.
+    let k ← if ← chance 1 6 then pure "command" else genIdent
     stmts := stmts ++ [.binding k (← genEval topVars)]
     topVars := topVars ++ [k]
   -- rules
@@ -98,11 +100,13 @@ def genManifest : GenM Manifest := do
   for _ in [0:(← rand 3) + 1] do
     let name ← genIdent
     if rules.contains name then continue
-    let vars := topVars ++ ["in", "out"]
-    let mut cmd ← genEval vars
+    let vars := topVars.filter (· != "command") ++ ["in", "out", "in_newline"]
+    let hasDesc ← chance 1 2
+    let desc ← genEval vars
+    let mut cmd ← genEval (if hasDesc then vars ++ ["description"] else vars)
     if cmd.isEmpty then cmd := [.var "in"]
     let mut bs : List Binding := [("command", cmd)]
-    if ← chance 1 2 then bs := bs ++ [("description", ← genEval vars)]
+    if hasDesc then bs := bs ++ [("description", desc)]
     if ← chance 1 3 then bs := bs ++ [("depfile", [.var "out", .lit ".d"]), ("deps", [.lit "gcc"])]
     if ← chance 1 4 then bs := bs ++ [("restat", [.lit "1"])]
     stmts := stmts ++ [.rule ⟨name, bs⟩]
@@ -124,11 +128,17 @@ def genManifest : GenM Manifest := do
     let iouts ← genFresh (← rand 2) (sources ++ known ++ outs ++ newOuts)
     let mut ebs : List Binding := []
     if ← chance 1 3 then ebs := ebs ++ [(← genIdent, ← genEval topVars)]
+    if ← chance 1 6 then ebs := ebs ++ [(← pick ["command", "description"], ← genEval topVars)]
+    if ← chance 1 4 then ebs := ebs ++ [(← pick (topVars ++ ["x"]), ← genEval topVars)]
     let e : Edge := { outs := newOuts, implicitOuts := iouts, rule, ins, implicitIns := iins,
                       orderOnly := oo, bindings := ebs }
     stmts := stmts ++ [.edge e]
     outs := outs ++ e.allOuts
     known := known ++ e.allPaths
+  -- Later top-level bindings change the file scope edges fall back to.
+  for _ in [0:(← rand 2)] do
+    if !topVars.isEmpty then
+      stmts := stmts ++ [.binding (← pick topVars) (← genEval topVars)]
   let defs ← subset known 3
   if !defs.isEmpty then stmts := stmts ++ [.default defs]
   pure ⟨stmts⟩
@@ -151,6 +161,11 @@ def expectedQuery (m : Manifest) (t : Path) : String := Id.run do
       if i == t then
         for o in e.allOuts do out := out ++ "    " ++ o ++ "\n"
   pure out
+
+/-- The first output of every non-phony edge, with its evaluated command. -/
+def commandTargets (m : Manifest) : List (Path × String) :=
+  m.commands.filterMap fun (e, cmd) =>
+    if e.rule == "phony" then none else e.outs.head?.map (·, cmd)
 
 def allPaths (m : Manifest) : List Path :=
   (m.stmts.flatMap fun | .edge e => e.allPaths | _ => []).foldl
@@ -205,4 +220,7 @@ def main (args : List String) : IO UInt32 := do
     let ts := allPaths m
     IO.FS.writeFile s!"{d}/targets" (String.join (ts.map (· ++ "\n")))
     IO.FS.writeFile s!"{d}/expected" (String.join (ts.map (expectedQuery m)))
+    let cs := commandTargets m
+    IO.FS.writeFile s!"{d}/cmd-targets" (String.join (cs.map (·.1 ++ "\n")))
+    IO.FS.writeFile s!"{d}/expected-commands" (String.join (cs.map (·.2 ++ "\n")))
   return 0

@@ -18,3 +18,9 @@ fails if any theorem depends on an axiom outside the standard three. -/
 #print axioms Mise.Syntax.parse_print
 #print axioms Mise.Syntax.unescape_escPath
 #print axioms Mise.Syntax.unescape_renderVal
+
+-- Stage 4
+#print axioms Mise.Frontend.emit_wellFormed
+#print axioms Mise.Frontend.denote_emit
+#print axioms Mise.Frontend.emitAcyclic
+#print axioms Mise.Frontend.emit_acyclic

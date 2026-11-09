@@ -4,3 +4,7 @@ import Mise.Syntax.Ast
 import Mise.Syntax.Print
 import Mise.Syntax.Parse
 import Mise.Syntax.RoundTrip
+import Mise.Frontend.Eval
+import Mise.Frontend.Graph
+import Mise.Frontend.Emit
+import Mise.Frontend.Dsl

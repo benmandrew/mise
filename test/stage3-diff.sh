@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Stage 3 differential test: real Ninja must read every generated manifest
-# exactly as its AST says. Usage: test/stage3-diff.sh [N] [SEED]
+# Differential test: real Ninja must read every generated manifest exactly as
+# its AST says (Stage 3), and evaluate every command as the Stage 4 model
+# says. Usage: test/stage3-diff.sh [N] [SEED]
 set -euo pipefail
 cd "$(dirname "$0")/.."
 n=${1:-100}
@@ -20,6 +21,16 @@ for d in "$out"/*/; do
     echo "FAIL $d: query output differs"
     diff "$d/expected" "$d/actual" | head -20
     fail=1
+  fi
+  cmds=()
+  while IFS= read -r t; do cmds+=("$t"); done < "$d/cmd-targets"
+  if [ "${#cmds[@]}" -gt 0 ]; then
+    (cd "$d" && ninja -f build.ninja -t commands -s "${cmds[@]}") > "$d/actual-commands"
+    if ! cmp -s "$d/expected-commands" "$d/actual-commands"; then
+      echo "FAIL $d: evaluated commands differ"
+      diff "$d/expected-commands" "$d/actual-commands" | head -20
+      fail=1
+    fi
   fi
 done
 neg=test/out/stage3-negative

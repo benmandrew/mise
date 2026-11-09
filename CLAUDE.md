@@ -20,4 +20,5 @@ Adding Mathlib, weakening a headline theorem, adding an `Env` assumption the pla
 
 - Stage 1: done.
 - Stage 2: done. `Acyclic` is data, not a Prop (see `Mise/Spec/NOTES.md`).
-- Stage 3: done. `test/stage3-diff.sh` is the differential test against real Ninja.
+- Stage 3: done. `test/stage3-diff.sh` is the differential test against real Ninja (now also checks evaluated commands).
+- Stage 4: done. `Mise/Frontend/Eval.lean` models Ninja variable evaluation; `test/stage4-hello.sh` builds `examples/hello-c`. Examples are lean_libs registered in `Main.lean`.
