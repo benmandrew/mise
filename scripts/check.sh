@@ -2,7 +2,8 @@
 # Acceptance checks shared by every stage:
 #   1. lake build succeeds;
 #   2. no `sorry` or `admit` in Lean sources;
-#   3. headline theorems use only propext, Classical.choice and Quot.sound.
+#   3. headline theorems use only propext, Classical.choice and Quot.sound;
+#   4. each example's mise.toml emits the same manifest as its Lean description.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -23,4 +24,8 @@ if [ -n "$bad" ]; then
   exit 1
 fi
 n=$(echo "$out" | grep -c 'axiom' || true)
-echo "check: ok ($n theorems checked)"
+
+# Elaborated fresh on every run: Lake cannot see that it reads the TOML files.
+lake env lean test/MiseTest/Toml.lean
+
+echo "check: ok ($n theorems checked, TOML examples agree)"

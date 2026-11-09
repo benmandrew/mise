@@ -1,21 +1,29 @@
 # Usage
 
-`lake exe gen [--commands] [--set KEY=VALUE]... DIR` writes `DIR/build.ninja` from the build registered for `DIR` in `Main.lean`. `--set` passes a parameter, such as `--set cflags=-O0`. `--commands` prints each edge's command and writes nothing. The registered examples are `hello-c` and `gen-header`; the second needs `python3`.
+`gen [--commands] [--set KEY=VALUE]... DIR` reads `DIR/mise.toml` and writes `DIR/build.ninja`. `--set` overrides a parameter declared in `[params]`, such as `--set cflags=-O0`. `--commands` prints each edge's command and writes nothing. In the Nix shell `gen` is on `PATH` after `lake build`; elsewhere run `lake exe gen`.
 
-A build is a `Build` action. From `examples/hello-c/HelloC.lean`:
+From `examples/hello-c/mise.toml`:
 
-```lean
-def build (ps : Params) : Build Unit := do
-  let mainC ← source "main.c"
-  let greetC ← source "greet.c"
-  let greetH ← source "greet.h"
-  let cc ← rule "cc" "cc $cflags -c $in -o $out" (description := "CC $out")
-  let link ← rule "link" "cc $in -o $out" (description := "LINK $out")
-  let cflags := [("cflags", ps.get "cflags" "-O2 -Wall")]
-  let mainO ← edge1 cc "build/main.o" [mainC] (implicitIns := [greetH]) (vars := cflags)
-  let greetO ← edge1 cc "build/greet.o" [greetC] (implicitIns := [greetH]) (vars := cflags)
-  let hello ← edge1 link "build/hello" [mainO, greetO]
-  defaults [hello]
+```toml
+sources = ["main.c", "greet.c", "greet.h"]
+defaults = ["build/hello"]
+
+[params]
+cflags = "-O2 -Wall"
+
+[[rule]]
+name = "cc"
+command = "cc $cflags -c $in -o $out"
+description = "CC $out"
+
+[[build]]
+rule = "cc"
+outs = ["build/main.o"]
+ins = ["main.c"]
+implicit-ins = ["greet.h"]
+params = ["cflags"]
 ```
 
-`rule` also takes `depfile := true`, for compiles whose includes the compiler reports, and `restat := true`, for commands that leave an unchanged output untouched. `examples/gen-header/GenHeader.lean` uses both, with `dynEdge1` for compiles that read a generated header.
+A `[[rule]]` has `name`, `command`, and optionally `description`, `depfile = true` (the compiler reports what it read) and `restat = true` (the command leaves an unchanged output untouched). A `[[build]]` has `rule` and `outs`, and optionally `implicit-outs`, `ins`, `implicit-ins`, `order-only`, `vars` (edge variables with literal values) and `params` (edge variables bound to parameters). Inputs and defaults must name declared sources or outputs of earlier builds, and unknown keys are errors. For a depfile rule, `order-only` lists the generated files the command may read, as in `examples/gen-header/mise.toml`.
+
+The same builds can be written in Lean with the library in `Mise/Frontend/Dsl.lean`; `examples/*/*.lean` are the Lean versions of the examples, and the acceptance gate checks that both forms emit the same manifest.

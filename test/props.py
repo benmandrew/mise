@@ -38,12 +38,14 @@ JOBS = ["-j1", "-j2", "-j8"]
 class HelloC:
     name = "hello-c"
     products = ["build/main.o", "build/greet.o", "build/hello"]
+    toml = (ROOT / "examples" / "hello-c" / "mise.toml").read_text()
 
     def initial(self):
         return {"main": 0, "greet": 0, "header": 0, "flag": 0}
 
     def render(self, s):
         return {
+            "mise.toml": self.toml,
             "greet.h": f"#pragma once\n#define GREET_N {s['header']}\nvoid greet(void);\n",
             "greet.c": '#include <stdio.h>\n#include "greet.h"\n'
                        f'void greet(void) {{ printf("Hello %d %d\\n", GREET_N, {s["greet"]}); }}\n',
@@ -59,6 +61,7 @@ class GenHeader:
     name = "gen-header"
     products = ["build/config.h", "build/main.o", "build/util.o", "build/app"]
     generator = (ROOT / "examples" / "gen-header" / "gen-config.py").read_text()
+    toml = (ROOT / "examples" / "gen-header" / "mise.toml").read_text()
 
     def initial(self):
         return {"main": 0, "util": 0, "utilh": 0, "extra": 0, "cfg": 0, "gen": 0, "note": 0,
@@ -74,6 +77,7 @@ class GenHeader:
         main_inc = ["config.h"] + (["extra.h"] if s["main_extra"] else []) + ["util.h"]
         util_inc = ["config.h", "util.h"] + (["extra.h"] if s["util_extra"] else [])
         return {
+            "mise.toml": self.toml,
             "main.c": self.c_file(main_inc, 'int main(void) { greet("mise", TIMES); '
                                   f'printf("main %d %d\\n", {s["main"]}, EXTRA); return 0; }}'),
             "util.c": self.c_file(util_inc, "void greet(const char *who, int times) { "

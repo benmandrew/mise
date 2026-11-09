@@ -1,0 +1,34 @@
+sources = ["main.c", "greet.c", "greet.h"]
+defaults = ["build/hello"]
+
+[params]
+cflags = "-O2 -Wall"
+
+[[rule]]
+name = "cc"
+command = "cc $cflags -c $in -o $out"
+description = "CC $out"
+
+[[rule]]
+name = "link"
+command = "cc $in -o $out"
+description = "LINK $out"
+
+[[build]]
+rule = "cc"
+outs = ["build/main.o"]
+ins = ["main.c"]
+implicit-ins = ["greet.h"]
+params = ["cflags"]
+
+[[build]]
+rule = "cc"
+outs = ["build/greet.o"]
+ins = ["greet.c"]
+implicit-ins = ["greet.h"]
+params = ["cflags"]
+
+[[build]]
+rule = "link"
+outs = ["build/hello"]
+ins = ["build/main.o", "build/greet.o"]

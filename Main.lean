@@ -1,14 +1,9 @@
-import HelloC
-import GenHeader
+import Mise.Frontend.Toml
 
 open Mise.Frontend
 
-/-- Build descriptions, by example directory name. -/
-def registry : List (String × (Params → Build Unit)) :=
-  [("hello-c", HelloC.build), ("gen-header", GenHeader.build)]
-
 def usage : String :=
-  "usage: gen [--commands] [--set KEY=VALUE]... DIR\n  writes DIR/build.ninja for a registered example"
+  "usage: gen [--commands] [--set KEY=VALUE]... DIR\n  reads DIR/mise.toml and writes DIR/build.ninja"
 
 /-- Split the arguments into the `--commands` flag, parameters, and the rest. -/
 def parseArgs : List String → Bool × Params × List String
@@ -24,11 +19,10 @@ def parseArgs : List String → Bool × Params × List String
 def main (args : List String) : IO UInt32 := do
   let (showCmds, ps, rest) := parseArgs args
   let [dir] := rest | IO.eprintln usage; return 2
-  let name := (System.FilePath.mk dir).fileName.getD dir
-  let some b := registry.lookup name
-    | IO.eprintln s!"gen: no build description registered for {repr name}"; return 2
-  match (b ps).graph with
-  | .error e => IO.eprintln s!"gen: {e}"; return 1
+  let file := System.FilePath.mk dir / "mise.toml"
+  let text ← try IO.FS.readFile file catch e => IO.eprintln s!"gen: {e}"; return 2
+  match ← Toml.load text ps file.toString with
+  | .error e => IO.eprintln s!"gen: {file}: {e}"; return 1
   | .ok g =>
     if showCmds then
       -- The command the DSL means for each edge, to compare with `ninja -t commands`.
