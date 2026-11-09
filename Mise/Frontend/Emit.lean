@@ -121,9 +121,10 @@ theorem emitRule_ok (c : Ctx) (r : GRule) (hr : r.ok = true) (hf : c.rules.conta
   obtain ⟨⟨⟨⟨⟨h1, _⟩, h3⟩, h4⟩, _⟩, h6⟩ := hr
   have hc : validIdent "command" = true := by decide
   have hd : validIdent "description" = true := by decide
-  by_cases he : r.description.isEmpty
-  · simp_all [Stmt.ok, emitRule, validBinding, ruleKeys]
-  · simp_all [Stmt.ok, emitRule, validBinding, ruleKeys]
+  have hdb : depfileBindings.all (fun b => validBinding b && ruleKeys.contains b.1) = true := by decide
+  simp only [depfileBindings] at hdb
+  by_cases he : r.description.isEmpty <;> by_cases hdf : r.depfile <;>
+    simp_all [Stmt.ok, emitRule, validBinding, ruleKeys, depfileBindings]
 
 theorem rules_fold (c : Ctx) (rs : List GRule) :
     (rs.map (Stmt.rule ∘ emitRule)).foldl Ctx.add c = { c with rules := c.rules ++ rs.map (·.name) } := by
@@ -311,18 +312,25 @@ theorem own_get (rules : List Rule) (e : GEdge) (v : String) (h : nodupB (e.vars
     rw [this, get_reverse _ _ h]; rfl
 
 theorem emitRule_get_command (r : GRule) : (emitRule r).get "command" = some r.command := by
-  unfold emitRule Rule.get; split <;> simp
+  unfold emitRule Rule.get; split <;> split <;> simp [depfileBindings]
 
-theorem emitRule_get_none (r : GRule) (v : String) (hv : v ≠ "command") (hd : v ≠ "description") :
-    (emitRule r).get v = none := by
+theorem emitRule_get_deps (r : GRule) :
+    (emitRule r).get "deps" = if r.depfile then some [.lit "gcc"] else none := by
+  unfold emitRule Rule.get; split <;> split <;> simp [depfileBindings]
+
+theorem emitRule_get_none (r : GRule) (v : String) (hv : v ≠ "command") (hd : v ≠ "description")
+    (hf : v ≠ "depfile") (hp : v ≠ "deps") : (emitRule r).get v = none := by
   have h1 : "command" ≠ v := Ne.symm hv
   have h2 : "description" ≠ v := Ne.symm hd
+  have h3 : "depfile" ≠ v := Ne.symm hf
+  have h4 : "deps" ≠ v := Ne.symm hp
   unfold emitRule Rule.get
-  split <;> simp [h1, h2]
+  split <;> split <;> simp [h1, h2, h3, h4, depfileBindings]
 
 theorem not_reserved {v : String} (h : reserved.contains v = false) :
-    v ≠ "in" ∧ v ≠ "out" ∧ v ≠ "in_newline" ∧ v ≠ "command" ∧ v ≠ "description" := by
-  refine ⟨?_, ?_, ?_, ?_, ?_⟩ <;> (rintro rfl; revert h; decide)
+    v ≠ "in" ∧ v ≠ "out" ∧ v ≠ "in_newline" ∧ v ≠ "command" ∧ v ≠ "description" ∧ v ≠ "depfile" ∧
+      v ≠ "deps" := by
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;> (rintro rfl; revert h; decide)
 
 theorem lookup_emit (rules : List Rule) (r : GRule) (e : GEdge) (n : Nat) (v : String)
     (hrule : (edgeInfo rules [] (emitEdge e)).rule = emitRule r) (hvars : nodupB (e.vars.map (·.1)) = true)
@@ -331,9 +339,9 @@ theorem lookup_emit (rules : List Rule) (r : GRule) (e : GEdge) (n : Nat) (v : S
   rcases hv with rfl | rfl | hv
   · rw [EdgeInfo.lookup_in]; rfl
   · rw [EdgeInfo.lookup_out]; rfl
-  · obtain ⟨h1, h2, h3, h4, h5⟩ := not_reserved hv
+  · obtain ⟨h1, h2, h3, h4, h5, h6, h7⟩ := not_reserved hv
     have hown := own_get rules e v hvars
-    have hget := emitRule_get_none r v h4 h5
+    have hget := emitRule_get_none r v h4 h5 h6 h7
     rw [EdgeInfo.lookup_other _ _ _ _ h1 h3 h2, hown, hrule, hget]
     simp only [GEdge.look, h1, h2, ite_false]
     cases e.vars.find? (·.1 == v) <;> cases n <;> simp [Scope.get]
@@ -352,15 +360,25 @@ theorem GRule.ok_command {r : GRule} (h : r.ok = true) : tmplVarsOK r.command = 
   simp only [GRule.ok, Bool.and_eq_true] at h
   exact h.1.2
 
-/-- Ninja evaluates every emitted edge's command to the command the DSL means. -/
-theorem command_emit (g : Graph) (hg : g.Valid) (e : GEdge) (he : e ∈ g.edges) :
-    (edgeInfo (emitRules g) [] (emitEdge e)).command [] = g.cmd e := by
+/-- An edge's variable names are distinct and none is reserved. -/
+theorem vars_get_reserved {e : GEdge} (h7 : varsOK e.vars = true) {v : String} (hv : reserved.contains v = true) :
+    e.vars.find? (·.1 == v) = none := by
+  simp only [varsOK, Bool.and_eq_true, List.all_eq_true] at h7
+  cases hf : e.vars.find? (·.1 == v) with
+  | none => rfl
+  | some b =>
+    have hb := List.find?_some hf
+    have := (h7.2 b (List.mem_of_find?_eq_some hf)).1.2
+    simp only [beq_iff_eq] at hb
+    rw [hb, hv] at this
+    cases this
+
+/-- The rule Ninja finds for an emitted edge. -/
+theorem rule_emit (g : Graph) (hg : g.Valid) (e : GEdge) (he : e ∈ g.edges) :
+    ∃ r, g.ruleOf e = some r ∧ r.ok = true ∧ (edgeInfo (emitRules g) [] (emitEdge e)).rule = emitRule r := by
   obtain ⟨_, hok, hedges, _⟩ := Graph.check_parts hg
   obtain ⟨q, hq⟩ := edgesOK_mem hedges he
-  obtain ⟨h1, -, -, -, -, -, h7⟩ := GEdge.ok_parts hq
-  have hvars : nodupB (e.vars.map (·.1)) = true := by
-    simp only [varsOK, Bool.and_eq_true] at h7; exact h7.1
-  -- The rule the edge names.
+  obtain ⟨h1, -, -, -, -, -, -⟩ := GEdge.ok_parts hq
   obtain ⟨r, hfind⟩ : ∃ r, g.rules.find? (·.name == e.rule) = some r := by
     simp only [Graph.ruleNames, List.contains_iff_mem, List.mem_map] at h1
     obtain ⟨r, hr, hrn⟩ := h1
@@ -368,33 +386,55 @@ theorem command_emit (g : Graph) (hg : g.Valid) (e : GEdge) (he : e ∈ g.edges)
   have hr : r ∈ g.rules := List.mem_of_find?_eq_some hfind
   have hrn : r.name = e.rule := by simpa using List.find?_some hfind
   have hrok := hok r hr
-  have hrule : (edgeInfo (emitRules g) [] (emitEdge e)).rule = emitRule r := by
-    have hp : ("phony" == e.rule) = false := by
-      have : e.rule ≠ "phony" := hrn ▸ (GRule.ok_name hrok).2
-      simpa using Ne.symm this
-    simp only [edgeInfo, emitRules, emitEdge, List.find?_cons, hp, List.find?_map]
-    have : ((fun x : Rule => x.name == e.rule) ∘ emitRule) = (fun x : GRule => x.name == e.rule) := by
-      funext x; simp [emitRule]
-    simp [this, hfind]
-  have hcmd : g.cmd e = evalWith e.look r.command := by simp [Graph.cmd, Graph.ruleOf, hfind]
+  refine ⟨r, hfind, hrok, ?_⟩
+  have hp : ("phony" == e.rule) = false := by
+    have : e.rule ≠ "phony" := hrn ▸ (GRule.ok_name hrok).2
+    simpa using Ne.symm this
+  simp only [edgeInfo, emitRules, emitEdge, List.find?_cons, hp, List.find?_map]
+  have : ((fun x : Rule => x.name == e.rule) ∘ emitRule) = (fun x : GRule => x.name == e.rule) := by
+    funext x; simp [emitRule]
+  simp [this, hfind]
+
+theorem varsOK_of_mem {g : Graph} (hg : g.Valid) {e : GEdge} (he : e ∈ g.edges) : varsOK e.vars = true := by
+  obtain ⟨_, _, hedges, _⟩ := Graph.check_parts hg
+  obtain ⟨q, hq⟩ := edgesOK_mem hedges he
+  exact (GEdge.ok_parts hq).2.2.2.2.2.2
+
+/-- Ninja evaluates every emitted edge's command to the command the DSL means. -/
+theorem command_emit (g : Graph) (hg : g.Valid) (e : GEdge) (he : e ∈ g.edges) :
+    (edgeInfo (emitRules g) [] (emitEdge e)).command [] = g.cmd e := by
+  have h7 := varsOK_of_mem hg he
+  have hvars : nodupB (e.vars.map (·.1)) = true := by
+    simp only [varsOK, Bool.and_eq_true] at h7; exact h7.1
+  obtain ⟨r, hfind, hrok, hrule⟩ := rule_emit g hg e he
+  have hcmd : g.cmd e = evalWith e.look r.command := by simp [Graph.cmd, hfind]
   rw [hcmd]
-  simp only [EdgeInfo.command]
+  simp only [EdgeInfo.command, EdgeInfo.binding]
   rw [EdgeInfo.lookup_other _ _ _ _ (by decide) (by decide) (by decide)]
   have hc : ((edgeInfo (emitRules g) [] (emitEdge e)).own.getD []).get "command" = none := by
-    rw [own_get _ e _ hvars]
-    simp only [varsOK, Bool.and_eq_true, List.all_eq_true] at h7
-    cases hf : e.vars.find? (·.1 == "command") with
-    | none => rfl
-    | some b =>
-      have hb := List.find?_some hf
-      have := (h7.2 b (List.mem_of_find?_eq_some hf)).1.2
-      simp only [beq_iff_eq] at hb
-      rw [hb] at this
-      simp only [Bool.not_eq_true'] at this
-      exact absurd (by decide : "command" ∈ reserved) (by simpa using this)
+    rw [own_get _ e _ hvars, vars_get_reserved h7 (by decide)]; rfl
   simp only [hc, hrule, emitRule_get_command]
   exact evalWith_congr _ _ _ fun n hn =>
     lookup_emit _ r e _ n hrule hvars (tmplVarsOK_mem (GRule.ok_command hrok) hn)
+
+/-- Ninja reads the deps log for exactly the edges whose rule has a depfile. -/
+theorem isDyn_emit (g : Graph) (hg : g.Valid) (e : GEdge) (he : e ∈ g.edges) :
+    (edgeInfo (emitRules g) [] (emitEdge e)).isDyn [] = g.isDyn e := by
+  have h7 := varsOK_of_mem hg he
+  have hvars : nodupB (e.vars.map (·.1)) = true := by
+    simp only [varsOK, Bool.and_eq_true] at h7; exact h7.1
+  obtain ⟨r, hfind, -, hrule⟩ := rule_emit g hg e he
+  simp only [EdgeInfo.isDyn, EdgeInfo.binding, Graph.isDyn, hfind]
+  rw [EdgeInfo.lookup_other _ _ _ _ (by decide) (by decide) (by decide)]
+  have hc : ((edgeInfo (emitRules g) [] (emitEdge e)).own.getD []).get "deps" = none := by
+    rw [own_get _ e _ hvars, vars_get_reserved h7 (by decide)]; rfl
+  simp only [hc, hrule, emitRule_get_deps]
+  cases r.depfile
+  · simp only [Bool.false_eq_true, ite_false]
+    split <;> simp [Scope.get]
+  · simp only [ite_true]
+    rw [show evalWith _ [Seg.lit "gcc"] = "gcc" from rfl]
+    decide
 
 /-! ## Meaning -/
 
@@ -406,20 +446,20 @@ variable {V : Type} [Inhabited V]
 
 /-- **Headline.** Reading the emitted manifest through the Ninja model gives
 the graph's own meaning. -/
-theorem denote_emit (exec : String → List V → List V) (g : Graph) (hg : g.Valid) :
-    denote exec (emit g) = g.spec exec := by
+theorem denote_emit (sem : Sem V) (g : Graph) (hg : g.Valid) :
+    denote sem (emit g) = g.spec sem := by
   obtain ⟨hfile, hedges⟩ := elab_emit g
   unfold denote Graph.spec
   simp only [hfile, hedges, findOut_map, outs_emit]
   congr 1
-  · funext k; cases findOut GEdge.allOuts k g.edges <;> rfl
+  · funext k; show _ = (findOut GEdge.allOuts k g.edges).isNone; cases findOut GEdge.allOuts k g.edges <;> rfl
   · funext k
     cases hf : findOut GEdge.allOuts k g.edges with
     | none => rfl
     | some p =>
       obtain ⟨i, e⟩ := p
       simp only [Option.map_some, Function.comp]
-      rw [command_emit g hg e (findOut_mem hf)]
+      rw [command_emit g hg e (findOut_mem hf), isDyn_emit g hg e (findOut_mem hf)]
       rfl
 
 /-! ## Acyclicity -/
@@ -431,9 +471,20 @@ theorem fetchAll_fetchesOnly {K : Type} {P : K → Prop} :
   | k :: ks, h => .fetch k _ (h k (by simp)) fun _ =>
       (fetchAll_fetchesOnly ks fun j hj => h j (by simp [hj])).bind fun _ => .pure _
 
-theorem edgeTask_fetchesOnly {P : Path → Prop} (exec : String → List V → List V) (cmd : String)
-    (ins : List Path) (i : Nat) (h : ∀ k ∈ ins, P k) : (edgeTask exec cmd ins i).FetchesOnly P :=
-  (fetchAll_fetchesOnly ins h).bind fun _ => .pure _
+omit [Inhabited V] in
+/-- A command's task fetches only inputs, or for a depfile command only what
+its bound allows. -/
+theorem cmdTask_fetchesOnly {P : Path → Prop} (sem : Sem V) (dyn : Bool) (cmd : String) (ins : List Path)
+    (hs : dyn = false → ∀ k ∈ ins, P k) (hd : dyn = true → (sem.dyn cmd).FetchesOnly P) :
+    (cmdTask sem dyn cmd ins).FetchesOnly P := by
+  unfold cmdTask
+  cases dyn
+  · exact (fetchAll_fetchesOnly ins (hs rfl)).bind fun _ => .pure _
+  · exact hd rfl
+
+theorem outTask_fetchesOnly {P : Path → Prop} {t : Task Path V (List V)} (h : t.FetchesOnly P) (i : Nat) :
+    (outTask t i).FetchesOnly P :=
+  h.bind fun _ => .pure _
 
 /-- An output's rank is one more than its edge's position; sources rank 0. -/
 def Graph.rank (g : Graph) (k : Path) : Nat :=
@@ -441,17 +492,18 @@ def Graph.rank (g : Graph) (k : Path) : Nat :=
   | some (i, _) => i + 1
   | none => 0
 
+theorem Graph.rank_source (g : Graph) {j : Path} (hs : g.isSource j = true) : g.rank j = 0 := by
+  simp only [Graph.isSource, Option.isNone_iff_eq_none] at hs
+  simp [Graph.rank, hs]
+
 theorem Graph.rank_lt (g : Graph) (hg : g.Valid) {k : Path} {i : Nat} {e : GEdge}
-    (hf : findOut GEdge.allOuts k g.edges = some (i, e)) {j : Path} (hj : j ∈ e.inputs) :
+    (hf : findOut GEdge.allOuts k g.edges = some (i, e)) {j : Path} (hj : j ∈ e.allIns) :
     g.rank j < i + 1 := by
   obtain ⟨-, -, hedges, -⟩ := Graph.check_parts hg
   have hq := edgesOK_get hedges (findOut_some hf).1
   obtain ⟨-, -, -, -, -, h6, -⟩ := GEdge.ok_parts hq
-  have hj' : j ∈ e.allIns := by
-    simp only [GEdge.inputs, GEdge.allIns, List.mem_append] at hj ⊢
-    exact .inl hj
   unfold Graph.rank
-  rcases h6 j hj' with hs | hp
+  rcases h6 j hj with hs | hp
   · have hn : findOut GEdge.allOuts j g.edges = none := by
       refine findOut_none fun a ha => ?_
       obtain ⟨q, hq⟩ := edgesOK_mem hedges ha
@@ -465,26 +517,32 @@ theorem Graph.rank_lt (g : Graph) (hg : g.Valid) {k : Path} {i : Nat} {e : GEdge
     obtain ⟨i', b, hi', hf'⟩ := findOut_take ha (by simpa using hja)
     rw [hf']; show i' + 1 < i + 1; omega
 
-/-- The DSL's meaning is acyclic, with edge positions as ranks. -/
-def Graph.acyclic (exec : String → List V → List V) (g : Graph) (hg : g.Valid) :
-    (g.spec exec).Acyclic where
+/-- The DSL's meaning is acyclic, with edge positions as ranks, provided
+every depfile command reads only sources and its edge's declared inputs. -/
+def Graph.acyclic (sem : Sem V) (g : Graph) (hg : g.Valid) (hd : g.DynOK sem) :
+    (g.spec sem).Acyclic where
   rank := g.rank
   fetches k hk := by
     simp only [Graph.spec] at hk ⊢
     cases hf : findOut GEdge.allOuts k g.edges with
-    | none => simp [hf] at hk
+    | none => simp [Graph.isSource, hf] at hk
     | some p =>
       obtain ⟨i, e⟩ := p
       have hrk : g.rank k = i + 1 := by simp [Graph.rank, hf]
-      exact edgeTask_fetchesOnly _ _ _ _ fun j hj => hrk ▸ g.rank_lt hg hf hj
+      refine outTask_fetchesOnly (cmdTask_fetchesOnly sem _ _ _ (fun _ j hj => ?_) (fun hdyn => ?_)) _
+      · exact hrk ▸ g.rank_lt hg hf (by simp only [GEdge.inputs, GEdge.allIns, List.mem_append] at hj ⊢; exact .inl hj)
+      · refine (hd e (findOut_mem hf) hdyn).mono fun j hj => ?_
+        rcases hj with hs | hj
+        · rw [hrk, g.rank_source hs]; exact Nat.succ_pos i
+        · exact hrk ▸ g.rank_lt hg hf hj
 
 /-- The emitted manifest's meaning is acyclic. -/
-def emitAcyclic (exec : String → List V → List V) (g : Graph) (hg : g.Valid) :
-    (denote exec (emit g)).Acyclic :=
-  (denote_emit exec g hg) ▸ g.acyclic exec hg
+def emitAcyclic (sem : Sem V) (g : Graph) (hg : g.Valid) (hd : g.DynOK sem) :
+    (denote sem (emit g)).Acyclic :=
+  (denote_emit sem g hg) ▸ g.acyclic sem hg hd
 
-theorem emit_acyclic (exec : String → List V → List V) (g : Graph) (hg : g.Valid) :
-    Nonempty (denote exec (emit g)).Acyclic :=
-  ⟨emitAcyclic exec g hg⟩
+theorem emit_acyclic (sem : Sem V) (g : Graph) (hg : g.Valid) (hd : g.DynOK sem) :
+    Nonempty (denote sem (emit g)).Acyclic :=
+  ⟨emitAcyclic sem g hg hd⟩
 
 end Mise.Frontend

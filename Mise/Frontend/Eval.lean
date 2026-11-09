@@ -70,9 +70,16 @@ def EdgeInfo.lookup (file : Scope) (c : EdgeInfo) : Nat → String → String
         | some _, 0 => ""
         | none, _ => if c.own.isSome then (file.get v).getD "" else ""
 
+/-- An evaluated edge variable, with enough fuel for any acyclic rule. -/
+def EdgeInfo.binding (file : Scope) (c : EdgeInfo) (k : String) : String :=
+  c.lookup file (c.rule.bindings.length + 1) k
+
 /-- The evaluated command, as Ninja hashes it in the build log. -/
-def EdgeInfo.command (file : Scope) (c : EdgeInfo) : String :=
-  c.lookup file (c.rule.bindings.length + 1) "command"
+def EdgeInfo.command (file : Scope) (c : EdgeInfo) : String := c.binding file "command"
+
+/-- Whether Ninja reads the edge's dependencies from its deps log
+(`deps = gcc`): Ninja checks only that the binding is nonempty. -/
+def EdgeInfo.isDyn (file : Scope) (c : EdgeInfo) : Bool := c.binding file "deps" != ""
 
 /-- The state of Ninja's parser after reading a prefix of the manifest. -/
 structure Elab where

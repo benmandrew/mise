@@ -1,11 +1,13 @@
 import Mise.Model.Sound
 
 /-!
-# Stage 5: the model on emitted manifests
+# Stages 5 and 6: the model on emitted manifests
 
 A valid graph emits a manifest whose edges are in schedule order
-(`sched_emit`), so the Stage 5 theorems apply to it. `dsl_sound` composes
-them with `denote_emit`: after any source edits, building the emitted
+(`sched_emit`). When every depfile command reads only sources and its
+declared inputs (`Graph.DynOK`), the emitted manifest meets the
+static-ancestor condition (`reads_emit`). `dsl_sound` composes these with
+`denote_emit`: after any history of edits and builds, building the emitted
 manifest gives the clean build of the DSL's own meaning.
 -/
 
@@ -13,13 +15,13 @@ namespace Mise.Model
 open Mise Mise.Syntax Mise.Frontend
 
 /-- The model edge for a DSL edge. -/
-def gEdge (g : Graph) (e : GEdge) : MEdge := ⟨e.allOuts, e.inputs, g.cmd e⟩
+def gEdge (g : Graph) (e : GEdge) : MEdge := ⟨e.allOuts, e.inputs, e.orderOnly, g.cmd e, g.isDyn e⟩
 
 theorem medges_emit (g : Graph) (hg : g.Valid) : (emit g).medges = g.edges.map (gEdge g) := by
   unfold Manifest.medges
   rw [(elab_emit g).1, (elab_emit g).2, List.map_map]
   refine List.map_congr_left fun e he => ?_
-  simp only [Function.comp, toMEdge, gEdge, command_emit g hg e he]
+  simp only [Function.comp, toMEdge, gEdge, command_emit g hg e he, isDyn_emit g hg e he]
   rfl
 
 theorem edgesOK_outs {names : List String} {srcs p : List Path} {es : List GEdge}
@@ -31,20 +33,20 @@ theorem edgesOK_outs {names : List String} {srcs p : List Path} {es : List GEdge
   have h1 : o ∉ p ++ List.flatMap GEdge.allOuts (List.take i es) := by simpa using h1
   exact ⟨fun hp => h1 (List.mem_append_left _ hp), by simpa using h2⟩
 
-theorem sched_of_edgesOK {names : List String} {srcs : List Path} (f : GEdge → String) :
+theorem sched_of_edgesOK {names : List String} {srcs : List Path} (f : GEdge → String) (d : GEdge → Bool) :
     ∀ (p : List Path) (es : List GEdge), edgesOK names srcs p es = true →
-      Sched (es.map fun e => ⟨e.allOuts, e.inputs, f e⟩)
+      Sched (es.map fun e => ⟨e.allOuts, e.inputs, e.orderOnly, f e, d e⟩)
   | _, [], _ => trivial
   | p, e :: es, h => by
     have h' := h
     simp only [edgesOK, Bool.and_eq_true] at h'
     obtain ⟨-, -, -, -, h5, h6, -⟩ := GEdge.ok_parts h'.1
-    have hin : ∀ i ∈ e.inputs, i ∈ srcs ∨ i ∈ p := fun i hi => by
-      have := h6 i (by simp only [GEdge.inputs, GEdge.allIns, List.mem_append] at hi ⊢; exact .inl hi)
+    have hin : ∀ i ∈ e.inputs ++ e.orderOnly, i ∈ srcs ∨ i ∈ p := fun i hi => by
+      have := h6 i (by simpa only [GEdge.inputs, GEdge.allIns, List.append_assoc] using hi)
       simpa using this
     have hrest : ∀ {e'}, e' ∈ es → ∀ o ∈ e'.allOuts, o ∉ p ++ e.allOuts ∧ o ∉ srcs :=
       fun he' => edgesOK_outs h'.2 he'
-    refine ⟨?_, ?_, sched_of_edgesOK f _ es h'.2⟩
+    refine ⟨?_, ?_, sched_of_edgesOK f d _ es h'.2⟩
     · intro i hi hio
       obtain ⟨hp, hs⟩ := h5 i hio
       rcases hin i hi with h | h
@@ -62,31 +64,40 @@ theorem sched_of_edgesOK {names : List String} {srcs : List Path} (f : GEdge →
 /-- Emitted manifests are in schedule order. -/
 theorem sched_emit (g : Graph) (hg : g.Valid) : Sched (emit g).medges := by
   rw [medges_emit g hg]
-  exact sched_of_edgesOK (g.cmd) [] g.edges (Graph.check_parts hg).2.2.1
+  exact sched_of_edgesOK g.cmd g.isDyn [] g.edges (Graph.check_parts hg).2.2.1
 
-variable {V : Type} [Inhabited V] (exec : String → List V → List V)
+variable {V : Type} [Inhabited V] (sem : Sem V)
 
-/-- **End to end.** Start from contents correct for the DSL's meaning, edit
-any sources, and run the model of Ninja on the emitted manifest: the
-contents equal a clean build of the DSL's meaning for the new sources. -/
-theorem dsl_sound (g : Graph) (hg : g.Valid) {st : St V} (hf : st.Fresh)
-    (hc : (g.spec exec).Correct st.content st.content) (edits : List (Path × V))
-    (he : ∀ pv ∈ edits, (g.spec exec).isSource pv.1 = true) :
-    (ninjaBuild exec (emit g) (st.edits edits)).content =
-      BuildSpec.cleanBuild (g.acyclic exec hg) (st.edits edits).content := by
-  rw [← denote_emit exec g hg] at hc he
-  have h := ninjaBuild_sound exec (sched_emit g hg) hf hc edits he
-  rw [denote_emit exec g hg] at h
+/-- The static-ancestor condition holds for the emitted manifest when it
+holds for the graph. -/
+theorem reads_emit (g : Graph) (hg : g.Valid) (hd : g.DynOK sem) : Reads sem (emit g).medges := by
+  rw [medges_emit g hg]
+  intro me hme hdy
+  obtain ⟨e, he, rfl⟩ := List.mem_map.mp hme
+  refine (hd e he hdy).mono fun k hk => ?_
+  rcases hk with hk | hk
+  · refine .inl fun e' he' hko => ?_
+    obtain ⟨e'', he'', rfl⟩ := List.mem_map.mp he'
+    simp only [Graph.isSource, Option.isNone_iff_eq_none] at hk
+    exact findOut_none_iff hk e'' he'' hko
+  · exact .inr (by simpa only [MEdge.reads, gEdge, GEdge.allIns, GEdge.inputs, List.append_assoc] using hk)
+
+/-- **End to end.** After any history of source edits and builds from empty
+logs, running the model of Ninja on the emitted manifest gives a clean
+build of the DSL's meaning, and a second build runs nothing. -/
+theorem dsl_sound (g : Graph) (hg : g.Valid) (hd : g.DynOK sem) {st : St V}
+    (h : Reach sem (emit g).medges st) :
+    (ninjaBuild sem (emit g) st).content = BuildSpec.cleanBuild (g.acyclic sem hg hd) st.content ∧
+      buildTrace sem (emit g).medges (ninjaBuild sem (emit g) st) = (ninjaBuild sem (emit g) st, []) := by
+  obtain ⟨hc, hi⟩ := reach_sound sem (sched_emit g hg) (reads_emit sem g hg hd) h
+  rw [denote_emit sem g hg] at hc
+  refine ⟨?_, hi⟩
   funext k
-  exact congrFun (BuildSpec.correct_eq_cleanBuild (g.acyclic exec hg) h) k
+  exact congrFun (BuildSpec.correct_eq_cleanBuild (g.acyclic sem hg hd) hc) k
 
-/-- From an empty build log, building the emitted manifest gives the clean
-build of the DSL's meaning. -/
-theorem dsl_clean (g : Graph) (hg : g.Valid) {st : St V} (hf : st.Fresh) (hlog : ∀ p, st.log p = none) :
-    (ninjaBuild exec (emit g) st).content = BuildSpec.cleanBuild (g.acyclic exec hg) st.content := by
-  have h := ninjaBuild_clean_correct exec (sched_emit g hg) hf hlog
-  rw [denote_emit exec g hg] at h
-  funext k
-  exact congrFun (BuildSpec.correct_eq_cleanBuild (g.acyclic exec hg) h) k
+omit [Inhabited V] in
+/-- With no depfile rules, the condition on depfile commands holds. -/
+theorem dynOK_static (g : Graph) (h : ∀ e ∈ g.edges, g.isDyn e = false) : g.DynOK sem :=
+  fun e he hd => by rw [h e he] at hd; cases hd
 
 end Mise.Model

@@ -10,8 +10,10 @@ order they were added. `Graph.check` is the condition the builder enforces.
 writes it as a Ninja manifest, and `denote` reads a manifest back as a build
 specification through the Ninja evaluation model.
 
-Command semantics are abstract: `exec cmd vs` is the list of output contents
-that the command `cmd` writes when its inputs hold `vs`, one per output.
+Command semantics are abstract and collected in `Sem`. A static command
+`cmd` writes `exec cmd vs` when its inputs hold `vs`, one value per output. A
+command whose rule has a depfile (Stage 6) is a task `dyn cmd`: it fetches
+what it reads and returns its outputs.
 -/
 
 namespace Mise.Frontend
@@ -28,6 +30,9 @@ structure GRule where
   name : String
   command : EvalString
   description : EvalString := []
+  /-- Emit `depfile = ${out}.d` and `deps = gcc`: the command writes a
+  Makefile-style depfile listing what it read. -/
+  depfile : Bool := false
   deriving DecidableEq, Repr, Inhabited
 
 structure GEdge where
@@ -110,10 +115,21 @@ def fetchAll {K V : Type} : List K → Task K V (List V)
   | [] => .pure []
   | k :: ks => .fetch k fun v => (fetchAll ks).bind fun vs => .pure (v :: vs)
 
-/-- The task for output `i` of an edge: fetch the inputs, run the command. -/
-def edgeTask {V : Type} [Inhabited V] (exec : String → List V → List V) (cmd : String)
-    (ins : List Path) (i : Nat) : Task Path V V :=
-  (fetchAll ins).bind fun vs => .pure ((exec cmd vs).getD i default)
+/-- What commands mean. -/
+structure Sem (V : Type) where
+  /-- A static command's outputs from its inputs' contents. -/
+  exec : String → List V → List V
+  /-- A depfile command: what it reads, and its outputs. -/
+  dyn : String → Task Path V (List V)
+
+/-- A command as a task returning all its outputs. A static command fetches
+its explicit and implicit inputs in order. -/
+def cmdTask {V : Type} (sem : Sem V) (dyn : Bool) (cmd : String) (ins : List Path) : Task Path V (List V) :=
+  if dyn then sem.dyn cmd else (fetchAll ins).bind fun vs => .pure (sem.exec cmd vs)
+
+/-- Output `i` of a command. -/
+def outTask {V : Type} [Inhabited V] (t : Task Path V (List V)) (i : Nat) : Task Path V V :=
+  t.bind fun vs => .pure (vs.getD i default)
 
 def Graph.ruleOf (g : Graph) (e : GEdge) : Option GRule := g.rules.find? (·.name == e.rule)
 
@@ -123,19 +139,36 @@ def Graph.cmd (g : Graph) (e : GEdge) : String :=
   | some r => evalWith e.look r.command
   | none => ""
 
+/-- Whether an edge's rule has a depfile. -/
+def Graph.isDyn (g : Graph) (e : GEdge) : Bool :=
+  match g.ruleOf e with
+  | some r => r.depfile
+  | none => false
+
+/-- Paths no edge produces. -/
+def Graph.isSource (g : Graph) (k : Path) : Bool := (findOut GEdge.allOuts k g.edges).isNone
+
 variable {V : Type} [Inhabited V]
 
 /-- The meaning of a graph, straight from the DSL. -/
-def Graph.spec (exec : String → List V → List V) (g : Graph) : BuildSpec Path V where
-  isSource k := (findOut GEdge.allOuts k g.edges).isNone
+def Graph.spec (sem : Sem V) (g : Graph) : BuildSpec Path V where
+  isSource := g.isSource
   task k := match findOut GEdge.allOuts k g.edges with
-    | some (_, e) => edgeTask exec (g.cmd e) e.inputs (e.allOuts.idxOf k)
+    | some (_, e) => outTask (cmdTask sem (g.isDyn e) (g.cmd e) e.inputs) (e.allOuts.idxOf k)
     | none => .pure default
+
+/-- The static-ancestor condition (Stage 6): every depfile command reads
+only sources and the edge's own inputs, order-only inputs included. -/
+def Graph.DynOK (sem : Sem V) (g : Graph) : Prop :=
+  ∀ e ∈ g.edges, g.isDyn e = true → (sem.dyn (g.cmd e)).FetchesOnly fun k => g.isSource k = true ∨ k ∈ e.allIns
 
 /-! ## Ninja form -/
 
+def depfileBindings : List Binding := [("depfile", [.var "out", .lit ".d"]), ("deps", [.lit "gcc"])]
+
 def emitRule (r : GRule) : Rule :=
-  ⟨r.name, [("command", r.command)] ++ (if r.description.isEmpty then [] else [("description", r.description)])⟩
+  ⟨r.name, [("command", r.command)] ++ (if r.description.isEmpty then [] else [("description", r.description)]) ++
+    (if r.depfile then depfileBindings else [])⟩
 
 def litVal (s : String) : EvalString := if s.toList.isEmpty then [] else [.lit s]
 
@@ -149,13 +182,14 @@ def emit (g : Graph) : Manifest :=
     (if g.defaults.isEmpty then [] else [.default g.defaults])⟩
 
 /-- The meaning of a manifest under the Ninja evaluation model: each output
-is computed by its edge's evaluated command from the edge's explicit and
-implicit inputs. Paths no edge produces are sources. -/
-def denote (exec : String → List V → List V) (m : Manifest) : BuildSpec Path V where
+is computed by its edge's evaluated command, which is static or reads a
+depfile according to the edge's `deps` binding. Paths no edge produces are
+sources. -/
+def denote (sem : Sem V) (m : Manifest) : BuildSpec Path V where
   isSource k := (findOut (·.edge.allOuts) k m.elab.edges).isNone
   task k := match findOut (·.edge.allOuts) k m.elab.edges with
-    | some (_, c) => edgeTask exec (c.command m.elab.file) (c.edge.ins ++ c.edge.implicitIns)
-        (c.edge.allOuts.idxOf k)
+    | some (_, c) => outTask (cmdTask sem (c.isDyn m.elab.file) (c.command m.elab.file)
+        (c.edge.ins ++ c.edge.implicitIns)) (c.edge.allOuts.idxOf k)
     | none => .pure default
 
 end Mise.Frontend

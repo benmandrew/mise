@@ -34,4 +34,12 @@ fails if any theorem depends on an axiom outside the standard three. -/
 #print axioms Mise.Model.command_change_rebuilds
 #print axioms Mise.Model.sched_emit
 #print axioms Mise.Model.dsl_sound
-#print axioms Mise.Model.dsl_clean
+
+-- Stage 6
+#print axioms Mise.Model.ninjaBuild_sound_static
+#print axioms Mise.Model.inv_of_reach
+#print axioms Mise.Model.reach_sound
+#print axioms Mise.Model.fetched_up_to_date
+#print axioms Mise.Model.reads_emit
+#print axioms Mise.Frontend.isDyn_emit
+#print axioms Mise.Frontend.Graph.acyclic

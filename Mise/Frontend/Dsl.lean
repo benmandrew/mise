@@ -61,10 +61,10 @@ def parseValue (what s : String) : Build EvalString :=
   | none => throw s!"{what}: cannot parse {repr s} as a Ninja value"
 
 /-- Declare a rule. -/
-def rule (name command : String) (description : String := "") : Build RuleRef := do
+def rule (name command : String) (description : String := "") (depfile : Bool := false) : Build RuleRef := do
   let cmd ← parseValue s!"rule {name}: command" command
   let desc ← parseValue s!"rule {name}: description" description
-  let r : GRule := { name, command := cmd, description := desc }
+  let r : GRule := { name, command := cmd, description := desc, depfile }
   let g ← get
   require r.ok s!"rule {name}: invalid name, empty command, or a reserved variable in the command"
   require (!g.ruleNames.contains name) s!"rule {name}: already declared"
@@ -92,6 +92,20 @@ def edge1 (r : RuleRef) (out : Path) (ins : List Handle := []) (implicitIns : Li
     (orderOnly : List Handle := []) (vars : List (String × String) := []) : Build Handle := do
   let hs ← edge r [out] ins implicitIns orderOnly [] vars
   pure (hs.headD default)
+
+/-- Add an edge with one output whose rule has a depfile. The command may
+read any source, plus the generated files in `mayReadGenerated`, which
+become order-only inputs: Ninja builds them first, and the depfile records
+which of them the command read. -/
+def dynEdge1 (r : RuleRef) (out : Path) (ins : List Handle := []) (mayReadGenerated : List Handle := [])
+    (vars : List (String × String) := []) : Build Handle :=
+  edge1 r out ins [] mayReadGenerated vars
+
+/-- Parameters a build description reads, such as compiler flags, given on
+the command line as `--set key=value`. -/
+abbrev Params := List (String × String)
+
+def Params.get (ps : Params) (k : String) (d : String) : String := (ps.lookup k).getD d
 
 /-- Set the targets `ninja` builds when given none. -/
 def defaults (hs : List Handle) : Build Unit :=

@@ -6,7 +6,7 @@ import HelloC
 namespace MiseTest.Stage4
 open Mise.Frontend Mise.Syntax
 
-def hello : Graph := match HelloC.build.graph with
+def hello : Graph := match (HelloC.build []).graph with
   | .ok g => g.1
   | .error _ => {}
 

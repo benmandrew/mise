@@ -3,11 +3,11 @@
 ## Definitions
 
 - `Eval.lean` models how Ninja evaluates variables. It follows `manifest_parser.cc`, `eval_env.cc` and the *edge environment* (`EdgeEnv` in `graph.cc`). `Manifest.elab` reads a manifest into `EdgeInfo` records: the edge, its rule, and its own scope. `EdgeInfo.command` gives the evaluated command, which is also the string Ninja hashes in its build log.
-- `Graph.lean` defines `GRule`, `GEdge` and `Graph`, the validity check `Graph.Valid`, and three meanings. `Graph.spec exec` reads the meaning straight from the DSL, `emit` writes a manifest, and `denote exec` reads a manifest back through `Manifest.elab`.
+- `Graph.lean` defines `GRule`, `GEdge` and `Graph`, the validity check `Graph.Valid`, and three meanings. `Graph.spec sem` reads the meaning straight from the DSL, `emit` writes a manifest, and `denote sem` reads a manifest back through `Manifest.elab`.
 - `Emit.lean` holds the proofs.
 - `Dsl.lean` is the user-facing builder: `source`, `rule`, `edge`, `edge1`, `defaults`, and `Build.graph`, which returns a `ValidGraph`.
 
-Commands are abstract. `exec cmd vs` is the list of contents the command `cmd` writes when its inputs hold `vs`, one entry per output. An output's task fetches the edge's explicit and implicit inputs in order, then takes its own entry of `exec`. A missing entry reads as `default`, which is why `V` needs `Inhabited`.
+Commands are abstract and collected in `Sem V`. `sem.exec cmd vs` is the list of contents the static command `cmd` writes when its inputs hold `vs`, one entry per output. An output's task fetches the edge's explicit and implicit inputs in order, then takes its own entry of `sem.exec`. Stage 6 adds `sem.dyn` for depfile commands (see `Mise/Model/NOTES.md`). A missing entry reads as `default`, which is why `V` needs `Inhabited`.
 
 ## Ninja's evaluation rules
 
@@ -40,8 +40,8 @@ Ninja reports a cycle among rule variables as an error. The model cuts the recur
 ## Theorems
 
 - `emit_wellFormed`: `(emit g).WellFormed` for every valid `g`. With Stage 3's `parse_print`, the printed manifest parses back to `emit g`.
-- `denote_emit` (headline): `denote exec (emit g) = g.spec exec` for every valid `g` and every `exec`. The core step is `command_emit`: Ninja's evaluation of each emitted edge's command equals the DSL's command `g.cmd e`.
-- `emitAcyclic`: an `Acyclic` structure for `denote exec (emit g)`. An output's rank is its edge's position plus one, and a source's rank is 0. `emit_acyclic` states that one exists.
+- `denote_emit` (headline): `denote sem (emit g) = g.spec sem` for every valid `g` and every `sem`. The core step is `command_emit`: Ninja's evaluation of each emitted edge's command equals the DSL's command `g.cmd e`.
+- `emitAcyclic`: an `Acyclic` structure for `denote sem (emit g)`, given `Graph.DynOK` for depfile commands. An output's rank is its edge's position plus one, and a source's rank is 0. `emit_acyclic` states that one exists.
 
 ## Deviations from the plan
 
