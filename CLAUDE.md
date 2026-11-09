@@ -24,3 +24,4 @@ Adding Mathlib, weakening a headline theorem, adding an `Env` assumption the pla
 - Stage 4: done. `Mise/Frontend/Eval.lean` models Ninja variable evaluation; `test/stage4-hello.sh` builds `examples/hello-c`. Examples are lean_libs registered in `Main.lean`.
 - Stage 5: done. Proofs go through the invariant `Inv` in `Mise/Model/Sound.lean`; `dsl_sound` is the end-to-end theorem.
 - Stage 6: done. Depfile rules, a deps log in the model, `reach_sound` for any history from empty logs. `test/stage6-props.sh` is the 200-sequence harness against real Ninja (about 5 minutes).
+- Stage 7: done. `restat` with `Sem.keep`/`keep_eq`; `build_minimal` and `trace_nodup` in `Mise/Model/Minimal.lean`, `parallel_equiv` in `Mise/Model/Parallel.lean`. The harness also checks early cutoff and varies `-j`.

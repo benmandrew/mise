@@ -1,17 +1,19 @@
 import Mise.Frontend.Emit
 
 /-!
-# Stages 5 and 6: an abstract model of Ninja
+# Stages 5 to 7: an abstract model of Ninja
 
 The state holds file contents with modification times, the build log, the
 deps log, and a clock. `ninjaBuild` visits the manifest's edges in order and
 runs each edge that is dirty. Dirtiness follows Ninja's
-`DependencyScan::RecomputeOutputDirty` for edges without `restat` or
-`generator`. An output's inputs are the edge's explicit and implicit inputs,
-plus for a depfile edge the deps recorded for that output. The output is
+`DependencyScan::RecomputeOutputDirty` for edges without `generator`. An
+output's inputs are the edge's explicit and implicit inputs, plus for a
+depfile edge the deps recorded for that output. The output is
 dirty when it is missing, older than the newest input, has no log entry, has
 a log entry with a different command, has a log entry older than the newest
-input, or belongs to a depfile edge and has no deps entry.
+input, or belongs to a depfile edge and has no deps entry. For a `restat`
+edge the output's own mtime is not compared, only the logged time, as Ninja
+does when the output has a log entry.
 
 Dirtiness is decided when the edge is visited, from the current state. An
 edge with an input rebuilt earlier in the same run is therefore dirty by the
@@ -23,13 +25,15 @@ open Mise Mise.Syntax Mise.Frontend
 
 /-- What the model needs from an edge: all outputs, the inputs that count
 for dirtiness and for a static command (explicit and implicit), the
-order-only inputs, the evaluated command, and whether it has a depfile. -/
+order-only inputs, the evaluated command, whether it has a depfile, and
+whether it has `restat`. -/
 structure MEdge where
   outs : List Path
   ins : List Path
   oo : List Path := []
   cmd : String
   dyn : Bool := false
+  restat : Bool := false
   deriving DecidableEq, Repr, Inhabited
 
 /-- Every input Ninja builds before the edge. -/
@@ -39,7 +43,8 @@ def MEdge.reads (e : MEdge) : List Path := e.ins ++ e.oo
 def MEdge.task {V : Type} (sem : Sem V) (e : MEdge) : Task Path V (List V) := cmdTask sem e.dyn e.cmd e.ins
 
 def toMEdge (file : Scope) (c : EdgeInfo) : MEdge :=
-  ⟨c.edge.allOuts, c.edge.ins ++ c.edge.implicitIns, c.edge.orderOnly, c.command file, c.isDyn file⟩
+  ⟨c.edge.allOuts, c.edge.ins ++ c.edge.implicitIns, c.edge.orderOnly, c.command file, c.isDyn file,
+    c.isRestat file⟩
 
 end Mise.Model
 
@@ -82,18 +87,28 @@ def effIns (st : St V) (e : MEdge) (o : Path) : Option (List Path) :=
 
 def outDirty (st : St V) (e : MEdge) (o : Path) : Bool :=
   match st.fs o, st.log o, st.effIns e o with
-  | some (_, t), some (c, lt), some D => decide (t < st.newest D) || c != e.cmd || decide (lt < st.newest D)
+  | some (_, t), some (c, lt), some D =>
+    (!e.restat && decide (t < st.newest D)) || c != e.cmd || decide (lt < st.newest D)
   | _, _, _ => true
 
 def dirty (st : St V) (e : MEdge) : Bool := e.outs.any (st.outDirty e)
 
-/-- Run an edge's command: write every output, its log entry and its deps
-entry at a fresh time. Writes are atomic. -/
+/-- The contents a run writes to output `o`. -/
+def outVal (sem : Sem V) (st : St V) (e : MEdge) (o : Path) : V :=
+  ((e.task sem).run st.content).getD (e.outs.idxOf o) default
+
+/-- A `restat` command leaves output `o` untouched (Stage 7). -/
+def kept (sem : Sem V) (st : St V) (e : MEdge) (o : Path) : Bool :=
+  e.restat && match st.fs o with
+    | some (old, _) => sem.keep old (st.outVal sem e o)
+    | none => false
+
+/-- Run an edge's command: write every output it does not keep, its log
+entry and its deps entry at a fresh time. Writes are atomic. -/
 def run (sem : Sem V) (st : St V) (e : MEdge) : St V :=
   let t := st.clock + 1
-  let vs := (e.task sem).run st.content
   let D := (e.task sem).deps st.content
-  { fs := fun p => if e.outs.contains p then some (vs.getD (e.outs.idxOf p) default, t) else st.fs p
+  { fs := fun p => if e.outs.contains p && !st.kept sem e p then some (st.outVal sem e p, t) else st.fs p
     log := fun p => if e.outs.contains p then some (e.cmd, t) else st.log p
     deps := fun p => if e.outs.contains p then some D else st.deps p
     clock := t }
@@ -109,8 +124,9 @@ def edits (st : St V) : List (Path × V) → St V
   | [] => st
   | (p, v) :: es => (st.edit p v).edits es
 
-/-- Every recorded mtime is at most the clock. -/
-def Fresh (st : St V) : Prop := ∀ p v t, st.fs p = some (v, t) → t ≤ st.clock
+/-- Every recorded mtime and log time is at most the clock. -/
+def Fresh (st : St V) : Prop :=
+  (∀ p v t, st.fs p = some (v, t) → t ≤ st.clock) ∧ ∀ p c t, st.log p = some (c, t) → t ≤ st.clock
 
 /-- The edge's outputs hold what its command computes now, and the inputs
 Ninja checks cover everything the command reads now. -/

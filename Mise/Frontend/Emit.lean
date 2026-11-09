@@ -122,9 +122,10 @@ theorem emitRule_ok (c : Ctx) (r : GRule) (hr : r.ok = true) (hf : c.rules.conta
   have hc : validIdent "command" = true := by decide
   have hd : validIdent "description" = true := by decide
   have hdb : depfileBindings.all (fun b => validBinding b && ruleKeys.contains b.1) = true := by decide
-  simp only [depfileBindings] at hdb
-  by_cases he : r.description.isEmpty <;> by_cases hdf : r.depfile <;>
-    simp_all [Stmt.ok, emitRule, validBinding, ruleKeys, depfileBindings]
+  have hrb : restatBindings.all (fun b => validBinding b && ruleKeys.contains b.1) = true := by decide
+  simp only [depfileBindings, restatBindings] at hdb hrb
+  by_cases he : r.description.isEmpty <;> by_cases hdf : r.depfile <;> by_cases hrs : r.restat <;>
+    simp_all [Stmt.ok, emitRule, validBinding, ruleKeys, depfileBindings, restatBindings]
 
 theorem rules_fold (c : Ctx) (rs : List GRule) :
     (rs.map (Stmt.rule ∘ emitRule)).foldl Ctx.add c = { c with rules := c.rules ++ rs.map (·.name) } := by
@@ -312,25 +313,30 @@ theorem own_get (rules : List Rule) (e : GEdge) (v : String) (h : nodupB (e.vars
     rw [this, get_reverse _ _ h]; rfl
 
 theorem emitRule_get_command (r : GRule) : (emitRule r).get "command" = some r.command := by
-  unfold emitRule Rule.get; split <;> split <;> simp [depfileBindings]
+  unfold emitRule Rule.get; split <;> split <;> split <;> simp [depfileBindings, restatBindings]
 
 theorem emitRule_get_deps (r : GRule) :
     (emitRule r).get "deps" = if r.depfile then some [.lit "gcc"] else none := by
-  unfold emitRule Rule.get; split <;> split <;> simp [depfileBindings]
+  unfold emitRule Rule.get; split <;> split <;> split <;> simp_all [depfileBindings, restatBindings]
+
+theorem emitRule_get_restat (r : GRule) :
+    (emitRule r).get "restat" = if r.restat then some [.lit "1"] else none := by
+  unfold emitRule Rule.get; split <;> split <;> split <;> simp_all [depfileBindings, restatBindings]
 
 theorem emitRule_get_none (r : GRule) (v : String) (hv : v ≠ "command") (hd : v ≠ "description")
-    (hf : v ≠ "depfile") (hp : v ≠ "deps") : (emitRule r).get v = none := by
+    (hf : v ≠ "depfile") (hp : v ≠ "deps") (hr : v ≠ "restat") : (emitRule r).get v = none := by
   have h1 : "command" ≠ v := Ne.symm hv
   have h2 : "description" ≠ v := Ne.symm hd
   have h3 : "depfile" ≠ v := Ne.symm hf
   have h4 : "deps" ≠ v := Ne.symm hp
+  have h5 : "restat" ≠ v := Ne.symm hr
   unfold emitRule Rule.get
-  split <;> split <;> simp [h1, h2, h3, h4, depfileBindings]
+  split <;> split <;> split <;> simp [h1, h2, h3, h4, h5, depfileBindings, restatBindings]
 
 theorem not_reserved {v : String} (h : reserved.contains v = false) :
     v ≠ "in" ∧ v ≠ "out" ∧ v ≠ "in_newline" ∧ v ≠ "command" ∧ v ≠ "description" ∧ v ≠ "depfile" ∧
-      v ≠ "deps" := by
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;> (rintro rfl; revert h; decide)
+      v ≠ "deps" ∧ v ≠ "restat" := by
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;> (rintro rfl; revert h; decide)
 
 theorem lookup_emit (rules : List Rule) (r : GRule) (e : GEdge) (n : Nat) (v : String)
     (hrule : (edgeInfo rules [] (emitEdge e)).rule = emitRule r) (hvars : nodupB (e.vars.map (·.1)) = true)
@@ -339,9 +345,9 @@ theorem lookup_emit (rules : List Rule) (r : GRule) (e : GEdge) (n : Nat) (v : S
   rcases hv with rfl | rfl | hv
   · rw [EdgeInfo.lookup_in]; rfl
   · rw [EdgeInfo.lookup_out]; rfl
-  · obtain ⟨h1, h2, h3, h4, h5, h6, h7⟩ := not_reserved hv
+  · obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8⟩ := not_reserved hv
     have hown := own_get rules e v hvars
-    have hget := emitRule_get_none r v h4 h5 h6 h7
+    have hget := emitRule_get_none r v h4 h5 h6 h7 h8
     rw [EdgeInfo.lookup_other _ _ _ _ h1 h3 h2, hown, hrule, hget]
     simp only [GEdge.look, h1, h2, ite_false]
     cases e.vars.find? (·.1 == v) <;> cases n <;> simp [Scope.get]
@@ -434,6 +440,25 @@ theorem isDyn_emit (g : Graph) (hg : g.Valid) (e : GEdge) (he : e ∈ g.edges) :
     split <;> simp [Scope.get]
   · simp only [ite_true]
     rw [show evalWith _ [Seg.lit "gcc"] = "gcc" from rfl]
+    decide
+
+/-- Ninja re-reads output mtimes for exactly the edges whose rule has `restat`. -/
+theorem isRestat_emit (g : Graph) (hg : g.Valid) (e : GEdge) (he : e ∈ g.edges) :
+    (edgeInfo (emitRules g) [] (emitEdge e)).isRestat [] = g.isRestat e := by
+  have h7 := varsOK_of_mem hg he
+  have hvars : nodupB (e.vars.map (·.1)) = true := by
+    simp only [varsOK, Bool.and_eq_true] at h7; exact h7.1
+  obtain ⟨r, hfind, -, hrule⟩ := rule_emit g hg e he
+  simp only [EdgeInfo.isRestat, EdgeInfo.binding, Graph.isRestat, hfind]
+  rw [EdgeInfo.lookup_other _ _ _ _ (by decide) (by decide) (by decide)]
+  have hc : ((edgeInfo (emitRules g) [] (emitEdge e)).own.getD []).get "restat" = none := by
+    rw [own_get _ e _ hvars, vars_get_reserved h7 (by decide)]; rfl
+  simp only [hc, hrule, emitRule_get_restat]
+  cases r.restat
+  · simp only [Bool.false_eq_true, ite_false]
+    split <;> simp [Scope.get]
+  · simp only [ite_true]
+    rw [show evalWith _ [Seg.lit "1"] = "1" from rfl]
     decide
 
 /-! ## Meaning -/

@@ -33,6 +33,9 @@ structure GRule where
   /-- Emit `depfile = ${out}.d` and `deps = gcc`: the command writes a
   Makefile-style depfile listing what it read. -/
   depfile : Bool := false
+  /-- Emit `restat = 1`: the command may leave an output untouched when its
+  contents would not change, and Ninja then skips dependents on its account. -/
+  restat : Bool := false
   deriving DecidableEq, Repr, Inhabited
 
 structure GEdge where
@@ -121,6 +124,12 @@ structure Sem (V : Type) where
   exec : String → List V → List V
   /-- A depfile command: what it reads, and its outputs. -/
   dyn : String → Task Path V (List V)
+  /-- Stage 7: when a `restat` command would write `new` over `old`, it may
+  leave the file untouched when `keep old new` holds. -/
+  keep : V → V → Bool := fun _ _ => false
+  /-- The assumption behind early cutoff: a command leaves a file untouched
+  only when its new contents would be identical. -/
+  keep_eq : ∀ a b, keep a b = true → a = b := by intro a b h; simp at h
 
 /-- A command as a task returning all its outputs. A static command fetches
 its explicit and implicit inputs in order. -/
@@ -145,6 +154,12 @@ def Graph.isDyn (g : Graph) (e : GEdge) : Bool :=
   | some r => r.depfile
   | none => false
 
+/-- Whether an edge's rule has `restat`. -/
+def Graph.isRestat (g : Graph) (e : GEdge) : Bool :=
+  match g.ruleOf e with
+  | some r => r.restat
+  | none => false
+
 /-- Paths no edge produces. -/
 def Graph.isSource (g : Graph) (k : Path) : Bool := (findOut GEdge.allOuts k g.edges).isNone
 
@@ -166,9 +181,11 @@ def Graph.DynOK (sem : Sem V) (g : Graph) : Prop :=
 
 def depfileBindings : List Binding := [("depfile", [.var "out", .lit ".d"]), ("deps", [.lit "gcc"])]
 
+def restatBindings : List Binding := [("restat", [.lit "1"])]
+
 def emitRule (r : GRule) : Rule :=
   ⟨r.name, [("command", r.command)] ++ (if r.description.isEmpty then [] else [("description", r.description)]) ++
-    (if r.depfile then depfileBindings else [])⟩
+    (if r.depfile then depfileBindings else []) ++ (if r.restat then restatBindings else [])⟩
 
 def litVal (s : String) : EvalString := if s.toList.isEmpty then [] else [.lit s]
 

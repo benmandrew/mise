@@ -11,3 +11,5 @@ import Mise.Frontend.Dsl
 import Mise.Model.Basic
 import Mise.Model.Sound
 import Mise.Model.Dsl
+import Mise.Model.Minimal
+import Mise.Model.Parallel

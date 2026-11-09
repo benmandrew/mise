@@ -15,13 +15,15 @@ namespace Mise.Model
 open Mise Mise.Syntax Mise.Frontend
 
 /-- The model edge for a DSL edge. -/
-def gEdge (g : Graph) (e : GEdge) : MEdge := ⟨e.allOuts, e.inputs, e.orderOnly, g.cmd e, g.isDyn e⟩
+def gEdge (g : Graph) (e : GEdge) : MEdge :=
+  ⟨e.allOuts, e.inputs, e.orderOnly, g.cmd e, g.isDyn e, g.isRestat e⟩
 
 theorem medges_emit (g : Graph) (hg : g.Valid) : (emit g).medges = g.edges.map (gEdge g) := by
   unfold Manifest.medges
   rw [(elab_emit g).1, (elab_emit g).2, List.map_map]
   refine List.map_congr_left fun e he => ?_
-  simp only [Function.comp, toMEdge, gEdge, command_emit g hg e he, isDyn_emit g hg e he]
+  simp only [Function.comp, toMEdge, gEdge, command_emit g hg e he, isDyn_emit g hg e he,
+    isRestat_emit g hg e he]
   rfl
 
 theorem edgesOK_outs {names : List String} {srcs p : List Path} {es : List GEdge}
@@ -33,9 +35,9 @@ theorem edgesOK_outs {names : List String} {srcs p : List Path} {es : List GEdge
   have h1 : o ∉ p ++ List.flatMap GEdge.allOuts (List.take i es) := by simpa using h1
   exact ⟨fun hp => h1 (List.mem_append_left _ hp), by simpa using h2⟩
 
-theorem sched_of_edgesOK {names : List String} {srcs : List Path} (f : GEdge → String) (d : GEdge → Bool) :
+theorem sched_of_edgesOK {names : List String} {srcs : List Path} (f : GEdge → String) (d r : GEdge → Bool) :
     ∀ (p : List Path) (es : List GEdge), edgesOK names srcs p es = true →
-      Sched (es.map fun e => ⟨e.allOuts, e.inputs, e.orderOnly, f e, d e⟩)
+      Sched (es.map fun e => ⟨e.allOuts, e.inputs, e.orderOnly, f e, d e, r e⟩)
   | _, [], _ => trivial
   | p, e :: es, h => by
     have h' := h
@@ -46,7 +48,7 @@ theorem sched_of_edgesOK {names : List String} {srcs : List Path} (f : GEdge →
       simpa using this
     have hrest : ∀ {e'}, e' ∈ es → ∀ o ∈ e'.allOuts, o ∉ p ++ e.allOuts ∧ o ∉ srcs :=
       fun he' => edgesOK_outs h'.2 he'
-    refine ⟨?_, ?_, sched_of_edgesOK f d _ es h'.2⟩
+    refine ⟨?_, ?_, sched_of_edgesOK f d r _ es h'.2⟩
     · intro i hi hio
       obtain ⟨hp, hs⟩ := h5 i hio
       rcases hin i hi with h | h
@@ -64,10 +66,11 @@ theorem sched_of_edgesOK {names : List String} {srcs : List Path} (f : GEdge →
 /-- Emitted manifests are in schedule order. -/
 theorem sched_emit (g : Graph) (hg : g.Valid) : Sched (emit g).medges := by
   rw [medges_emit g hg]
-  exact sched_of_edgesOK g.cmd g.isDyn [] g.edges (Graph.check_parts hg).2.2.1
+  exact sched_of_edgesOK g.cmd g.isDyn g.isRestat [] g.edges (Graph.check_parts hg).2.2.1
 
 variable {V : Type} [Inhabited V] (sem : Sem V)
 
+omit [Inhabited V] in
 /-- The static-ancestor condition holds for the emitted manifest when it
 holds for the graph. -/
 theorem reads_emit (g : Graph) (hg : g.Valid) (hd : g.DynOK sem) : Reads sem (emit g).medges := by

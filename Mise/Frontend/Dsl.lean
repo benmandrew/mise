@@ -61,10 +61,11 @@ def parseValue (what s : String) : Build EvalString :=
   | none => throw s!"{what}: cannot parse {repr s} as a Ninja value"
 
 /-- Declare a rule. -/
-def rule (name command : String) (description : String := "") (depfile : Bool := false) : Build RuleRef := do
+def rule (name command : String) (description : String := "") (depfile : Bool := false)
+    (restat : Bool := false) : Build RuleRef := do
   let cmd ← parseValue s!"rule {name}: command" command
   let desc ← parseValue s!"rule {name}: description" description
-  let r : GRule := { name, command := cmd, description := desc, depfile }
+  let r : GRule := { name, command := cmd, description := desc, depfile, restat }
   let g ← get
   require r.ok s!"rule {name}: invalid name, empty command, or a reserved variable in the command"
   require (!g.ruleNames.contains name) s!"rule {name}: already declared"

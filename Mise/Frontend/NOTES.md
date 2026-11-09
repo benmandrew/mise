@@ -7,7 +7,7 @@
 - `Emit.lean` holds the proofs.
 - `Dsl.lean` is the user-facing builder: `source`, `rule`, `edge`, `edge1`, `defaults`, and `Build.graph`, which returns a `ValidGraph`.
 
-Commands are abstract and collected in `Sem V`. `sem.exec cmd vs` is the list of contents the static command `cmd` writes when its inputs hold `vs`, one entry per output. An output's task fetches the edge's explicit and implicit inputs in order, then takes its own entry of `sem.exec`. Stage 6 adds `sem.dyn` for depfile commands (see `Mise/Model/NOTES.md`). A missing entry reads as `default`, which is why `V` needs `Inhabited`.
+Commands are abstract and collected in `Sem V`. `sem.exec cmd vs` is the list of contents the static command `cmd` writes when its inputs hold `vs`, one entry per output. An output's task fetches the edge's explicit and implicit inputs in order, then takes its own entry of `sem.exec`. Stage 6 adds `sem.dyn` for depfile commands, and Stage 7 adds `sem.keep` for `restat` commands (see `Mise/Model/NOTES.md`). A missing entry reads as `default`, which is why `V` needs `Inhabited`.
 
 ## Ninja's evaluation rules
 
@@ -41,6 +41,7 @@ Ninja reports a cycle among rule variables as an error. The model cuts the recur
 
 - `emit_wellFormed`: `(emit g).WellFormed` for every valid `g`. With Stage 3's `parse_print`, the printed manifest parses back to `emit g`.
 - `denote_emit` (headline): `denote sem (emit g) = g.spec sem` for every valid `g` and every `sem`. The core step is `command_emit`: Ninja's evaluation of each emitted edge's command equals the DSL's command `g.cmd e`.
+- `isDyn_emit` and `isRestat_emit`: the evaluated `deps` and `restat` bindings of an emitted edge agree with its rule's `depfile` and `restat` flags. `rule` takes both flags, and `emitRule` emits `depfile = ${out}.d` and `deps = gcc` for the first and `restat = 1` for the second.
 - `emitAcyclic`: an `Acyclic` structure for `denote sem (emit g)`, given `Graph.DynOK` for depfile commands. An output's rank is its edge's position plus one, and a source's rank is 0. `emit_acyclic` states that one exists.
 
 ## Deviations from the plan

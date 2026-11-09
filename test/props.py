@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
-"""Stage 6 property harness against real Ninja.
+"""Stage 6 and 7 property harness against real Ninja.
 
 For each example, run random sequences of edits. A sequence starts with a
-clean build, then applies edits one at a time, running `ninja` after each.
+clean build, then applies edits one at a time, running `ninja` after each
+with a random `-j` level, so that Ninja runs independent commands in
+different orders.
 After every build it checks three things:
 
 1. every build product equals, byte for byte, the product of a clean build
@@ -11,7 +13,10 @@ After every build it checks three things:
 3. `ninja -t missingdeps` finds nothing.
 
 Edits change a source file, add or remove an `#include`, change the
-generator script, or change `cflags` in the DSL and regenerate the manifest.
+generator script, add a comment to `config.in` (which leaves the generated
+header the same, so the `restat` generator keeps it), or change `cflags` in
+the DSL and regenerate the manifest. After a comment edit the harness also
+checks that only the generator ran (early cutoff).
 
 usage: props.py [--sequences N] [--seed S] [EXAMPLE...]
 """
@@ -27,6 +32,7 @@ ROOT = Path(__file__).resolve().parent.parent
 GEN = ROOT / ".lake" / "build" / "bin" / "gen"
 OUT = ROOT / "test" / "out" / "props"
 FLAGS = ["-O2 -Wall", "-O0", "-O1 -DMISE_FLAG=1"]
+JOBS = ["-j1", "-j2", "-j8"]
 
 
 class HelloC:
@@ -55,7 +61,7 @@ class GenHeader:
     generator = (ROOT / "examples" / "gen-header" / "gen-config.py").read_text()
 
     def initial(self):
-        return {"main": 0, "util": 0, "utilh": 0, "extra": 0, "cfg": 0, "gen": 0,
+        return {"main": 0, "util": 0, "utilh": 0, "extra": 0, "cfg": 0, "gen": 0, "note": 0,
                 "main_extra": False, "util_extra": False, "flag": 0}
 
     @staticmethod
@@ -75,12 +81,12 @@ class GenHeader:
                                   f'GREETING, who, {s["util"]}, EXTRA); }}'),
             "util.h": f"#pragma once\nvoid greet(const char *who, int times);\n/* {s['utilh']} */\n",
             "extra.h": f"#pragma once\n#define EXTRA {s['extra']}\n",
-            "config.in": f'GREETING="Hello {s["cfg"]}"\nTIMES={1 + s["cfg"] % 3}\n',
+            "config.in": f'# note {s["note"]}\nGREETING="Hello {s["cfg"]}"\nTIMES={1 + s["cfg"] % 3}\n',
             "gen-config.py": self.generator + f"# version {s['gen']}\n",
         }
 
     def edits(self):
-        return [("bump", k) for k in ["main", "util", "utilh", "extra", "cfg", "gen"]] + \
+        return [("bump", k) for k in ["main", "util", "utilh", "extra", "cfg", "gen", "note"]] + \
                [("toggle", "main_extra"), ("toggle", "util_extra"), ("flag",)]
 
 
@@ -149,7 +155,7 @@ def sequence(ex, checker, rng, idx):
     files = ex.render(state)
     write_files(d, files)
     gen(d, state["flag"])
-    run(["ninja"], d)
+    run(["ninja", rng.choice(JOBS)], d)
     history = ["clean build"]
     checker.check(d, files, f"sequence {idx}, after {history}")
     for _ in range(rng.randint(1, 6)):
@@ -165,8 +171,13 @@ def sequence(ex, checker, rng, idx):
         write_files(d, new_files, files)
         if new["flag"] != state["flag"]:
             gen(d, new["flag"])
-        run(["ninja"], d)
+        before = {n: (d / n).stat().st_mtime_ns for n in ex.products}
+        out = run(["ninja", rng.choice(JOBS)], d)
         history.append(" ".join(map(str, edit)))
+        if edit == ("bump", "note"):
+            after = {n: (d / n).stat().st_mtime_ns for n in ex.products}
+            if after != before or out.count("GEN ") != 1 or "CC " in out or "LINK " in out:
+                raise AssertionError(f"sequence {idx}, after {history}: no early cutoff:\n{out}")
         state, files = new, new_files
         checker.check(d, files, f"sequence {idx}, after {history}")
     return len(history) - 1

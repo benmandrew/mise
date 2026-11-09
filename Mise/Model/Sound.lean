@@ -59,7 +59,7 @@ theorem mtime_le_clock {st : St V} (hf : st.Fresh) (p : Path) : st.mtime p ≤ s
   unfold mtime
   cases h : st.fs p with
   | none => exact Nat.zero_le _
-  | some vt => exact hf p vt.1 vt.2 h
+  | some vt => exact hf.1 p vt.1 vt.2 h
 
 /-- Two states agree on some paths: contents, log and deps entries. -/
 def Agree (st st' : St V) (ps : List Path) : Prop :=
@@ -67,18 +67,26 @@ def Agree (st st' : St V) (ps : List Path) : Prop :=
 
 theorem outDirty_false_iff {st : St V} {e : MEdge} {o : Path} :
     st.outDirty e o = false ↔ ∃ v t lt D, st.fs o = some (v, t) ∧ st.log o = some (e.cmd, lt) ∧
-      st.effIns e o = some D ∧ st.newest D ≤ t ∧ st.newest D ≤ lt := by
+      st.effIns e o = some D ∧ (e.restat = false → st.newest D ≤ t) ∧ st.newest D ≤ lt := by
   unfold outDirty
   split
   · rename_i v t c lt D hfs hlog heff
-    simp only [Bool.or_eq_false_iff, decide_eq_false_iff_not, Nat.not_lt, bne_eq_false_iff_eq]
+    simp only [Bool.or_eq_false_iff, decide_eq_false_iff_not, Nat.not_lt, bne_eq_false_iff_eq,
+      Bool.and_eq_false_iff, Bool.not_eq_false']
     constructor
-    · rintro ⟨⟨h1, h2⟩, h3⟩; exact ⟨v, t, lt, D, hfs, by rw [hlog, h2], heff, h1, h3⟩
+    · rintro ⟨⟨h1, h2⟩, h3⟩
+      refine ⟨v, t, lt, D, hfs, by rw [hlog, h2], heff, fun hr => ?_, h3⟩
+      rcases h1 with h1 | h1
+      · rw [hr] at h1; cases h1
+      · exact h1
     · rintro ⟨v', t', lt', D', h1, h2, h3, h4, h5⟩
       rw [hfs] at h1; rw [hlog] at h2; rw [heff] at h3
       simp only [Option.some.injEq, Prod.mk.injEq] at h1 h2 h3
       obtain ⟨-, rfl⟩ := h1; obtain ⟨rfl, rfl⟩ := h2; subst h3
-      exact ⟨⟨h4, rfl⟩, h5⟩
+      refine ⟨⟨?_, rfl⟩, h5⟩
+      cases hr : e.restat
+      · exact .inr (h4 hr)
+      · exact .inl rfl
   · rename_i hne
     simp only [Bool.true_eq_false, false_iff, not_exists, not_and]
     intro v t lt D h1 h2 h3 _ _
@@ -139,14 +147,14 @@ theorem consistent_transfer {st st' : St V} {e : MEdge}
 theorem dirty_false {st : St V} {e : MEdge} (h : st.dirty e = false) {o : Path} (ho : o ∈ e.outs) :
     st.outDirty e o = false := clean_iff.mp h o ho
 
-/-- An input newer than an output makes the output dirty. -/
+/-- An input newer than an output's log entry makes the output dirty. -/
 theorem outDirty_of_newer {st : St V} {e : MEdge} {i o : Path} {D : List Path} (hD : st.effIns e o = some D)
-    (hi : i ∈ D) (h : st.mtime o < st.mtime i) : st.outDirty e o = true := by
+    (hi : i ∈ D) (h : ∀ c lt, st.log o = some (c, lt) → lt < st.mtime i) : st.outDirty e o = true := by
   cases hc : st.outDirty e o
-  · obtain ⟨v, t, lt, D', hfs, -, hD', hle, -⟩ := outDirty_false_iff.mp hc
+  · obtain ⟨v, t, lt, D', -, hlog, hD', -, hle⟩ := outDirty_false_iff.mp hc
     rw [hD] at hD'; cases hD'
     have h1 := st.le_newest hi
-    have h2 : st.mtime o = t := by simp [mtime, hfs]
+    have h2 := h _ _ hlog
     omega
   · rfl
 
@@ -170,41 +178,60 @@ theorem log_of_clean {st : St V} {e : MEdge} {o : Path} (h : st.outDirty e o = f
 invariant: either a clean output depends on a written file, which is then
 newer and makes it dirty, or the edge sees no change. -/
 theorem edgeOK_of_write {st st' : St V} {W : List Path} {e : MEdge} (hf : st.Fresh)
-    (hag : ∀ p, p ∉ W → st'.fs p = st.fs p ∧ st'.log p = st.log p ∧ st'.deps p = st.deps p)
+    (hfs : ∀ p, p ∉ W → st'.fs p = st.fs p)
+    (hout : ∀ o ∈ e.outs, st'.log o = st.log o ∧ st'.deps o = st.deps o)
     (hnew : ∀ p ∈ W, st.clock < st'.mtime p) (hdis : Disjoint e.outs W) (hok : st.EdgeOK sem e) :
     st'.EdgeOK sem e := by
   intro hclean
   have hav : ∀ o ∈ e.outs, ∀ D, st'.effIns e o = some D → ∀ p ∈ D, p ∉ W := by
     intro o ho D hD p hp hpW
-    obtain ⟨v, t, lt, D', hfs, -, hD', hle, -⟩ := outDirty_false_iff.mp (clean_iff.mp hclean o ho)
+    obtain ⟨v, t, lt, D', -, hlog, hD', -, hle⟩ := outDirty_false_iff.mp (clean_iff.mp hclean o ho)
     rw [hD] at hD'; cases hD'
     have h1 : st'.mtime p ≤ st'.newest D := st'.le_newest hp
-    have h2 : st'.mtime o = t := by simp [mtime, hfs]
-    have h3 : st'.mtime o = st.mtime o := by simp [mtime, (hag o (hdis o ho)).1]
-    have h4 := mtime_le_clock hf o
+    rw [(hout o ho).1] at hlog
+    have h4 := hf.2 o _ _ hlog
     have h5 := hnew p hpW
     omega
-  have hout : Agree st' st e.outs := fun o ho => hag o (hdis o ho)
+  have hag : Agree st' st e.outs := fun o ho => ⟨hfs o (hdis o ho), hout o ho⟩
   have hD : ∀ o ∈ e.outs, ∀ D, st'.effIns e o = some D → ∀ p ∈ D, st'.fs p = st.fs p :=
-    fun o ho D hD p hp => (hag p (hav o ho D hD p hp)).1
-  have hclean0 : st.dirty e = false := by rw [← dirty_congr hout hD]; exact hclean
-  refine consistent_transfer sem (fun o ho => ⟨(hag o (hdis o ho)).1.symm, (hag o (hdis o ho)).2.2.symm⟩)
+    fun o ho D hD p hp => hfs p (hav o ho D hD p hp)
+  have hclean0 : st.dirty e = false := by rw [← dirty_congr hag hD]; exact hclean
+  refine consistent_transfer sem (fun o ho => ⟨(hfs o (hdis o ho)).symm, (hout o ho).2.symm⟩)
     (fun o ho => ?_) (hok hclean0)
   obtain ⟨v, t, lt, D, -, -, hD', -, -⟩ := outDirty_false_iff.mp (clean_iff.mp hclean o ho)
-  have he : st.effIns e o = st'.effIns e o := by simp only [effIns, (hag o (hdis o ho)).2.2]
-  exact ⟨D, by rw [he]; exact hD', fun p hp => (hag p (hav o ho D hD' p hp)).1.symm⟩
+  have he : st.effIns e o = st'.effIns e o := by simp only [effIns, (hout o ho).2]
+  exact ⟨D, by rw [he]; exact hD', fun p hp => (hfs p (hav o ho D hD' p hp)).symm⟩
 
 theorem run_other {st : St V} {e : MEdge} {p : Path} (hp : p ∉ e.outs) :
     (st.run sem e).fs p = st.fs p ∧ (st.run sem e).log p = st.log p ∧ (st.run sem e).deps p = st.deps p := by
   simp [run, hp]
 
 theorem fresh_run {st : St V} (hf : st.Fresh) (e : MEdge) : (st.run sem e).Fresh := by
-  intro p v t h
-  show t ≤ st.clock + 1
-  simp only [run] at h
-  split at h
-  · simp only [Option.some.injEq, Prod.mk.injEq] at h; obtain ⟨-, rfl⟩ := h; exact Nat.le_refl _
-  · exact Nat.le_succ_of_le (hf p v t h)
+  constructor
+  · intro p v t h
+    show t ≤ st.clock + 1
+    simp only [run] at h
+    split at h
+    · simp only [Option.some.injEq, Prod.mk.injEq] at h; obtain ⟨-, rfl⟩ := h; exact Nat.le_refl _
+    · exact Nat.le_succ_of_le (hf.1 p v t h)
+  · intro p c t h
+    show t ≤ st.clock + 1
+    simp only [run] at h
+    split at h
+    · simp only [Option.some.injEq, Prod.mk.injEq] at h; obtain ⟨-, rfl⟩ := h; exact Nat.le_refl _
+    · exact Nat.le_succ_of_le (hf.2 p c t h)
+
+/-- A kept output already holds the contents the run would write. -/
+theorem kept_fs {st : St V} {e : MEdge} {o : Path} (h : st.kept sem e o = true) :
+    e.restat = true ∧ ∃ t, st.fs o = some (st.outVal sem e o, t) := by
+  unfold kept at h
+  simp only [Bool.and_eq_true] at h
+  refine ⟨h.1, ?_⟩
+  have h2 := h.2
+  split at h2
+  · rename_i old t hfs
+    exact ⟨t, by rw [hfs, sem.keep_eq _ _ h2]⟩
+  · cases h2
 
 /-- The paths Ninja checks for an output right after its edge ran. -/
 def ranIns (st : St V) (e : MEdge) : List Path :=
@@ -233,15 +260,26 @@ theorem run_self {st : St V} {e : MEdge} (hf : st.Fresh) (hd : Disjoint e.ins e.
       · exact hagD p h
   have hle : (st.run sem e).newest (st.ranIns sem e) ≤ st.clock + 1 := by
     rw [newest_congr hDsub]; exact Nat.le_succ_of_le (st.newest_le fun p _ => mtime_le_clock hf p)
+  -- Every output holds the new contents, written now or kept.
+  have hout : ∀ o ∈ e.outs, ∃ t, (st.run sem e).fs o = some (st.outVal sem e o, t) ∧
+      (e.restat = false → t = st.clock + 1) := by
+    intro o ho
+    cases hk : st.kept sem e o
+    · exact ⟨st.clock + 1, by simp [run, ho, hk], fun _ => rfl⟩
+    · obtain ⟨hr, t, ht⟩ := kept_fs sem hk
+      exact ⟨t, by simp [run, ho, hk, ht], fun h => by rw [hr] at h; cases h⟩
   constructor
   · rw [clean_iff]
     intro o ho
     rw [outDirty_false_iff]
-    exact ⟨((e.task sem).run st.content).getD (e.outs.idxOf o) default, st.clock + 1, st.clock + 1,
-      st.ranIns sem e, by simp [run, ho], by simp [run, ho], heff o ho, hle, hle⟩
+    obtain ⟨t, hfs, ht⟩ := hout o ho
+    exact ⟨st.outVal sem e o, t, st.clock + 1, st.ranIns sem e, hfs, by simp [run, ho], heff o ho,
+      fun hr => by rw [ht hr]; exact hle, hle⟩
   · intro o ho
     refine ⟨?_, fun D hD k hk => ?_⟩
-    · rw [← hrun.1]; simp [content, run, ho]
+    · rw [← hrun.1]
+      obtain ⟨t, hfs, -⟩ := hout o ho
+      simp [content, hfs, outVal]
     · rw [heff o ho] at hD; cases hD
       rw [← hrun.2] at hk
       unfold ranIns
@@ -250,9 +288,20 @@ theorem run_self {st : St V} {e : MEdge} (hf : st.Fresh) (hd : Disjoint e.ins e.
       · simp only [ite_true]; exact List.mem_append_right _ hk
 
 theorem edgeOK_run_other {st : St V} {e e' : MEdge} (hf : st.Fresh) (hdis : Disjoint e'.outs e.outs)
-    (hok : st.EdgeOK sem e') : (st.run sem e).EdgeOK sem e' :=
-  edgeOK_of_write sem hf (fun p hp => run_other sem hp)
-    (fun p hp => by simp [mtime, run, hp]) hdis hok
+    (hok : st.EdgeOK sem e') : (st.run sem e).EdgeOK sem e' := by
+  refine edgeOK_of_write sem (W := e.outs.filter fun o => !st.kept sem e o) hf (fun p hp => ?_)
+    (fun o ho => ⟨(run_other sem (hdis o ho)).2.1, (run_other sem (hdis o ho)).2.2⟩) (fun p hp => ?_)
+    (fun o ho hoW => hdis o ho (List.mem_filter.mp hoW).1) hok
+  · by_cases hpo : p ∈ e.outs
+    · have : st.kept sem e p = true := by
+        cases hk : st.kept sem e p
+        · exact absurd (List.mem_filter.mpr ⟨hpo, by simp [hk]⟩) hp
+        · rfl
+      simp [run, hpo, this]
+    · exact (run_other sem hpo).1
+  · obtain ⟨hpo, hk⟩ := List.mem_filter.mp hp
+    simp only [Bool.not_eq_true'] at hk
+    simp [mtime, run, hpo, hk]
 
 theorem fresh_step {st : St V} (hf : st.Fresh) (e : MEdge) : (st.step sem e).Fresh := by
   unfold step; split
@@ -266,12 +315,15 @@ theorem step_other {st : St V} {e : MEdge} {p : Path} (hp : p ∉ e.outs) :
   · exact ⟨rfl, rfl, rfl⟩
 
 theorem fresh_edit {st : St V} (hf : st.Fresh) (p : Path) (v : V) : (st.edit p v).Fresh := by
-  intro q w t h
-  show t ≤ st.clock + 1
-  simp only [edit] at h
-  split at h
-  · simp only [Option.some.injEq, Prod.mk.injEq] at h; obtain ⟨-, rfl⟩ := h; exact Nat.le_refl _
-  · exact Nat.le_succ_of_le (hf q w t h)
+  constructor
+  · intro q w t h
+    show t ≤ st.clock + 1
+    simp only [edit] at h
+    split at h
+    · simp only [Option.some.injEq, Prod.mk.injEq] at h; obtain ⟨-, rfl⟩ := h; exact Nat.le_refl _
+    · exact Nat.le_succ_of_le (hf.1 q w t h)
+  · intro q c t h
+    exact Nat.le_succ_of_le (hf.2 q c t h)
 
 end St
 
@@ -397,7 +449,8 @@ theorem inv_step {es : List MEdge} {e : MEdge} {st : St V} (hs : Sched es) (hr :
 theorem inv_edit {es : List MEdge} {st : St V} {p : Path} (v : V) (hp : ∀ e ∈ es, p ∉ e.outs)
     (h : Inv sem es st) : Inv sem es (st.edit p v) := by
   refine ⟨St.fresh_edit h.1 p v, h.2.1, fun e he => ?_⟩
-  refine St.edgeOK_of_write sem (W := [p]) h.1 (fun q hq => ?_) (fun q hq => ?_) ?_ (h.2.2 e he)
+  refine St.edgeOK_of_write sem (W := [p]) h.1 (fun q hq => ?_) (fun o _ => ⟨rfl, rfl⟩) (fun q hq => ?_) ?_
+    (h.2.2 e he)
   · simp only [List.mem_singleton] at hq; simp [St.edit, hq]
   · simp only [List.mem_singleton] at hq; subst hq; simp [St.mtime, St.edit]
   · intro o ho hop; simp only [List.mem_singleton] at hop; subst hop; exact hp e he ho
@@ -712,11 +765,12 @@ theorem reach_sound {m : Manifest} (hs : Sched m.medges) (hr : Reads sem m.medge
 inductive SameShape : List MEdge → List MEdge → Prop
   | nil : SameShape [] []
   | cons {e e' : MEdge} {es es' : List MEdge} :
-      e.outs = e'.outs ∧ e.ins = e'.ins ∧ e.oo = e'.oo ∧ e.dyn = e'.dyn → SameShape es es' →
+      e.outs = e'.outs ∧ e.ins = e'.ins ∧ e.oo = e'.oo ∧ e.dyn = e'.dyn ∧ e.restat = e'.restat →
+        SameShape es es' →
       SameShape (e :: es) (e' :: es')
 
 theorem SameShape.mem {es es' : List MEdge} (h : SameShape es es') {e' : MEdge} (he' : e' ∈ es') :
-    ∃ e ∈ es, e.outs = e'.outs ∧ e.ins = e'.ins ∧ e.oo = e'.oo ∧ e.dyn = e'.dyn := by
+    ∃ e ∈ es, e.outs = e'.outs ∧ e.ins = e'.ins ∧ e.oo = e'.oo ∧ e.dyn = e'.dyn ∧ e.restat = e'.restat := by
   induction h with
   | nil => simp at he'
   | cons hab _ ih =>
@@ -729,10 +783,10 @@ theorem SameShape.sched {es es' : List MEdge} (h : SameShape es es') (hs : Sched
   induction h with
   | nil => trivial
   | cons hab hrest ih =>
-    obtain ⟨ho, hi, hoo, -⟩ := hab
+    obtain ⟨ho, hi, hoo, -, -⟩ := hab
     refine ⟨?_, fun e' he' => ?_, ih hs.tail⟩
     · unfold MEdge.reads; rw [← ho, ← hi, ← hoo]; exact hs.1
-    · obtain ⟨e, he, ho', -, -, -⟩ := hrest.mem he'
+    · obtain ⟨e, he, ho', -, -, -, -⟩ := hrest.mem he'
       unfold MEdge.reads; rw [← ho, ← hi, ← hoo, ← ho']; exact hs.2.1 e he
 
 theorem allowed_shape {es es' : List MEdge} (h : SameShape es es') {e e' : MEdge} (hi : e.ins = e'.ins)
@@ -761,10 +815,10 @@ theorem command_change_rebuilds {m m' : Manifest} (hs : Sched m.medges) (hr' : R
     rw [← hlog.1]; exact hcmd
   have hdo : DepsOK m'.medges st := by
     intro e' he' hdy o ho D hD k hk
-    obtain ⟨e, he, hout, hin, hoo, hdyn⟩ := hshape.mem he'
+    obtain ⟨e, he, hout, hin, hoo, hdyn, hrst⟩ := hshape.mem he'
     exact allowed_shape hshape hin hoo (h.2.1 e he (hdyn ▸ hdy) o (hout ▸ ho) D hD k hk)
   refine ⟨sound_of_inv sem hs' hr' ⟨h.1, hdo, fun e' he' => ?_⟩, ?_⟩
-  · obtain ⟨e, he, hout, hin, hoo, hdyn⟩ := hshape.mem he'
+  · obtain ⟨e, he, hout, hin, hoo, hdyn, hrst⟩ := hshape.mem he'
     by_cases hcmd : e.cmd = e'.cmd
     · have : e = e' := by cases e; cases e'; simp_all
       subst this; exact h.2.2 e he

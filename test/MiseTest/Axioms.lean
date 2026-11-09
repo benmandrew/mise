@@ -43,3 +43,16 @@ fails if any theorem depends on an axiom outside the standard three. -/
 #print axioms Mise.Model.reads_emit
 #print axioms Mise.Frontend.isDyn_emit
 #print axioms Mise.Frontend.Graph.acyclic
+
+-- Stage 7
+#print axioms Mise.Model.trace_nodup
+#print axioms Mise.Model.St.outDirty_cause
+#print axioms Mise.Model.run_cause
+#print axioms Mise.Model.build_minimal
+#print axioms Mise.Model.build_minimal_clean
+#print axioms Mise.Model.restat_cutoff
+#print axioms Mise.Model.schedAcyclic
+#print axioms Mise.Model.parallel_equiv
+#print axioms Mise.Model.parallel_equiv_reach
+#print axioms Mise.Model.dsl_parallel
+#print axioms Mise.Frontend.isRestat_emit

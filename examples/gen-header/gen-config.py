@@ -10,5 +10,12 @@ with open(src) as f:
         if line and not line.startswith("#"):
             key, _, value = line.partition("=")
             lines.append("#define %s %s" % (key.strip(), value.strip()))
+text = "\n".join(lines) + "\n"
+try:
+    with open(out) as f:
+        if f.read() == text:
+            sys.exit(0)  # leave the header untouched; the rule has restat
+except FileNotFoundError:
+    pass
 with open(out, "w") as f:
-    f.write("\n".join(lines) + "\n")
+    f.write(text)

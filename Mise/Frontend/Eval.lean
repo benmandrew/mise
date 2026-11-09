@@ -81,6 +81,10 @@ def EdgeInfo.command (file : Scope) (c : EdgeInfo) : String := c.binding file "c
 (`deps = gcc`): Ninja checks only that the binding is nonempty. -/
 def EdgeInfo.isDyn (file : Scope) (c : EdgeInfo) : Bool := c.binding file "deps" != ""
 
+/-- Whether Ninja re-reads the outputs' mtimes after the command
+(`restat`): Ninja checks only that the binding is nonempty. -/
+def EdgeInfo.isRestat (file : Scope) (c : EdgeInfo) : Bool := c.binding file "restat" != ""
+
 /-- The state of Ninja's parser after reading a prefix of the manifest. -/
 structure Elab where
   file : Scope := []
