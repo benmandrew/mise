@@ -7,6 +7,7 @@ A Lean 4 front end for Ninja. Users describe a build in Lean, `mise` emits `buil
 - Lean `v4.35.0`, no Mathlib, no Batteries so far. Ask before adding Mathlib.
 - Library `Mise`, one directory per stage: `Mise/Task` (1), `Mise/Spec` (2), `Mise/Syntax` (3), `Mise/Frontend` (4), `Mise/Model` (5–7). Each has a `NOTES.md` with definitions, deviations and assumptions.
 - No `axiom` declarations. Assumptions are structure fields or theorem hypotheses.
+- `README.md` stays minimal: a summary, the quick start and links. User documentation lives in `docs/` (usage, theorems, trust base, testing).
 - `scripts/check.sh` is the acceptance gate: build, no `sorry`/`admit`, and `#print axioms` over `test/MiseTest/Axioms.lean` showing only `propext`, `Classical.choice`, `Quot.sound`. Add every headline theorem to that file.
 - Lean tests live in `test/MiseTest/` (library `MiseTest`); shell tests against real Ninja live in `test/` and write to `test/out/` (gitignored).
 - Proof style: generated equation lemmas for functions with nested `match` are awkward; state small unfolding lemmas via `rw [f.eq_def]; simp` (see `Mise/Syntax/RoundTrip.lean`).
