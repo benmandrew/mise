@@ -5,4 +5,5 @@ import MiseTest.Stage4
 import MiseTest.Stage5
 import MiseTest.Stage6
 import MiseTest.Stage7
+import MiseTest.Toml
 import MiseTest.Axioms

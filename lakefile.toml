@@ -10,10 +10,6 @@ name = "gen"
 root = "Main"
 
 [[lean_lib]]
-name = "HelloC"
-srcDir = "examples/hello-c"
-
-[[lean_lib]]
 name = "MiseTest"
 srcDir = "test"
 
@@ -21,7 +17,3 @@ srcDir = "test"
 name = "difftest"
 srcDir = "test"
 root = "MiseTest.DiffTest"
-
-[[lean_lib]]
-name = "GenHeader"
-srcDir = "examples/gen-header"

@@ -1,6 +1,6 @@
 # Trust base
 
-The proofs cover everything from the DSL to the abstract Ninja model, including that the printer emits text the parser model reads back to the emitted syntax tree. Reading `mise.toml` is outside the proofs, but its result must pass the same validity check as a Lean description, so a decoding mistake gives a wrong build, never an unsound one. The following are assumed, and the tests in [testing.md](testing.md) check most of them.
+The proofs cover everything from the DSL to the abstract Ninja model, including that the printer emits text the parser model reads back to the emitted syntax tree. Reading `mise.toml` is outside the proofs, but its result must pass the same validity check as a description written with the Lean DSL, so a decoding mistake gives a wrong build, never an unsound one. The following are assumed, and the tests in [testing.md](testing.md) check most of them.
 
 1. Real Ninja implements the model and the parser model for the supported subset.
 2. Commands are deterministic and read only declared or discovered inputs. For depfile commands this is the hypothesis `Graph.DynOK`; `ninja -t missingdeps` checks it.

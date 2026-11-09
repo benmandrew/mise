@@ -1,5 +1,5 @@
 import Mise.Model.Dsl
-import HelloC
+import MiseTest.Fixtures
 
 /-! Stage 5: hello-c in the Ninja model, with a symbolic `exec` that records
 which command ran on which inputs. -/
@@ -11,7 +11,7 @@ def exec (cmd : String) (vs : List String) : List String := [cmd ++ "(" ++ ",".i
 
 def sem : Sem String := { exec, dyn := fun _ => .pure [] }
 
-def vg : ValidGraph := match (HelloC.build []).graph with
+def vg : ValidGraph := match (Fixtures.helloC []).graph with
   | .ok g => g
   | .error _ => ⟨{}, by decide⟩
 

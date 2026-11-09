@@ -1,12 +1,12 @@
 import Mise.Frontend.Dsl
-import HelloC
+import MiseTest.Fixtures
 
 /-! Stage 4: the DSL on hello-c and on graphs the builder must reject. -/
 
 namespace MiseTest.Stage4
 open Mise.Frontend Mise.Syntax
 
-def hello : Graph := match (HelloC.build []).graph with
+def hello : Graph := match (Fixtures.helloC []).graph with
   | .ok g => g.1
   | .error _ => {}
 

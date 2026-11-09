@@ -1,5 +1,5 @@
 import Mise.Model.Dsl
-import GenHeader
+import MiseTest.Fixtures
 
 /-! Stage 6: gen-header in the Ninja model. A source's contents are words;
 a word `+h` means the file includes `h`. A compile reads its `.c` file, then
@@ -26,7 +26,7 @@ def compile (cmd : String) : Task Path String (List String) :=
 
 def sem : Sem String := { exec, dyn := compile }
 
-def vg : ValidGraph := match (GenHeader.build []).graph with
+def vg : ValidGraph := match (Fixtures.genHeader []).graph with
   | .ok g => g
   | .error _ => ⟨{}, by decide⟩
 

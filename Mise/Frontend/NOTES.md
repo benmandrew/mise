@@ -5,7 +5,7 @@
 - `Eval.lean` models Ninja's variable evaluation (`manifest_parser.cc`, `eval_env.cc`, `EdgeEnv` in `graph.cc`). `Manifest.elab` reads a manifest into `EdgeInfo` records; `EdgeInfo.command` is the evaluated command.
 - `Graph.lean` defines `GRule`, `GEdge`, `Graph`, `Graph.Valid`, `Graph.spec sem` (the DSL's meaning), `emit`, and `denote sem` (a manifest's meaning through `Manifest.elab`).
 - `Emit.lean` holds the proofs; `Dsl.lean` is the builder (`source`, `rule`, `edge`, `edge1`, `defaults`, and `Build.graph`, which returns a `ValidGraph`).
-- `Toml.lean` reads a `mise.toml` with Lake's TOML parser and calls the same builder functions, so it adds no checks and no proofs. `test/MiseTest/Toml.lean` compares each example's TOML and Lean forms.
+- `Toml.lean` reads a `mise.toml` with Lake's TOML parser and calls the same builder functions, so it adds no checks and no proofs. `test/MiseTest/Toml.lean` checks its error cases; the shell tests run the examples' `mise.toml` files through `gen`.
 
 Commands are abstract, collected in `Sem V`: `sem.exec cmd vs` gives one content per output, from the explicit and implicit inputs in order. Stages 6 and 7 add `sem.dyn` and `sem.keep`. A missing entry reads as `default`, so `V` needs `Inhabited`.
 
