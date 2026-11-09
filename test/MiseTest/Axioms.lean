@@ -24,3 +24,14 @@ fails if any theorem depends on an axiom outside the standard three. -/
 #print axioms Mise.Frontend.denote_emit
 #print axioms Mise.Frontend.emitAcyclic
 #print axioms Mise.Frontend.emit_acyclic
+
+-- Stage 5
+#print axioms Mise.Model.ninjaBuild_clean_correct
+#print axioms Mise.Model.ninjaBuild_sound
+#print axioms Mise.Model.ninjaBuild_eq_cleanBuild
+#print axioms Mise.Model.ninjaBuild_idem
+#print axioms Mise.Model.ninjaBuild_after_interrupt
+#print axioms Mise.Model.command_change_rebuilds
+#print axioms Mise.Model.sched_emit
+#print axioms Mise.Model.dsl_sound
+#print axioms Mise.Model.dsl_clean

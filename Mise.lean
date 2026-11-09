@@ -8,3 +8,6 @@ import Mise.Frontend.Eval
 import Mise.Frontend.Graph
 import Mise.Frontend.Emit
 import Mise.Frontend.Dsl
+import Mise.Model.Basic
+import Mise.Model.Sound
+import Mise.Model.Dsl
