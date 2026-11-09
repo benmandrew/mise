@@ -3,5 +3,5 @@
 # Ninja (see test/props.py). Arguments pass through, e.g. --sequences 20.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-lake build gen >/dev/null
+lake build mise >/dev/null
 python3 test/props.py "$@"

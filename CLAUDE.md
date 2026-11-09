@@ -23,7 +23,7 @@ Adding Mathlib, weakening a headline theorem, adding an `Env` assumption the pla
 - Stage 1: done.
 - Stage 2: done. `Acyclic` is data, not a Prop (see `Mise/Spec/NOTES.md`).
 - Stage 3: done. `test/stage3-diff.sh` is the differential test against real Ninja (now also checks evaluated commands).
-- Stage 4: done. `Mise/Frontend/Eval.lean` models Ninja variable evaluation; `test/stage4-hello.sh` builds `examples/hello-c`. Examples are `mise.toml` files read by `gen`; the shell tests cover TOML → `gen` → Ninja. The Lean model tests use their own DSL graphs in `test/MiseTest/Fixtures.lean`.
+- Stage 4: done. `Mise/Frontend/Eval.lean` models Ninja variable evaluation; `test/stage4-hello.sh` builds `examples/hello-c`. Examples are `mise.toml` files read by the `mise` executable (`mise gen`, `mise build`); the shell tests cover TOML → `mise` → Ninja. The Lean model tests use their own DSL graphs in `test/MiseTest/Fixtures.lean`.
 - Stage 5: done. Proofs go through the invariant `Inv` in `Mise/Model/Sound.lean`; `dsl_sound` is the end-to-end theorem.
 - Stage 6: done. Depfile rules, a deps log in the model, `reach_sound` for any history from empty logs. `test/stage6-props.sh` is the 200-sequence harness against real Ninja (about 5 minutes).
 - Stage 7: done. `restat` with `Sem.keep`/`keep_eq`; `build_minimal` and `trace_nodup` in `Mise/Model/Minimal.lean`, `parallel_equiv` in `Mise/Model/Parallel.lean`. The harness also checks early cutoff and varies `-j`.

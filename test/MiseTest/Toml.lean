@@ -1,7 +1,7 @@
 import Mise.Frontend.Toml
 
 /-! The TOML reader rejects malformed descriptions with a message. The
-examples' `mise.toml` files are read by `gen` in the shell tests. -/
+examples' `mise.toml` files are read by `mise` in the shell tests. -/
 
 namespace MiseTest.Toml
 open Mise.Frontend

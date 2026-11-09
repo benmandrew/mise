@@ -29,7 +29,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-GEN = ROOT / ".lake" / "build" / "bin" / "gen"
+MISE = ROOT / ".lake" / "build" / "bin" / "mise"
 OUT = ROOT / "test" / "out" / "props"
 FLAGS = ["-O2 -Wall", "-O0", "-O1 -DMISE_FLAG=1"]
 JOBS = ["-j1", "-j2", "-j8"]
@@ -108,7 +108,7 @@ def write_files(d, files, old=None):
 
 
 def gen(d, flag):
-    run([str(GEN), "--set", f"cflags={FLAGS[flag]}", str(d)], ROOT)
+    run([str(MISE), "gen", "--set", f"cflags={FLAGS[flag]}", str(d)], ROOT)
 
 
 def products(d, names):

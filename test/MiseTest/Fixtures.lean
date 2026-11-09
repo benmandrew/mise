@@ -5,7 +5,7 @@ import Mise.Frontend.Dsl
 
 Builds for the model tests, written with the DSL. They have the same shape as
 the examples' `mise.toml` files, but nothing keeps them in step: they test the
-model, and the shell tests run the examples themselves through `gen` and
+model, and the shell tests run the examples themselves through `mise` and
 real Ninja.
 -/
 

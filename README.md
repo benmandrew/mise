@@ -7,11 +7,10 @@ Dependencies come from the Nix flake: Lean, Ninja, Python and a C compiler, pinn
 ```sh
 nix develop    # or `direnv allow` once, to load it on entering the directory
 lake build
-gen examples/hello-c   # reads examples/hello-c/mise.toml
-ninja -C examples/hello-c
+mise build examples/hello-c   # reads mise.toml, writes build.ninja, runs ninja
 ```
 
-- [Usage](docs/usage.md): the `gen` command and the `mise.toml` format.
+- [Usage](docs/usage.md): the `mise` command and the `mise.toml` format.
 - [Theorems](docs/theorems.md): what is proved, by stage.
 - [Trust base](docs/trust.md): what is assumed, and the supported Ninja subset.
 - [Testing](docs/testing.md): the acceptance gate and the tests against real Ninja.

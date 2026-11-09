@@ -14,7 +14,7 @@ here can give the wrong build, never an unsound one.
 sources = ["main.c", "greet.h"]
 defaults = ["build/hello"]
 
-[params]                 # defaults, overridden by `gen --set cflags=...`
+[params]                 # defaults, overridden by `mise build --set cflags=...`
 cflags = "-O2 -Wall"
 
 [[rule]]
