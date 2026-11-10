@@ -1,10 +1,19 @@
 #!/usr/bin/env python3
 """Stage 6 and 7 property harness against real Ninja.
 
-For each example, run random sequences of edits. A sequence starts with a
-clean build, then applies edits one at a time, running `ninja` after each
-with a random `-j` level, so that Ninja runs independent commands in
-different orders.
+For each example, run sequences of edits. A sequence starts with a clean
+build, then applies edits one at a time, running `ninja` after each with a
+random `-j` level, so that Ninja runs independent commands in different
+orders.
+
+The edit kinds come from a de Bruijn sequence of order K (`--order`, default
+3), which contains every ordered run of K edit kinds exactly once. It is cut
+into sequences of at most `--length` edits that overlap by K - 1, so every
+run appears whole in some sequence. `--repeat` covers it again with the edit
+kinds in a different order and fresh values. The edits' values (which
+version of a file, which flag) are random. `--random N` instead runs N
+sequences of 1 to 6 random edits. Both modes report how many ordered pairs
+and triples of edit kinds they covered.
 After every build it checks three things:
 
 1. every build product equals, byte for byte, the product of a clean build
@@ -30,7 +39,8 @@ resolves to through a symlink on PATH; a cache hit gives the same object and
 depfile as a real compile, so a build that skips a needed command still
 leaves a stale product. `--no-ccache` runs the compiler directly.
 
-usage: props.py [--sequences N] [--seed S] [--workers W] [--no-ccache] [EXAMPLE...]
+usage: props.py [--order K] [--length L] [--repeat R] [--random N]
+                [--seed S] [--workers W] [--no-ccache] [EXAMPLE...]
 """
 import argparse
 import hashlib
@@ -180,8 +190,49 @@ class Checker:
             raise AssertionError(f"{where}: missingdeps reported:\n{md}")
 
 
-def sequence(name, seed, idx, ms):
-    """Run one sequence; return its number of edits and of new clean builds."""
+def de_bruijn(n, k):
+    """A cyclic sequence over range(n) containing every length-k word once."""
+    a, out = [0] * (k + 1), []
+
+    def db(t, p):
+        if t > k:
+            if k % p == 0:
+                out.extend(a[1:p + 1])
+        else:
+            a[t] = a[t - p]
+            db(t + 1, p)
+            for j in range(a[t - p] + 1, n):
+                a[t] = j
+                db(t + 1, t)
+    db(1, 1)
+    return out
+
+
+def plan(name, order, length, repeat, seed):
+    """Edit-kind indices for each sequence, covering every run of `order` kinds."""
+    n = len(EXAMPLES[name]().edits())
+    plans = []
+    for r in range(repeat):
+        perm = list(range(n))
+        random.Random(f"{seed}:{name}:perm:{r}").shuffle(perm)
+        cyc = de_bruijn(n, order)
+        line = [perm[i] for i in cyc + cyc[:order - 1]]
+        step = length - (order - 1)
+        for i in range(0, max(len(line) - (order - 1), 1), step):
+            plans.append(line[i:i + length])
+    return plans
+
+
+def coverage(histories):
+    """Distinct ordered pairs and triples of consecutive edit kinds."""
+    def runs(k):
+        return {tuple(h[i:i + k]) for h in histories for i in range(len(h) - k + 1)}
+    return len(runs(2)), len(runs(3))
+
+
+def sequence(name, seed, idx, ms, kinds=None):
+    """Run one sequence of the given edit kinds, or random ones when `kinds` is
+    None; return the kinds applied and the number of new clean builds."""
     ex = EXAMPLES[name]()
     checker = Checker(ex)
     rng = random.Random(f"{seed}:{name}:{idx}")
@@ -195,8 +246,11 @@ def sequence(name, seed, idx, ms):
     run(["ninja", rng.choice(JOBS)], d)
     history = ["clean build"]
     checker.check(d, files, f"sequence {idx}, after {history}")
-    for _ in range(rng.randint(1, 6)):
-        edit = rng.choice(ex.edits())
+    applied = []
+    steps = kinds if kinds is not None else [None] * rng.randint(1, 6)
+    for kind in steps:
+        edit = ex.edits()[kind] if kind is not None else rng.choice(ex.edits())
+        applied.append(ex.edits().index(edit))
         new = dict(state)
         if edit[0] == "bump":
             new[edit[1]] = rng.choice([v for v in range(5) if v != state[edit[1]]])
@@ -218,7 +272,7 @@ def sequence(name, seed, idx, ms):
         state, files = new, new_files
         checker.check(d, files, f"sequence {idx}, after {history}")
     shutil.rmtree(d)  # kept only when a check fails
-    return len(history) - 1, checker.clean_builds
+    return applied, checker.clean_builds
 
 
 EXAMPLES = {"hello-c": HelloC, "gen-header": GenHeader}
@@ -226,12 +280,17 @@ EXAMPLES = {"hello-c": HelloC, "gen-header": GenHeader}
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--sequences", type=int, default=200)
+    ap.add_argument("--order", type=int, default=3)
+    ap.add_argument("--length", type=int, default=6)
+    ap.add_argument("--repeat", type=int, default=1)
+    ap.add_argument("--random", type=int, metavar="N")
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--workers", type=int, default=os.cpu_count())
     ap.add_argument("--no-ccache", action="store_true")
     ap.add_argument("examples", nargs="*", default=list(EXAMPLES))
     args = ap.parse_args()
+    if args.length < args.order:
+        ap.error("--length must be at least --order")
     shutil.rmtree(OUT, ignore_errors=True)
     if not args.no_ccache:
         ccache = shutil.which("ccache")
@@ -245,17 +304,20 @@ def main():
         run([ccache, "--zero-stats"], ROOT)
     with ProcessPoolExecutor(max_workers=args.workers) as pool:
         for name in args.examples:
-            n = args.sequences
+            kinds = [None] * args.random if args.random else plan(name, args.order, args.length, args.repeat, args.seed)
+            n = len(kinds)
             ms = manifests(EXAMPLES[name]())
             try:
-                results = list(pool.map(sequence, [name] * n, [args.seed] * n, range(n), [ms] * n))
+                results = list(pool.map(sequence, [name] * n, [args.seed] * n, range(n), [ms] * n, kinds))
             except BaseException:
                 pool.shutdown(cancel_futures=True)  # stop at the first failure
                 raise
-            edits = sum(e for e, _ in results)
+            edits = sum(len(h) for h, _ in results)
             cleans = sum(c for _, c in results)
-            print(f"props {name}: {n} sequences, {edits} edits, "
-                  f"{cleans} distinct clean builds, all checks passed")
+            k = len(EXAMPLES[name]().edits())
+            pairs, triples = coverage([h for h, _ in results])
+            print(f"props {name}: {n} sequences, {edits} edits, {cleans} distinct clean builds, "
+                  f"{pairs}/{k ** 2} pairs and {triples}/{k ** 3} triples of edit kinds, all checks passed")
     if not args.no_ccache:
         stats = dict(l.split("\t", 1) for l in run(["ccache", "--print-stats"], ROOT).splitlines() if "\t" in l)
         hits = sum(int(stats.get(k, 0)) for k in ["direct_cache_hit", "preprocessed_cache_hit"])
