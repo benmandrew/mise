@@ -7,7 +7,8 @@ import MiseTest.Rng
 # Random-graph harness: case generator
 
 `lake exe fuzzgen DIR N SEED` writes `N` random cases to `DIR/<i>.json`, and
-`test/fuzz.py` replays them against real Ninja.
+`test/fuzz.py` replays them against real Ninja. `lake exe fuzzgen expect IN
+OUT` reads a case description from `IN` and writes its case to `OUT`.
 
 A case is a random valid graph and a sequence of steps. Every edge runs the
 helper `test/fz.c`, and `sem` below computes the same contents and reads, so
@@ -97,7 +98,7 @@ structure Src where
   comments : Nat := 0
   /-- What this source may include. -/
   allowed : List Path := []
-  deriving Inhabited
+  deriving Inhabited, ToJson, FromJson
 
 def Src.text (s : Src) : String :=
   s!"{s.path} v{s.version}\n" ++ String.join (s.includes.map fun p => s!"include {p}\n") ++
@@ -165,39 +166,43 @@ def genCase : GenM Case := do
 
 /-! ## Edits -/
 
+/-- An edit names its source by path and its edge by first output, so it
+still means the same after the shrinker drops other edits or edges. An edit
+whose source or edge is gone does nothing. -/
 inductive Edit where
-  | bump (src : Nat)
-  | comment (src : Nat)
-  | addInc (src : Nat) (p : Path)
-  | rmInc (src : Nat) (p : Path)
-  | retag (edge : Nat)
-  deriving Inhabited
+  | bump (src : Path)
+  | comment (src : Path)
+  | addInc (src : Path) (p : Path)
+  | rmInc (src : Path) (p : Path)
+  | retag (out : Path)
+  deriving Inhabited, ToJson, FromJson
 
-def Case.describe (c : Case) : Edit → String
-  | .bump i => s!"bump {c.srcs[i]!.path}"
-  | .comment i => s!"comment {c.srcs[i]!.path}"
-  | .addInc i p => s!"include {p} in {c.srcs[i]!.path}"
-  | .rmInc i p => s!"drop include {p} from {c.srcs[i]!.path}"
-  | .retag e => s!"retag {c.edges[e]!.outs.headD ""}"
+def Edit.describe : Edit → String
+  | .bump s => s!"bump {s}"
+  | .comment s => s!"comment {s}"
+  | .addInc s p => s!"include {p} in {s}"
+  | .rmInc s p => s!"drop include {p} from {s}"
+  | .retag o => s!"retag {o}"
 
 def bumpTag (vs : List (String × String)) : List (String × String) :=
   vs.map fun (k, v) => if k == "tag" then (k, "t" ++ toString ((String.ofList (v.toList.drop 1)).toNat! + 1)) else (k, v)
 
+def Case.modSrc (c : Case) (p : Path) (f : Src → Src) : Case :=
+  { c with srcs := c.srcs.map fun s => if s.path == p then f s else s }
+
 def Case.apply (c : Case) : Edit → Case
-  | .bump i => { c with srcs := c.srcs.modify i fun s => { s with version := s.version + 1 } }
-  | .comment i => { c with srcs := c.srcs.modify i fun s => { s with comments := s.comments + 1 } }
-  | .addInc i p => { c with srcs := c.srcs.modify i fun s => { s with includes := s.includes ++ [p] } }
-  | .rmInc i p => { c with srcs := c.srcs.modify i fun s => { s with includes := s.includes.erase p } }
-  | .retag e => { c with edges := c.edges.modify e fun g => { g with vars := bumpTag g.vars } }
+  | .bump p => c.modSrc p fun s => { s with version := s.version + 1 }
+  | .comment p => c.modSrc p fun s => { s with comments := s.comments + 1 }
+  | .addInc p q => c.modSrc p fun s => { s with includes := s.includes ++ [q] }
+  | .rmInc p q => c.modSrc p fun s => { s with includes := s.includes.erase q }
+  | .retag o => { c with edges := c.edges.map fun g => if g.outs.headD "" == o then { g with vars := bumpTag g.vars } else g }
 
 /-- Every edit possible now, grouped by kind. -/
 def Case.candidates (c : Case) : List (List Edit) :=
-  let idx := List.range c.srcs.length
-  let adds := idx.flatMap fun i =>
-    let s := c.srcs[i]!
-    (s.allowed.filter fun p => !s.includes.contains p).map (.addInc i)
-  let rms := idx.flatMap fun i => c.srcs[i]!.includes.map (.rmInc i)
-  [idx.map .bump, idx.map .comment, adds, rms, (List.range c.edges.length).map .retag].filter (!·.isEmpty)
+  let ps := c.srcs.map (·.path)
+  let adds := c.srcs.flatMap fun s => (s.allowed.filter fun p => !s.includes.contains p).map (.addInc s.path)
+  let rms := c.srcs.flatMap fun s => s.includes.map (.rmInc s.path)
+  [ps.map .bump, ps.map .comment, adds, rms, c.edges.map fun e => .retag (e.outs.headD "")].filter (!·.isEmpty)
 
 def genEdit (c : Case) : GenM Edit := do pick (← pick c.candidates)
 
@@ -287,6 +292,33 @@ def genSteps (c0 : Case) (n : Nat) : GenM (List (List Edit)) := do
     out := out ++ [es]
   pure out
 
+/-! ## Case descriptions
+
+A description is a case before the model runs: the sources, the edges and
+the edits. `fuzzgen` writes it into every case file, and `fuzzgen expect`
+reads one back and recomputes the expectations, so `test/fuzz.py` can
+shrink a failing case by editing its description. -/
+
+/-- `GEdge` with JSON instances. -/
+structure EdgeD where
+  rule : String
+  outs : List Path
+  implicitOuts : List Path
+  ins : List Path
+  implicitIns : List Path
+  orderOnly : List Path
+  vars : List (String × String)
+  deriving ToJson, FromJson
+
+def EdgeD.ofEdge (e : GEdge) : EdgeD := ⟨e.rule, e.outs, e.implicitOuts, e.ins, e.implicitIns, e.orderOnly, e.vars⟩
+def EdgeD.toEdge (e : EdgeD) : GEdge := ⟨e.rule, e.outs, e.implicitOuts, e.ins, e.implicitIns, e.orderOnly, e.vars⟩
+
+structure Desc where
+  srcs : List Src
+  edges : List EdgeD
+  steps : List (List Edit)
+  deriving ToJson, FromJson
+
 def runCase (c0 : Case) (steps : List (List Edit)) : Except String Json := do
   let (j0, st0) ← step [] none c0 empty
   let mut st := st0
@@ -296,13 +328,14 @@ def runCase (c0 : Case) (steps : List (List Edit)) : Except String Json := do
     let mut c' := c
     let mut ds := []
     for e in es do
-      ds := ds ++ [c'.describe e]
+      ds := ds ++ [e.describe]
       c' := c'.apply e
     let (j, st') ← step ds (some c) c' st
     js := js.push j
     st := st'
     c := c'
-  pure (Json.mkObj [("steps", Json.arr js)])
+  let desc : Desc := ⟨c0.srcs, c0.edges.map .ofEdge, steps⟩
+  pure (Json.mkObj [("desc", toJson desc), ("steps", Json.arr js)])
 
 def seeded (seed i : Nat) : Rng := Id.run do
   let mut g : Rng := ⟨(seed * 1000003 + i * 7919 + 1).toUInt64⟩
@@ -318,8 +351,15 @@ def genOne (seed i : Nat) : Case × List (List Edit) :=
 
 end MiseTest.Fuzz
 
-open MiseTest.Fuzz in
+open MiseTest.Fuzz Lean in
 def main (args : List String) : IO UInt32 := do
+  if let ["expect", src, dst] := args then
+    let d ← match Json.parse (← IO.FS.readFile src) >>= fromJson? (α := Desc) with
+      | .ok d => pure d
+      | .error e => IO.eprintln s!"{src}: {e}"; return 2
+    match runCase ⟨d.srcs, d.edges.map (·.toEdge)⟩ d.steps with
+    | .error e => IO.eprintln s!"{src}: {e}"; return 1
+    | .ok j => IO.FS.writeFile dst j.compress; return 0
   let (dir, n, seed) := match args with
     | [d, n, s] => (d, n.toNat!, s.toNat!)
     | _ => ("test/out/fuzz/cases", 100, 1)
