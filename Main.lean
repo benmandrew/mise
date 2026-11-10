@@ -35,7 +35,7 @@ its contents would not change. Returns the graph, or the exit code on error. -/
 def generate (dir : System.FilePath) (ps : Params) : IO (Except UInt32 ValidGraph) := do
   let file := dir / "mise.toml"
   let text ← try IO.FS.readFile file catch e => IO.eprintln s!"mise: {e}"; return .error 2
-  match ← Toml.load text ps file.toString with
+  match Toml.load text ps with
   | .error e => IO.eprintln s!"mise: {file}: {e}"; return .error 1
   | .ok g =>
     let out := dir / "build.ninja"
@@ -66,7 +66,7 @@ def main (args : List String) : IO UInt32 := do
       -- The command the DSL means for each edge, to compare with `ninja -t commands`.
       let file := dir / "mise.toml"
       let text ← try IO.FS.readFile file catch e => IO.eprintln s!"mise: {e}"; return 2
-      match ← Toml.load text opts.params file.toString with
+      match Toml.load text opts.params with
       | .error e => IO.eprintln s!"mise: {file}: {e}"; return 1
       | .ok g => for e in g.1.edges do IO.println (g.1.cmd e)
       return 0
