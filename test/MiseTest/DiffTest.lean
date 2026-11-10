@@ -1,6 +1,7 @@
 import Mise.Syntax.Print
 import Mise.Syntax.Parse
 import Mise.Frontend.Eval
+import MiseTest.Rng
 
 /-!
 # Stage 3 differential test generator
@@ -14,26 +15,6 @@ runs Ninja and compares.
 
 namespace MiseTest.DiffTest
 open Mise.Syntax
-
-/-- A 64-bit linear congruential generator, so runs are reproducible. -/
-structure Rng where
-  state : UInt64
-
-def Rng.next (g : Rng) : Nat × Rng :=
-  let s := g.state * 6364136223846793005 + 1442695040888963407
-  ((s >>> 33).toNat, ⟨s⟩)
-
-abbrev GenM := StateM Rng
-
-def rand (n : Nat) : GenM Nat := do
-  let (x, g) := (← get).next
-  set g
-  pure (if n = 0 then 0 else x % n)
-
-def pick {α} [Inhabited α] (xs : List α) : GenM α := do
-  pure (xs[← rand xs.length]!)
-
-def chance (num den : Nat) : GenM Bool := do pure ((← rand den) < num)
 
 /-- Path components chosen to exercise escaping: spaces, `$`, `:`, unicode. -/
 def components : List String :=
@@ -206,7 +187,7 @@ def main (args : List String) : IO UInt32 := do
   let (dir, n, seed) := match args with
     | [d, n, s] => (d, n.toNat!, s.toNat!)
     | _ => ("test/out/stage3", 100, 1)
-  let mut g : Rng := ⟨seed.toUInt64⟩
+  let mut g : MiseTest.Rng := ⟨seed.toUInt64⟩
   for i in [0:n] do
     let (m, g') := genManifest.run g
     g := g'

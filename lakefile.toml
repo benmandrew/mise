@@ -17,3 +17,8 @@ srcDir = "test"
 name = "difftest"
 srcDir = "test"
 root = "MiseTest.DiffTest"
+
+[[lean_exe]]
+name = "fuzzgen"
+srcDir = "test"
+root = "MiseTest.Fuzz"
