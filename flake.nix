@@ -19,8 +19,8 @@
         {
           # mkShell's stdenv supplies the C compiler the examples use.
           default = pkgs.mkShell {
-            packages = [ pkgs.lean4 pkgs.ninja pkgs.python3 ];
-            # `mise` is on PATH after `lake build`.
+            packages = [ pkgs.lean4 pkgs.ninja pkgs.python3 pkgs.ccache ];
+            # ccache is for the property harness. `mise` is on PATH after `lake build`.
             shellHook = ''
               export PATH="$PWD/.lake/build/bin:$PATH"
             '';
