@@ -6,7 +6,7 @@ Stages 6 and 7 generalised the Stage 5 model in place. Without depfile or `resta
 
 - `MEdge` (`Basic.lean`) holds outputs, explicit and implicit inputs (`ins`), order-only inputs (`oo`), the command, and the `dyn` and `restat` flags; `Manifest.medges` lists them. `MEdge.task` fetches `ins` in order and applies `sem.exec` from `Sem V`.
 - `St V` has `fs : Path → Option (V × Nat)`, `log : Path → Option (String × Nat)`, `deps` (Stage 6) and a `clock`.
-- `St.dirty` follows `DependencyScan::RecomputeOutputDirty` in Ninja 1.13 without `generator`: an output is dirty when missing, older than its newest input, unlogged, logged with another command, or logged before its newest input.
+- `St.dirty` follows `DependencyScan::RecomputeOutputDirty` in Ninja 1.13 without `generator`: an output is dirty when missing, older than its newest input, unlogged, logged with another command, or logged before its newest input. `test/ninja-matrix.sh` found Ninja 1.10.2, 1.11.1, 1.12.1 and 1.13.2 all in agreement with the model on the random-graph and property harnesses at a2978ec. Since the harness deletes `.ninja_deps`, 1.10.2 reruns a kept `restat` depfile output built without a deps entry (`docs/testing.md`).
 - `St.run` writes outputs, log and deps entries at `clock + 1`; `St.edit` writes a source at a fresh time. `buildTrace` runs dirty edges in order; `ninjaBuild` keeps the final state.
 - `Sched es`: no edge reads its own or a later edge's outputs, order-only inputs included, and outputs are unique.
 - Dirtiness is decided on each visit, so a rebuilt input makes readers dirty (`outDirty_of_newer`), as in `Plan::CleanNode`.

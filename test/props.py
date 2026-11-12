@@ -19,7 +19,7 @@ After every build it checks three things:
 1. every build product equals, byte for byte, the product of a clean build
    of the same sources in a separate directory;
 2. `ninja -n` reports no work;
-3. `ninja -t missingdeps` finds nothing.
+3. `ninja -t missingdeps` finds nothing (skipped before Ninja 1.11).
 
 Edits change a source file, add or remove an `#include`, change the
 generator script, add a comment to `config.in` (which leaves the generated
@@ -58,6 +58,15 @@ OUT = ROOT / "test" / "out" / "props"
 CCACHE_DIR = ROOT / "test" / "out" / "ccache"
 FLAGS = ["-O2 -Wall", "-O0", "-O1 -DMISE_FLAG=1"]
 JOBS = ["-j1", "-j2", "-j8"]
+
+
+def has_missingdeps():
+    """Whether this Ninja has `-t missingdeps`, which arrived in 1.11.0."""
+    r = subprocess.run(["ninja", "-t", "list"], capture_output=True, text=True)
+    return "missingdeps" in r.stdout
+
+
+MISSINGDEPS = has_missingdeps()
 
 
 class HelloC:
@@ -185,9 +194,10 @@ class Checker:
                 raise AssertionError(f"{where}: {n} differs from a clean build")
         if "no work to do" not in run(["ninja", "-n"], d):
             raise AssertionError(f"{where}: ninja -n has work to do")
-        md = run(["ninja", "-t", "missingdeps"], d)
-        if "No missing dependencies" not in md:
-            raise AssertionError(f"{where}: missingdeps reported:\n{md}")
+        if MISSINGDEPS:
+            md = run(["ninja", "-t", "missingdeps"], d)
+            if "No missing dependencies" not in md:
+                raise AssertionError(f"{where}: missingdeps reported:\n{md}")
 
 
 def de_bruijn(n, k):
@@ -292,6 +302,8 @@ def main():
     if args.length < args.order:
         ap.error("--length must be at least --order")
     shutil.rmtree(OUT, ignore_errors=True)
+    if not MISSINGDEPS:
+        print("props: this Ninja has no -t missingdeps; skipping that check")
     if not args.no_ccache:
         ccache = shutil.which("ccache")
         if ccache is None:

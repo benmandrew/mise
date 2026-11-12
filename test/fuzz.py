@@ -27,7 +27,8 @@ driver checks:
 5. `ninja -n` reports no work (with the targets, for a partial build;
    not checked after a failed build).
 
-After the last step it checks that `ninja -t missingdeps` finds nothing.
+After the last step it checks that `ninja -t missingdeps` finds nothing
+(skipped before Ninja 1.11, which added the tool).
 
 `--missing-ok` is for cases generated with `fuzzgen ... absent`, whose
 commands leave out some outputs. Ninja then reruns an edge with a missing
@@ -70,6 +71,15 @@ MISE = ROOT / ".lake" / "build" / "bin" / "mise"
 FUZZGEN = ROOT / ".lake" / "build" / "bin" / "fuzzgen"
 OUT = ROOT / "test" / "out" / "fuzz"
 JOBS = ["-j1", "-j2", "-j8", "-j64"]
+
+
+def has_missingdeps():
+    """Whether this Ninja has `-t missingdeps`, which arrived in 1.11.0."""
+    r = subprocess.run(["ninja", "-t", "list"], capture_output=True, text=True)
+    return "missingdeps" in r.stdout
+
+
+MISSINGDEPS = has_missingdeps()
 
 
 class Fail(Exception):
@@ -301,6 +311,8 @@ def replay_steps(d, steps, jobs, fz, desc, stats=None, missing_ok=False):
                 check_products(d, s)
         except Fail as e:
             return e.kind, f"{where}: {e}"
+    if not MISSINGDEPS:
+        return None
     try:
         md = run(["ninja", "-t", "missingdeps"], d).stdout
     except Fail as e:
@@ -525,6 +537,8 @@ def main():
     if not a.fz:
         subprocess.run(["cc", "-O2", "-Wall", "-o", fz, ROOT / "test" / "fz.c"], check=True)
     os.environ["FZ_DELAY"] = str(a.delay)
+    if not MISSINGDEPS:
+        print("fuzz: this Ninja has no -t missingdeps; skipping that check")
     t = time.time()
     n = len(cases)
     with ProcessPoolExecutor(a.workers) as ex:
