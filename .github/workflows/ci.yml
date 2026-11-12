@@ -34,7 +34,7 @@ jobs:
   # Build, no sorry/admit, axioms of the headline theorems, docs/trusted.md
   # up to date. The proofs do not depend on the Ninja release, so they run
   # once. This is the only job that saves the Lake cache, since it builds
-  # every target. Local time: 13 s, from an empty .lake.
+  # every target. Local time: 7 to 13 s, from an empty .lake.
   proofs:
     name: proofs (${{ matrix.os }})
     strategy:
@@ -60,18 +60,9 @@ jobs:
         run: nix develop -c scripts/check.sh
 
   # The four shell harnesses (stage3-diff, stage4-hello, stage6-props
-  # --order 2, fuzz) against each supported Ninja release, with 150
-  # random-graph cases in place of 500. Local times: 37 s on 1.12.1, 40 s on
-  # 1.13.2 and 107 s on 1.11.1, which includes shrinking its failures.
-  #
-  # Known failure: on 1.11.1, 10 of the 150 random-graph cases fail on
-  # `ninja -n`, all after a step that deletes .ninja_deps. When a restat
-  # command keeps its output, Ninja before 1.12 logs the mtime of the newest
-  # input it knew of at the start of the build, which leaves out the
-  # discovered inputs once the deps entry is gone. This is a Ninja bug, fixed
-  # in 1.12 (see docs/testing.md on the conf-ninja-min branch), so the 1.11.1
-  # job may fail without failing the run. Its result still shows in the
-  # checks list.
+  # --order 2, fuzz) against each supported Ninja release, 1.12.1 (the
+  # minimum) and 1.13.2, with 150 random-graph cases in place of 500. Local
+  # times: 48 s on 1.12.1 and 52 s on 1.13.2.
   ninja:
     name: ninja ${{ matrix.release }} (${{ matrix.os }})
     strategy:
@@ -79,20 +70,17 @@ jobs:
       matrix:
         include:
           - os: macos-latest
-            release: "1.11.1"
-            allow-failure: true
-          - os: macos-latest
             release: "1.12.1"
-            allow-failure: false
+            experimental: false
           - os: macos-latest
             release: "1.13.2"
-            allow-failure: false
+            experimental: false
           # Experiment, unverified: never run on Linux.
           - os: ubuntu-latest
             release: "1.13.2"
-            allow-failure: true
+            experimental: true
     runs-on: ${{ matrix.os }}
-    continue-on-error: ${{ matrix.allow-failure }}
+    continue-on-error: ${{ matrix.experimental }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -113,25 +101,23 @@ jobs:
             test/out/fuzz/shrunk/
           if-no-files-found: ignore
 
-  # Ninja 1.10.2 must refuse an emitted manifest. The check comes with the
-  # branch conf-ninja-min (not yet merged), which emits
-  # `ninja_required_version = 1.11.1`. On that branch the check runs at the
-  # start of every test/ninja-matrix.sh run and has no option to run it
-  # alone. TODO(conf-ninja-min): give test/ninja-matrix.sh a `--refuse-only`
-  # option that runs the check and exits; this job then runs it. Until the
-  # option exists, the job reports that the check is missing and passes.
-  ninja-1-10-2-refuses:
-    name: ninja 1.10.2 refuses
+  # Releases older than the minimum must refuse an emitted manifest:
+  # `ninja-matrix.sh --refuse-only 1.10.2 1.11.1` exits nonzero if either
+  # accepts it. The option comes with the branch conf-ninja-min, not yet on
+  # main, so until then the guard skips the job with a notice and the job
+  # passes. Once the option exists, the job runs it with no change here.
+  old-ninja-refuses:
+    name: ninja 1.10.2 and 1.11.1 refuse
     runs-on: macos-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Look for the check
+      - name: Look for --refuse-only
         id: has
         run: |
-          if test/ninja-matrix.sh --help | grep -q -- --refuse-only; then
+          if grep -q -- --refuse-only test/ninja-matrix.sh; then
             echo "check=true" >>"$GITHUB_OUTPUT"
           else
             echo "::notice::test/ninja-matrix.sh has no --refuse-only option yet (see conf-ninja-min); skipped"
@@ -139,15 +125,16 @@ jobs:
           fi
       - if: steps.has.outputs.check == 'true'
         uses: ./.github/actions/setup
-      - name: test/ninja-matrix.sh --refuse-only
+      - name: test/ninja-matrix.sh --refuse-only 1.10.2 1.11.1
         if: steps.has.outputs.check == 'true'
-        run: nix develop -c test/ninja-matrix.sh --refuse-only
+        run: nix develop -c test/ninja-matrix.sh --refuse-only 1.10.2 1.11.1
 
   # Cheap harnesses that ninja-matrix.sh does not run: the restat cmp
-  # wrapper, the hello-c example, and the TOML parser against tomllib on 250
-  # documents of each kind in place of 2,500. Local times: 2 s, 1 s and 2 s.
+  # wrapper, the output wrapper on rules without restat, the hello-c
+  # example, and the TOML parser against tomllib on 250 documents of each
+  # kind in place of 2,500. Local times: 2 s, 2 s, 1 s and 5 s.
   extras:
-    name: restat-cmp, stage4-hello, toml-diff
+    name: restat-cmp, wrap-outputs, stage4-hello, toml-diff
     runs-on: macos-latest
     timeout-minutes: 20
     steps:
@@ -157,6 +144,8 @@ jobs:
       - uses: ./.github/actions/setup
       - name: test/restat-cmp.sh
         run: nix develop -c test/restat-cmp.sh
+      - name: test/wrap-outputs.sh
+        run: nix develop -c test/wrap-outputs.sh
       - name: test/stage4-hello.sh
         run: nix develop -c test/stage4-hello.sh
       - name: test/toml-diff.sh 250

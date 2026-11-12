@@ -173,8 +173,7 @@ jobs:
           path: test/out/mutants/results.md
           if-no-files-found: ignore
 
-  # The full matrix, 500 random-graph cases per release. 1.11.1 is allowed
-  # to fail for the Ninja bug described at the `ninja` job in ci.yml.
+  # The full matrix, 500 random-graph cases per supported release.
   ninja:
     name: ninja ${{ matrix.release }}
     needs: changed
@@ -182,9 +181,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        release: ["1.11.1", "1.12.1", "1.13.2"]
+        release: ["1.12.1", "1.13.2"]
     runs-on: macos-latest
-    continue-on-error: ${{ matrix.release == '1.11.1' }}
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
