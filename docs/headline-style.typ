@@ -10,7 +10,8 @@
   show raw: set text(font: "DejaVu Sans Mono", size: 0.86em)
   show raw.where(block: true): set text(size: 8pt)
   show raw.where(block: true): block.with(
-    fill: luma(247), inset: (x: 4pt, y: 3pt), radius: 2pt, width: 100%, breakable: true)
+    fill: luma(247), inset: (x: 5pt, y: 4pt), radius: 2pt, width: 100%, breakable: true,
+    above: 0.8em, below: 0.8em)
   body
 }
 
@@ -29,18 +30,18 @@
   set document(title: "What mise proves")
   set page(paper: "a4", margin: (x: 1.7cm, y: 1.7cm), numbering: "1")
   set text(size: body-size, lang: "en", region: "gb")
-  set par(justify: false, spacing: 0.6em, leading: 0.5em)
-  set list(spacing: 0.4em, indent: 0.2em)
-  set enum(spacing: 0.4em)
+  set par(justify: false, spacing: 1.1em, leading: 0.65em)
+  set list(spacing: 0.65em, indent: 0.4em)
+  set enum(spacing: 0.65em)
   show: lean-code
   show link: set text(fill: rgb("#1f4e9c"))
   set heading(numbering: none)
   show heading.where(level: 1): set text(size: 12pt)
-  show heading.where(level: 1): set block(above: 1.2em, below: 0.6em)
+  show heading.where(level: 1): set block(above: 2.2em, below: 1em)
   show heading.where(level: 2): set text(size: 1.2 * body-size)
-  show heading.where(level: 2): set block(above: 1em, below: 0.3em)
+  show heading.where(level: 2): set block(above: 2em, below: 0.4em)
   align(center, text(size: 16pt, weight: "bold")[What `mise` proves])
-  v(-0.4em)
+  v(-0.2em)
   align(center, grey[Generated from the Lean sources by `scripts/trusted.sh`.])
   body
 }
@@ -55,17 +56,17 @@
   outline(depth: 1, indent: auto)
 }
 
-#let part-sub(body) = block(above: 0.45em, below: 0.3em, text(weight: "bold", body + ":"))
-#let line-par(body) = block(above: 0.3em, below: 0.3em, body)
+#let part-sub(body) = block(above: 1em, below: 0.5em, text(weight: "bold", body + ":"))
+#let line-par(body) = block(above: 0.6em, below: 0.6em, body)
 #let english(body) = block(
-  above: 0.5em, inset: (left: 7pt), stroke: (left: 1.2pt + luma(200)), body)
+  above: 0.9em, below: 0.9em, inset: (left: 8pt, y: 2pt), stroke: (left: 1.2pt + luma(200)), body)
 
 // A source location, linked to the lines on GitHub.
 #let source(url, body) = link(url, raw(body))
 
 #let theorem-heading(name, file, line, url) = {
   heading(level: 2, code-at(1.2 * body-size, raw(name)))
-  block(above: 0.2em, below: 0.4em, sticky: true, grey(source(url, file + ":" + str(line))))
+  block(above: 0.3em, below: 0.8em, sticky: true, grey(source(url, file + ":" + str(line))))
 }
 
 #let defs-intro = [
@@ -73,31 +74,31 @@
 ]
 
 #let file-heading(file) = block(
-  above: 1em, below: 0.4em, sticky: true, text(size: 8.5pt, weight: "bold", fill: luma(70), raw(file)))
+  above: 2em, below: 0.7em, sticky: true, text(size: 8.5pt, weight: "bold", fill: luma(70), raw(file)))
 
 // One definition: name and location on one line, then the docstring and the
 // templates that the English of a core theorem uses, kept on the page of the
 // code that follows.
 #let def-head(name, lbl, file, a, b, url, glosses, body) = block(
-  above: 0.8em, below: 0.3em, sticky: true, width: 100%)[
+  above: 1.6em, below: 0.5em, sticky: true, width: 100%)[
   #box[#code-at(body-size, strong(raw(name)))#label(lbl)] #h(0.3em) #grey(source(url, file + ":" + str(a) + "–" + str(b)))
-  #v(0.25em, weak: true)
+  #v(0.45em, weak: true)
   #body
   #if glosses.len() > 0 [
-    #v(0.25em, weak: true)
+    #v(0.4em, weak: true)
     #grey(glosses.map(((k, t)) => [#raw(k + ":") #raw(t)]).join(h(1em)))
   ]
 ]
 
 #let no-doc = text(fill: red)[No docstring.]
 
-#let omitted(n, total, names) = block(above: 1em)[
+#let omitted(n, total, names) = block(above: 1.8em)[
   #strong[Not shown.] The other #n of the #total trusted declarations, which the ones above use: #names. `docs/trusted.md` lists all of them with their sources; the printer and parser among them are covered by the round trip in `meaning` and by `test/stage3-diff.sh` against Ninja.
 ]
 
-#let other-theorem(name, file, line, url, body) = block(above: 0.7em)[
+#let other-theorem(name, file, line, url, body) = block(above: 1.3em)[
   #strong(raw(name)) #h(0.3em) #grey(source(url, file + ":" + str(line)))
-  #v(0.25em, weak: true)
+  #v(0.45em, weak: true)
   #body
 ]
 
