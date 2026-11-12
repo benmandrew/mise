@@ -96,12 +96,21 @@ def edgesOK (names : List String) (srcs : List Path) : List Path → List GEdge 
 
 def Graph.ruleNames (g : Graph) : List String := g.rules.map (·.name)
 
+/-- An edge whose rule has a depfile has one explicit output. The depfile
+is `${out}.d`, which names one file only for one output; with more, Ninja
+finds no depfile, treats it as empty and records no deps. -/
+def depfileOutsOK (rules : List GRule) (e : GEdge) : Bool :=
+  match rules.find? (·.name == e.rule) with
+  | some r => !r.depfile || e.outs.length == 1
+  | none => true
+
 def Graph.check (g : Graph) : Bool :=
   nodupB g.ruleNames && g.rules.all GRule.ok && edgesOK g.ruleNames g.sources [] g.edges &&
-    g.defaults.all fun d => g.edges.any (·.allOuts.contains d)
+    (g.defaults.all fun d => g.edges.any (·.allOuts.contains d)) && g.edges.all (depfileOutsOK g.rules)
 
 /-- Every input is a declared source or an output of an earlier edge, every
-output has one producer, and every name and path can be written in Ninja. -/
+output has one producer, every name and path can be written in Ninja, and
+every depfile edge has one explicit output. -/
 def Graph.Valid (g : Graph) : Prop := g.check = true
 
 instance (g : Graph) : Decidable g.Valid := inferInstanceAs (Decidable (_ = _))

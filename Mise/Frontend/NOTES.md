@@ -30,7 +30,8 @@ Ninja rejects cyclic rule variables; the model uses fuel of the binding count pl
 - outputs are distinct, not sources, and new;
 - inputs are sources or earlier outputs;
 - edge variables have distinct names outside `reserved` and newline-free values;
-- default targets are edge outputs.
+- default targets are edge outputs;
+- an edge whose rule has a depfile has one explicit output, since the emitted `depfile = ${out}.d` names one file only then (`depfileOutsOK`).
 
 `reserved` holds `in`, `out`, `in_newline` and the rule keys. `Handle` and `RuleRef` have private constructors, so a description names only what it declared.
 

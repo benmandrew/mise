@@ -199,7 +199,7 @@ theorem Graph.check_parts {g : Graph} (hg : g.Valid) :
     (∀ d ∈ g.defaults, ∃ e ∈ g.edges, d ∈ e.allOuts) := by
   simp only [Graph.Valid, Graph.check, Bool.and_eq_true, List.all_eq_true, List.any_eq_true,
     List.contains_iff_mem] at hg
-  exact ⟨hg.1.1.1, hg.1.1.2, hg.1.2, hg.2⟩
+  exact ⟨hg.1.1.1.1, hg.1.1.1.2, hg.1.1.2, hg.1.2⟩
 
 theorem GRule.ok_name {r : GRule} (h : r.ok = true) : validIdent r.name = true ∧ r.name ≠ "phony" := by
   simp only [GRule.ok, Bool.and_eq_true, bne_iff_ne, ne_eq] at h

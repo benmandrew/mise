@@ -77,4 +77,13 @@ def b2 := ninjaBuild sem m (b1.edit "main.c" "main@2 +config.h +util.h +extra.h"
 #guard ran (b1.edit "util.h" "util.h@2") == ["build/main.o", "build/util.o", "build/app"]
 #guard agreesClean (b1.edit "util.h" "util.h@2")
 
+-- A depfile edge has one explicit output, since `${out}.d` must name one
+-- file; implicit outputs are allowed.
+def dynG (outs implicitOuts : List Path) : Graph :=
+  { sources := ["a.c"], rules := [{ name := "cc", command := [.lit "cc"], depfile := true }],
+    edges := [{ rule := "cc", outs, implicitOuts, ins := ["a.c"] }] }
+
+#guard (dynG ["a.o"] ["a.h"]).check
+#guard !(dynG ["a.o", "b.o"] []).check
+
 end MiseTest.Stage6
