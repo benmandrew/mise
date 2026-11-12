@@ -29,7 +29,8 @@ explicit argument a template leaves out is reported in `omits`. An argument
 is put in parentheses only when it contains a connective or a binder; a plain
 noun phrase reads one way. Words from a `Mise` template are marked with the
 constant they came from (`Inl.link`), so the output can link them to its
-definition. A partial application without a `Gloss.fun:` line is read as
+definition, and each template whose words reach the output is recorded in
+`used`. A partial application without a `Gloss.fun:` line is read as
 `fun x => f … x`.
 
 A constant without a template is printed in Lean notation, in code font, and
@@ -163,20 +164,40 @@ def pieces (t : String) : Array Piece := Id.run do
   if !buf.isEmpty then out := out.push (.txt buf)
   return out
 
+/-- Which template of a constant: the main one, a component of a pair, the
+function form, or the singular noun. -/
+inductive Which where
+  | main | fst | snd | fn | one
+  deriving BEq, Hashable
+
+/-- The docstring key of a template: `Gloss`, `Gloss.fst` and so on. -/
+def Which.key : Which → String
+  | .main => "Gloss"
+  | .fst => "Gloss.fst"
+  | .snd => "Gloss.snd"
+  | .fn => "Gloss.fun"
+  | .one => "Gloss.one"
+
 structure State where
   /-- Constants printed in Lean notation because they have no template. -/
   missing : NameSet := {}
-  /-- `Mise` constants whose template was used. -/
-  used : NameSet := {}
+  /-- The `Mise` templates whose words are in the output, each as a constant
+  and which of its templates. -/
+  used : Std.HashSet (Name × Which) := {}
   /-- Explicit arguments, other than `sem`, that a template leaves out. -/
   omits : NameSet := {}
   /-- Types with a plural template but no singular noun. -/
   noSingular : NameSet := {}
   /-- Variables of the statement not yet mentioned, each with the phrase that
-  introduces it. -/
-  intros : Std.HashMap FVarId Phrase := {}
+  introduces it and the type whose singular noun the phrase uses. -/
+  intros : Std.HashMap FVarId (Phrase × Option Name) := {}
 
 abbrev M := StateT State MetaM
+
+/-- Record that the output uses template `which` of `n`. -/
+def use (n : Name) (which : Which) : M Unit :=
+  if (`Mise).isPrefixOf n then modify fun s => { s with used := s.used.insert (n, which) }
+  else pure ()
 
 def txt (s : String) : Phrase := #[.txt s]
 def code (s : String) : Phrase := #[.code s]
@@ -206,12 +227,6 @@ def cx (p : Phrase) : Phrase := #[.cx p]
 /-- Words from the template of `n`, linked to it when it is a `Mise` name. -/
 def linked (n : Name) (p : Phrase) : Phrase :=
   if (`Mise).isPrefixOf n && !p.isEmpty then #[.link n p] else p
-
-/-- Which template of a constant: the main one, a component of a pair, or
-the function form. -/
-inductive Which where
-  | main | fst | snd | fn | one
-  deriving BEq
 
 /-- The template of a constant: from its docstring, or the core table. -/
 def templateOf (n : Name) (which : Which := .main) : M (Option (Mode × String)) := do
@@ -244,20 +259,22 @@ def ppCode (e : Expr) : MetaM Phrase := do
 its name after that. -/
 def mention (x : Expr) : M Phrase := do
   let s ← get
-  if let some p := s.intros[x.fvarId!]? then
+  if let some (p, ty) := s.intros[x.fvarId!]? then
     set { s with intros := s.intros.erase x.fvarId! }
+    if let some n := ty then use n .one
     return #[.intro p]
   return code (← localName x)
 
 /-- The singular noun for the values of type `t`, as the text before and
 after a name: `model edge` for `MEdge`, and `element`, `of V` for a type
-variable `V`. -/
-def singular (t : Expr) : M (Option (Phrase × Phrase)) := do
+variable `V`; and the type whose `Gloss.one:` line gives the noun. It does not
+record the use, because a caller may not put the noun in the output. -/
+def singularOf (t : Expr) : M (Option (Phrase × Phrase × Option Name)) := do
   match t.consumeMData with
-  | .sort .zero => return some (txt "proposition", #[])
-  | .sort _ => return some (txt "type", #[])
-  | .fvar _ => return some (txt "element", txt " of " ++ code (← localName t))
-  | .forallE _ _ b _ => if b.hasLooseBVars then return none else return some (txt "function", #[])
+  | .sort .zero => return some (txt "proposition", #[], none)
+  | .sort _ => return some (txt "type", #[], none)
+  | .fvar _ => return some (txt "element", txt " of " ++ code (← localName t), none)
+  | .forallE _ _ b _ => if b.hasLooseBVars then return none else return some (txt "function", #[], none)
   | t =>
     let .const n _ := t.getAppFn | return none
     let one? ← if let some (_, s) := coreSingulars.find? (·.1 == n) then pure (some s) else
@@ -271,7 +288,13 @@ def singular (t : Expr) : M (Option (Phrase × Phrase)) := do
       | .txt s => Inl.txt s
       | .code s => .code s
       | .slot k => .txt s!"\{{k}}"
-    return some (linked n ph, #[])
+    return some (linked n ph, #[], some n)
+
+/-- `singularOf`, for a noun that goes into the output. -/
+def singular (t : Expr) : M (Option (Phrase × Phrase)) := do
+  let some (pre, post, n) ← singularOf t | return none
+  if let some n := n then use n .one
+  return some (pre, post)
 
 /-- The variable `x` of type `t` named with its type's noun, without an
 article: `model edge e`. -/
@@ -387,16 +410,16 @@ partial def applied (mode : Mode) (e : Expr) : M Phrase := do
       if let .const m _ := inner.getAppFn then
         if let some (_, t) ← templateOf m (if n == ``Prod.fst then .fst else .snd) then
           if let some p ← fill m .noun t inner.getAppArgs then
-            if (`Mise).isPrefixOf m then modify fun s => { s with used := s.used.insert m }
+            use m (if n == ``Prod.fst then .fst else .snd)
             return p
     if let some (_, t) ← templateOf n then
       if let some p ← fill n mode t args then
-        if (`Mise).isPrefixOf n then modify fun s => { s with used := s.used.insert n }
+        use n .main
         return p
       -- A partial application: the function form, or `fun x => f … x`.
       if let some (_, t) ← templateOf n .fn then
         if let some p ← fill n .noun t args then
-          modify fun s => { s with used := s.used.insert n }
+          use n .fn
           return p
       let e' ← etaExpand e
       if e'.isLambda then return ← noun e'
@@ -667,9 +690,9 @@ local, type, whether it is a hypothesis, and whether its name is readable. -/
 def finish (body : Expr) (bs : Array (Expr × Expr × Bool × Bool)) : M Statement := do
   let vars := (bs.filter fun b => !b.2.2.1).map (·.1)
   for x in vars do
-    if let some (pre, post) ← singular (← inferType x) then
+    if let some (pre, post, ty) ← singularOf (← inferType x) then
       let intro := txt "the " ++ pre ++ txt " " ++ code (← localName x) ++ post
-      modify fun s => { s with intros := s.intros.insert x.fvarId! intro }
+      modify fun s => { s with intros := s.intros.insert x.fvarId! (intro, ty) }
   let mut has : Array (String × Array String) := #[]
   let mut hyps : Array (Option String × Expr) := #[]
   for h : i in [0 : bs.size] do

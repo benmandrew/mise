@@ -254,6 +254,13 @@ def notExpanded (mod : String) : Bool :=
 
 def short (n : Name) : String := (n.replacePrefix `Mise .anonymous).toString
 
+/-- Where a file's source is published. Links use `main`, not a commit, so
+that `docs/headline.typ` does not change with every commit. -/
+def sourceBase : String := "https://github.com/benmandrew/mise/blob/main/"
+
+/-- A link to lines `a` to `b` of `file`, as a Typst string literal. -/
+def sourceUrl (file : String) (a b : Nat) : String :=
+  tq (sourceBase ++ file ++ (if a == b then s!"#L{a}" else s!"#L{a}-L{b}"))
 
 end Trusted
 
@@ -356,6 +363,7 @@ open Trusted in
   let mut noTemplate : NameSet := {}
   let mut omits : NameSet := {}
   let mut noSingular : NameSet := {}
+  let mut used : Std.HashSet (Name × Gloss.Which) := {}
   typ := typ ++ "= Core theorems\n\n"
   for t in core do
     let (m, _, a, b) ← location t
@@ -368,8 +376,9 @@ open Trusted in
     noTemplate := s.missing.foldl (·.insert ·) noTemplate
     omits := s.omits.foldl (·.insert ·) omits
     noSingular := s.noSingular.foldl (·.insert ·) noSingular
+    used := s.used.fold (·.insert ·) used
     let ph := tPhrase (fun n => let o := owner env n; if shown.contains o then some o else none)
-    typ := typ ++ s!"#theorem-heading({tq (shortThm t)}, {tq (modPath m)}, {a.line})\n\n"
+    typ := typ ++ s!"#theorem-heading({tq (shortThm t)}, {tq (modPath m)}, {a.line}, {sourceUrl (modPath m) a.line b.line})\n\n"
     typ := typ ++ mdBlocks doc ++
       s!"\n#raw(lang: \"lean\", block: true, {tq src})\n\n#english[\n"
     -- The variables on one line; their types come at their first mention.
@@ -406,10 +415,12 @@ open Trusted in
       let src := dropDoc (slice ls a b)
       let doc := (← liftCoreM (findDocString? env d)).getD ""
       let g := Gloss.Glosses.parse doc
-      let gl := [("Gloss", g.main), ("Gloss.fst", g.fst), ("Gloss.snd", g.snd),
-        ("Gloss.fun", g.fn), ("Gloss.one", g.one)].filterMap fun (k, t?) =>
-          t?.map fun t => s!"({tq k}, {tq t})"
-      typ := typ ++ s!"#def-head({tq (short d)}, {defLabel d}, {tq (modPath m)}, {a.line}, {b.line}, ({", ".intercalate gl}{if gl.length == 1 then "," else ""}))[\n"
+      -- Only the templates the English of a core theorem uses: the others
+      -- would repeat the docstring with nothing to check them against.
+      let gl := [(Gloss.Which.main, g.main), (.fst, g.fst), (.snd, g.snd), (.fn, g.fn),
+        (.one, g.one)].filterMap fun (w, t?) =>
+          if used.contains (d, w) then t?.map fun t => s!"({tq w.key}, {tq t})" else none
+      typ := typ ++ s!"#def-head({tq (short d)}, {defLabel d}, {tq (modPath m)}, {a.line}, {b.line}, {sourceUrl (modPath m) a.line b.line}, ({", ".intercalate gl}{if gl.length == 1 then "," else ""}))[\n"
       typ := typ ++ (if g.rest.isEmpty then "#no-doc\n" else mdBlocks g.rest) ++ "]\n"
       typ := typ ++ s!"#raw(lang: \"lean\", block: true, {tq src})\n\n"
   let left := omitted.toList.map fun (_, _, _, d) => tCode (short d)
@@ -418,9 +429,9 @@ open Trusted in
   typ := typ ++ "= Other theorems\n\n"
   for (_, t) in thmRows do
     if core.contains t then continue
-    let (m, _, a, _) ← location t
+    let (m, _, a, b) ← location t
     let doc := reviewDoc ((← liftCoreM (findDocString? env t)).getD "")
-    typ := typ ++ s!"#other-theorem({tq (shortThm t)}, {tq (modPath m)}, {a.line})[\n" ++ mdBlocks doc ++ "]\n"
+    typ := typ ++ s!"#other-theorem({tq (shortThm t)}, {tq (modPath m)}, {a.line}, {sourceUrl (modPath m) a.line b.line})[\n" ++ mdBlocks doc ++ "]\n"
   typ := typ ++ "\n"
   for n in sortNames noTemplate do
     report := report.push s!"no template: {n}"

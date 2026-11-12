@@ -9,7 +9,7 @@
 
 = Core theorems
 
-#theorem-heading("meaning", "Mise/Headline.lean", 60)
+#theorem-heading("meaning", "Mise/Headline.lean", 60, "https://github.com/benmandrew/mise/blob/main/Mise/Headline.lean#L60-L66")
 
 #"The text ";#raw("mise");#" writes parses, under the parser model, to the manifest it emitted, and that manifest, read through the model of Ninja's variable evaluation, means the build the DSL describes.";
 
@@ -24,7 +24,7 @@
 - #link(label("def:Mise.Frontend.denote"))[#"the meaning of ";];#link(label("def:Mise.Frontend.emit"))[#"the manifest for ";];#raw("g");#" equals ";#link(label("def:Mise.Frontend.Graph.spec"))[#"the specification of ";];#raw("g");#".";
 ]
 
-#theorem-heading("build_correct", "Mise/Headline.lean", 79)
+#theorem-heading("build_correct", "Mise/Headline.lean", 79, "https://github.com/benmandrew/mise/blob/main/Mise/Headline.lean#L79-L86")
 
 #"After any history, one ";#raw("ninja");#" run leaves correct contents for the current sources.";
 
@@ -40,7 +40,7 @@
 - #link(label("def:Mise.Model.St.content"))[#"the contents of ";];#link(label("def:Mise.Headline.build"))[#"the state after building ";];#raw("g");#link(label("def:Mise.Headline.build"))[#" from ";];#raw("st");#link(label("def:Mise.BuildSpec.Correct"))[#" is a correct result of ";];#link(label("def:Mise.Frontend.Graph.spec"))[#"the specification of ";];#raw("g");#link(label("def:Mise.BuildSpec.Correct"))[#" when the sources are ";];#link(label("def:Mise.Model.St.content"))[#"the contents of ";];#raw("st");#".";
 ]
 
-#theorem-heading("rebuild_noop", "Mise/Headline.lean", 88)
+#theorem-heading("rebuild_noop", "Mise/Headline.lean", 88, "https://github.com/benmandrew/mise/blob/main/Mise/Headline.lean#L88-L97")
 
 #"After any history, a second ";#raw("ninja");#" run executes nothing and changes nothing.";
 
@@ -58,7 +58,7 @@
 - #link(label("def:Mise.Headline.build"))[#"the state after building ";];#raw("g");#link(label("def:Mise.Headline.build"))[#" from ";];#raw("st₁");#" equals ";#raw("st₁");#".";
 ]
 
-#theorem-heading("rebuild_minimal", "Mise/Headline.lean", 103)
+#theorem-heading("rebuild_minimal", "Mise/Headline.lean", 103, "https://github.com/benmandrew/mise/blob/main/Mise/Headline.lean#L103-L122")
 
 #"Build, edit some sources, build again. Every edge ";#raw("e");#" the second build runs has a reason: an input ";#raw("p");#" that Ninja checks for it, whose mtime is newer than anything the first build left, and that was either among the ";#raw("edits");#" or written by an edge that ran earlier in the second build. An edge whose inputs were left untouched, including by a ";#raw("restat");#" edge that kept its output, does not run.";
 
@@ -77,7 +77,7 @@
 - #"there are ";#raw("before");#" and ";#raw("after");#" among ";#"lists of ";#link(label("def:Mise.Model.MEdge"))[#"edges";];#" such that ";#"both ";#link(label("def:Mise.Headline.edges"))[#"the manifest edges of ";];#raw("g");#" equals ";#raw("before");#" followed by ";#raw("e");#" followed by ";#raw("after");#" and ";#"there is ";#raw("p");#" among ";#link(label("def:Mise.Syntax.Path"))[#"paths";];#" such that ";#"all of: ";#link(label("def:Mise.Headline.Checks"))[#"Ninja checks input ";];#raw("p");#link(label("def:Mise.Headline.Checks"))[#" of ";];#raw("e");#link(label("def:Mise.Headline.Checks"))[#" in ";];#raw("st₁");#", ";#link(label("def:Mise.Model.St"))[#"the clock of ";];#raw("st₁");#" is less than ";#link(label("def:Mise.Model.St.mtime"))[#"the mtime of ";];#raw("p");#link(label("def:Mise.Model.St.mtime"))[#" in ";];#link(label("def:Mise.Model.buildTrace"))[#"the state after visiting ";];#raw("before");#link(label("def:Mise.Model.buildTrace"))[#" from ";];#raw("st₂");#", and ";#"either ";#raw("p");#" is in ";#"(";#"the list of ";#"the first component of ";#raw("x");#" for each ";#"pair";#" ";#raw("x");#" in ";#raw("edits");#")";#", or ";#"there is ";#"an ";#link(label("def:Mise.Model.MEdge"))[#"edge";];#" ";#raw("e'");#" in ";#link(label("def:Mise.Model.buildTrace"))[#"the edges run by visiting ";];#raw("before");#link(label("def:Mise.Model.buildTrace"))[#" from ";];#raw("st₂");#" such that ";#raw("p");#" is in ";#link(label("def:Mise.Model.MEdge"))[#"the outputs of ";];#raw("e'");#".";
 ]
 
-#theorem-heading("any_order", "Mise/Headline.lean", 132)
+#theorem-heading("any_order", "Mise/Headline.lean", 132, "https://github.com/benmandrew/mise/blob/main/Mise/Headline.lean#L132-L142")
 
 #"After any history, running the edges in any valid ";#raw("order");#" leaves the same correct contents and runs the same edges, each at most once, as manifest order.";
 
@@ -101,330 +101,330 @@
 
 #file-heading("Mise/Task/Basic.lean")
 
-#def-head("Task", "def:Mise.Task", "Mise/Task/Basic.lean", 11, 16, ())[
+#def-head("Task", "def:Mise.Task", "Mise/Task/Basic.lean", 11, 16, "https://github.com/benmandrew/mise/blob/main/Mise/Task/Basic.lean#L11-L16", ())[
 #"A build task with keys ";#raw("K");#", values ";#raw("V");#" and result ";#raw("α");#", as a tree: ";#raw("pure a");#" returns ";#raw("a");#", and ";#raw("fetch k c");#" asks for the value of key ";#raw("k");#" and continues with ";#raw("c");#" applied to that value.";
 ]
 #raw(lang: "lean", block: true, "inductive Task (K V : Type) (α : Type) where\n  | pure  : α → Task K V α\n  | fetch : K → (V → Task K V α) → Task K V α")
 
-#def-head("Store", "def:Mise.Store", "Mise/Task/Basic.lean", 18, 19, ())[
+#def-head("Store", "def:Mise.Store", "Mise/Task/Basic.lean", 18, 19, "https://github.com/benmandrew/mise/blob/main/Mise/Task/Basic.lean#L18-L19", ())[
 #"A store maps every key to its current value.";
 ]
 #raw(lang: "lean", block: true, "abbrev Store (K V : Type) := K → V")
 
-#def-head("Task.run", "def:Mise.Task.run", "Mise/Task/Basic.lean", 78, 81, ())[
+#def-head("Task.run", "def:Mise.Task.run", "Mise/Task/Basic.lean", 78, 81, "https://github.com/benmandrew/mise/blob/main/Mise/Task/Basic.lean#L78-L81", ())[
 #"Run a task against a fixed store.";
 ]
 #raw(lang: "lean", block: true, "def run (s : Store K V) : Task K V α → α\n  | .pure a => a\n  | .fetch k c => (c (s k)).run s")
 
-#def-head("Task.FetchesOnly", "def:Mise.Task.FetchesOnly", "Mise/Task/Basic.lean", 171, 175, ())[
+#def-head("Task.FetchesOnly", "def:Mise.Task.FetchesOnly", "Mise/Task/Basic.lean", 171, 175, "https://github.com/benmandrew/mise/blob/main/Mise/Task/Basic.lean#L171-L175", ())[
 #"Every fetch node anywhere in the tree, on every branch, satisfies ";#raw("P");#".";
 ]
 #raw(lang: "lean", block: true, "inductive FetchesOnly (P : K → Prop) : Task K V α → Prop\n  | pure (a : α) : FetchesOnly P (.pure a)\n  | fetch (k : K) (c : V → Task K V α) :\n      P k → (∀ v, FetchesOnly P (c v)) → FetchesOnly P (.fetch k c)")
 
 #file-heading("Mise/Spec/Basic.lean")
 
-#def-head("BuildSpec", "def:Mise.BuildSpec", "Mise/Spec/Basic.lean", 14, 21, (("Gloss", "specifications with keys {K} and values {V}"), ("Gloss.one", "specification")))[
+#def-head("BuildSpec", "def:Mise.BuildSpec", "Mise/Spec/Basic.lean", 14, 21, "https://github.com/benmandrew/mise/blob/main/Mise/Spec/Basic.lean#L14-L21", ())[
 #"A build specification: which keys are sources, and for every key a task that computes its value from the values of other keys. Correctness (";#raw("Correct");#") ignores the task of a source.";
 ]
 #raw(lang: "lean", block: true, "structure BuildSpec (K V : Type) where\n  isSource : K → Bool\n  task : K → Task K V V")
 
-#def-head("BuildSpec.Correct", "def:Mise.BuildSpec.Correct", "Mise/Spec/Basic.lean", 45, 49, (("Gloss", "{R} is a correct result of {b} when the sources are {S}"),))[
+#def-head("BuildSpec.Correct", "def:Mise.BuildSpec.Correct", "Mise/Spec/Basic.lean", 45, 49, "https://github.com/benmandrew/mise/blob/main/Mise/Spec/Basic.lean#L45-L49", (("Gloss", "{R} is a correct result of {b} when the sources are {S}"),))[
 #raw("R");#" is a correct result of building ";#raw("b");#" from sources ";#raw("S");#".";
 ]
 #raw(lang: "lean", block: true, "def Correct (S R : Store K V) : Prop :=\n  (∀ k, b.isSource k = true → R k = S k) ∧\n  (∀ k, b.isSource k = false → R k = (b.task k).run R)")
 
 #file-heading("Mise/Syntax/Ast.lean")
 
-#def-head("Syntax.Path", "def:Mise.Syntax.Path", "Mise/Syntax/Ast.lean", 12, 16, (("Gloss", "paths"), ("Gloss.one", "path")))[
+#def-head("Syntax.Path", "def:Mise.Syntax.Path", "Mise/Syntax/Ast.lean", 12, 16, "https://github.com/benmandrew/mise/blob/main/Mise/Syntax/Ast.lean#L12-L16", (("Gloss", "paths"),))[
 #"A path is a string. ";#raw("validPath");#" says which strings the printer and the parser model accept.";
 ]
 #raw(lang: "lean", block: true, "abbrev Path := String")
 
-#def-head("Syntax.Rule", "def:Mise.Syntax.Rule", "Mise/Syntax/Ast.lean", 30, 34, ())[
+#def-head("Syntax.Rule", "def:Mise.Syntax.Rule", "Mise/Syntax/Ast.lean", 30, 34, "https://github.com/benmandrew/mise/blob/main/Mise/Syntax/Ast.lean#L30-L34", ())[
 #"A ";#raw("rule");#" statement: its name and its indented bindings, in order.";
 ]
 #raw(lang: "lean", block: true, "structure Rule where\n  name : String\n  bindings : List Binding\n  deriving DecidableEq, Repr, Inhabited")
 
-#def-head("Syntax.Edge", "def:Mise.Syntax.Edge", "Mise/Syntax/Ast.lean", 36, 47, ())[
+#def-head("Syntax.Edge", "def:Mise.Syntax.Edge", "Mise/Syntax/Ast.lean", 36, 47, "https://github.com/benmandrew/mise/blob/main/Mise/Syntax/Ast.lean#L36-L47", ())[
 #"A ";#raw("build");#" statement: explicit outputs, implicit outputs (after ";#raw("|");#"), the rule, explicit inputs, implicit inputs (after ";#raw("|");#"), order-only inputs (after ";#raw("||");#"), and the edge's indented bindings.";
 ]
 #raw(lang: "lean", block: true, "structure Edge where\n  outs : List Path\n  implicitOuts : List Path := []\n  rule : String\n  ins : List Path := []\n  implicitIns : List Path := []\n  orderOnly : List Path := []\n  bindings : List Binding := []\n  deriving DecidableEq, Repr, Inhabited")
 
-#def-head("Syntax.Stmt", "def:Mise.Syntax.Stmt", "Mise/Syntax/Ast.lean", 49, 56, ())[
+#def-head("Syntax.Stmt", "def:Mise.Syntax.Stmt", "Mise/Syntax/Ast.lean", 49, 56, "https://github.com/benmandrew/mise/blob/main/Mise/Syntax/Ast.lean#L49-L56", ())[
 #"A top-level statement: a variable binding, a rule, a build edge, or a ";#raw("default");#" statement naming targets.";
 ]
 #raw(lang: "lean", block: true, "inductive Stmt where\n  | binding (key : String) (value : EvalString)\n  | rule (r : Rule)\n  | edge (e : Edge)\n  | default (targets : List Path)\n  deriving DecidableEq, Repr, Inhabited")
 
-#def-head("Syntax.Manifest", "def:Mise.Syntax.Manifest", "Mise/Syntax/Ast.lean", 58, 63, (("Gloss", "manifests"), ("Gloss.one", "manifest")))[
+#def-head("Syntax.Manifest", "def:Mise.Syntax.Manifest", "Mise/Syntax/Ast.lean", 58, 63, "https://github.com/benmandrew/mise/blob/main/Mise/Syntax/Ast.lean#L58-L63", ())[
 #"A manifest: its statements in file order.";
 ]
 #raw(lang: "lean", block: true, "structure Manifest where\n  stmts : List Stmt\n  deriving DecidableEq, Repr, Inhabited")
 
-#def-head("Syntax.Edge.allOuts", "def:Mise.Syntax.Edge.allOuts", "Mise/Syntax/Ast.lean", 67, 68, ())[
+#def-head("Syntax.Edge.allOuts", "def:Mise.Syntax.Edge.allOuts", "Mise/Syntax/Ast.lean", 67, 68, "https://github.com/benmandrew/mise/blob/main/Mise/Syntax/Ast.lean#L67-L68", ())[
 #"Explicit then implicit outputs.";
 ]
 #raw(lang: "lean", block: true, "def allOuts (e : Edge) : List Path := e.outs ++ e.implicitOuts")
 
 #file-heading("Mise/Syntax/Print.lean")
 
-#def-head("Syntax.print", "def:Mise.Syntax.print", "Mise/Syntax/Print.lean", 80, 82, (("Gloss", "the text of {m}"),))[
+#def-head("Syntax.print", "def:Mise.Syntax.print", "Mise/Syntax/Print.lean", 80, 82, "https://github.com/benmandrew/mise/blob/main/Mise/Syntax/Print.lean#L80-L82", (("Gloss", "the text of {m}"),))[
 #"The text of a manifest, as ";#raw("mise");#" writes it.";
 ]
 #raw(lang: "lean", block: true, "def print (m : Manifest) : String := String.ofList (printChars m)")
 
 #file-heading("Mise/Syntax/Parse.lean")
 
-#def-head("Syntax.parse", "def:Mise.Syntax.parse", "Mise/Syntax/Parse.lean", 285, 288, (("Gloss", "the parse of {s}"),))[
+#def-head("Syntax.parse", "def:Mise.Syntax.parse", "Mise/Syntax/Parse.lean", 285, 288, "https://github.com/benmandrew/mise/blob/main/Mise/Syntax/Parse.lean#L285-L288", (("Gloss", "the parse of {s}"),))[
 #"The parser model: the manifest the text describes, or ";#raw("none");#" when the model rejects the text.";
 ]
 #raw(lang: "lean", block: true, "def parse (s : String) : Option Manifest := parseChars s.toList")
 
 #file-heading("Mise/Frontend/Eval.lean")
 
-#def-head("Syntax.EdgeInfo", "def:Mise.Syntax.EdgeInfo", "Mise/Frontend/Eval.lean", 52, 59, ())[
+#def-head("Syntax.EdgeInfo", "def:Mise.Syntax.EdgeInfo", "Mise/Frontend/Eval.lean", 52, 59, "https://github.com/benmandrew/mise/blob/main/Mise/Frontend/Eval.lean#L52-L59", ())[
 #"What Ninja stores for an edge after parsing it.";
 ]
 #raw(lang: "lean", block: true, "structure EdgeInfo where\n  edge : Edge\n  rule : Rule\n  /-- The edge's own scope, or `none` when the edge has no bindings and uses\n  the file scope. -/\n  own : Option Scope\n  deriving Repr, Inhabited")
 
-#def-head("Syntax.EdgeInfo.command", "def:Mise.Syntax.EdgeInfo.command", "Mise/Frontend/Eval.lean", 78, 79, ())[
+#def-head("Syntax.EdgeInfo.command", "def:Mise.Syntax.EdgeInfo.command", "Mise/Frontend/Eval.lean", 78, 79, "https://github.com/benmandrew/mise/blob/main/Mise/Frontend/Eval.lean#L78-L79", ())[
 #"The evaluated command, as Ninja hashes it in the build log.";
 ]
 #raw(lang: "lean", block: true, "def EdgeInfo.command (file : Scope) (c : EdgeInfo) : String := c.binding file \"command\"")
 
-#def-head("Syntax.EdgeInfo.isDyn", "def:Mise.Syntax.EdgeInfo.isDyn", "Mise/Frontend/Eval.lean", 81, 83, ())[
+#def-head("Syntax.EdgeInfo.isDyn", "def:Mise.Syntax.EdgeInfo.isDyn", "Mise/Frontend/Eval.lean", 81, 83, "https://github.com/benmandrew/mise/blob/main/Mise/Frontend/Eval.lean#L81-L83", ())[
 #"Whether Ninja reads the edge's dependencies from its deps log (";#raw("deps = gcc");#"): Ninja checks only that the binding is nonempty.";
 ]
 #raw(lang: "lean", block: true, "def EdgeInfo.isDyn (file : Scope) (c : EdgeInfo) : Bool := c.binding file \"deps\" != \"\"")
 
-#def-head("Syntax.Elab", "def:Mise.Syntax.Elab", "Mise/Frontend/Eval.lean", 89, 94, ())[
+#def-head("Syntax.Elab", "def:Mise.Syntax.Elab", "Mise/Frontend/Eval.lean", 89, 94, "https://github.com/benmandrew/mise/blob/main/Mise/Frontend/Eval.lean#L89-L94", ())[
 #"The state of Ninja's parser after reading a prefix of the manifest.";
 ]
 #raw(lang: "lean", block: true, "structure Elab where\n  file : Scope := []\n  rules : List Rule := [⟨\"phony\", []⟩]\n  edges : List EdgeInfo := []\n  deriving Repr, Inhabited")
 
-#def-head("Syntax.Manifest.elab", "def:Mise.Syntax.Manifest.elab", "Mise/Frontend/Eval.lean", 116, 118, ())[
+#def-head("Syntax.Manifest.elab", "def:Mise.Syntax.Manifest.elab", "Mise/Frontend/Eval.lean", 116, 118, "https://github.com/benmandrew/mise/blob/main/Mise/Frontend/Eval.lean#L116-L118", ())[
 #"Ninja's parser state after reading every statement in order, from the state that knows only the ";#raw("phony");#" rule.";
 ]
 #raw(lang: "lean", block: true, "def Manifest.elab (m : Manifest) : Elab := m.stmts.foldl Elab.step {}")
 
 #file-heading("Mise/Frontend/Graph.lean")
 
-#def-head("Frontend.GRule", "def:Mise.Frontend.GRule", "Mise/Frontend/Graph.lean", 35, 48, ())[
+#def-head("Frontend.GRule", "def:Mise.Frontend.GRule", "Mise/Frontend/Graph.lean", 35, 48, "https://github.com/benmandrew/mise/blob/main/Mise/Frontend/Graph.lean#L35-L48", ())[
 #"A rule. The command and description are Ninja values; ";#raw("${in}");#" and ";#raw("${out}");#" stand for the edge's explicit inputs and outputs, and any other variable is bound by the edge. An empty description is not emitted.";
 ]
 #raw(lang: "lean", block: true, "structure GRule where\n  name : String\n  command : EvalString\n  description : EvalString := []\n  /-- Emit `depfile = ${out}.d` and `deps = gcc`: the command writes a\n  Makefile-style depfile listing what it read. -/\n  depfile : Bool := false\n  /-- Emit `restat = 1`: the command may leave an output untouched when its\n  contents would not change, and Ninja then skips dependents on its account. -/\n  restat : Bool := false\n  deriving DecidableEq, Repr, Inhabited")
 
-#def-head("Frontend.GEdge", "def:Mise.Frontend.GEdge", "Mise/Frontend/Graph.lean", 50, 61, ())[
+#def-head("Frontend.GEdge", "def:Mise.Frontend.GEdge", "Mise/Frontend/Graph.lean", 50, 61, "https://github.com/benmandrew/mise/blob/main/Mise/Frontend/Graph.lean#L50-L61", ())[
 #"An edge in the DSL: the name of its rule, explicit and implicit outputs, explicit, implicit and order-only inputs, and the edge's own variables with their literal values.";
 ]
 #raw(lang: "lean", block: true, "structure GEdge where\n  rule : String\n  outs : List Path\n  implicitOuts : List Path := []\n  ins : List Path := []\n  implicitIns : List Path := []\n  orderOnly : List Path := []\n  vars : List (String × String) := []\n  deriving DecidableEq, Repr, Inhabited")
 
-#def-head("Frontend.GEdge.allOuts", "def:Mise.Frontend.GEdge.allOuts", "Mise/Frontend/Graph.lean", 65, 66, ())[
+#def-head("Frontend.GEdge.allOuts", "def:Mise.Frontend.GEdge.allOuts", "Mise/Frontend/Graph.lean", 65, 66, "https://github.com/benmandrew/mise/blob/main/Mise/Frontend/Graph.lean#L65-L66", ())[
 #"Explicit then implicit outputs.";
 ]
 #raw(lang: "lean", block: true, "def allOuts (e : GEdge) : List Path := e.outs ++ e.implicitOuts")
 
-#def-head("Frontend.GEdge.inputs", "def:Mise.Frontend.GEdge.inputs", "Mise/Frontend/Graph.lean", 67, 68, ())[
+#def-head("Frontend.GEdge.inputs", "def:Mise.Frontend.GEdge.inputs", "Mise/Frontend/Graph.lean", 67, 68, "https://github.com/benmandrew/mise/blob/main/Mise/Frontend/Graph.lean#L67-L68", ())[
 #"The inputs the command reads: explicit and implicit.";
 ]
 #raw(lang: "lean", block: true, "def inputs (e : GEdge) : List Path := e.ins ++ e.implicitIns")
 
-#def-head("Frontend.GEdge.allIns", "def:Mise.Frontend.GEdge.allIns", "Mise/Frontend/Graph.lean", 69, 70, ())[
+#def-head("Frontend.GEdge.allIns", "def:Mise.Frontend.GEdge.allIns", "Mise/Frontend/Graph.lean", 69, 70, "https://github.com/benmandrew/mise/blob/main/Mise/Frontend/Graph.lean#L69-L70", ())[
 #"Explicit, implicit and order-only inputs.";
 ]
 #raw(lang: "lean", block: true, "def allIns (e : GEdge) : List Path := e.ins ++ e.implicitIns ++ e.orderOnly")
 
-#def-head("Frontend.Graph", "def:Mise.Frontend.Graph", "Mise/Frontend/Graph.lean", 80, 89, (("Gloss", "graphs"), ("Gloss.one", "graph")))[
+#def-head("Frontend.Graph", "def:Mise.Frontend.Graph", "Mise/Frontend/Graph.lean", 80, 89, "https://github.com/benmandrew/mise/blob/main/Mise/Frontend/Graph.lean#L80-L89", (("Gloss.one", "graph"),))[
 #"A build as the DSL describes it: declared sources, rules, edges in the order they were added, and default targets.";
 ]
 #raw(lang: "lean", block: true, "structure Graph where\n  sources : List Path := []\n  rules : List GRule := []\n  edges : List GEdge := []\n  defaults : List Path := []\n  deriving Repr, Inhabited")
 
-#def-head("Frontend.Graph.check", "def:Mise.Frontend.Graph.check", "Mise/Frontend/Graph.lean", 136, 143, ())[
+#def-head("Frontend.Graph.check", "def:Mise.Frontend.Graph.check", "Mise/Frontend/Graph.lean", 136, 143, "https://github.com/benmandrew/mise/blob/main/Mise/Frontend/Graph.lean#L136-L143", ())[
 #"The validity check: rule names are distinct, every rule is acceptable (";#raw("GRule.ok");#"), every edge is acceptable after the ones before it (";#raw("edgesOK");#"), every default target is an output of some edge, and every edge whose rule has a depfile has one explicit output (";#raw("depfileOutsOK");#").";
 ]
 #raw(lang: "lean", block: true, "def Graph.check (g : Graph) : Bool :=\n  nodupB g.ruleNames && g.rules.all GRule.ok && edgesOK g.ruleNames g.sources [] g.edges &&\n    (g.defaults.all fun d => g.edges.any (·.allOuts.contains d)) && g.edges.all (depfileOutsOK g.rules)")
 
-#def-head("Frontend.Graph.Valid", "def:Mise.Frontend.Graph.Valid", "Mise/Frontend/Graph.lean", 145, 149, (("Gloss", "{g} is valid"),))[
+#def-head("Frontend.Graph.Valid", "def:Mise.Frontend.Graph.Valid", "Mise/Frontend/Graph.lean", 145, 149, "https://github.com/benmandrew/mise/blob/main/Mise/Frontend/Graph.lean#L145-L149", (("Gloss", "{g} is valid"),))[
 #"Every input is a declared source or an output of an earlier edge, every output has one producer, every name and path can be written in Ninja, and every depfile edge has one explicit output.";
 ]
 #raw(lang: "lean", block: true, "def Graph.Valid (g : Graph) : Prop := g.check = true")
 
-#def-head("Frontend.findOut", "def:Mise.Frontend.findOut", "Mise/Frontend/Graph.lean", 155, 158, ())[
+#def-head("Frontend.findOut", "def:Mise.Frontend.findOut", "Mise/Frontend/Graph.lean", 155, 158, "https://github.com/benmandrew/mise/blob/main/Mise/Frontend/Graph.lean#L155-L158", ())[
 #"The first element whose outputs contain ";#raw("k");#", with its index.";
 ]
 #raw(lang: "lean", block: true, "def findOut {α : Type} (outs : α → List Path) (k : Path) : List α → Option (Nat × α)\n  | [] => none\n  | a :: as => if (outs a).contains k then some (0, a) else (findOut outs k as).map fun p => (p.1 + 1, p.2)")
 
-#def-head("Frontend.Sem", "def:Mise.Frontend.Sem", "Mise/Frontend/Graph.lean", 165, 178, (("Gloss", "command meanings over {V}"), ("Gloss.one", "command meaning")))[
+#def-head("Frontend.Sem", "def:Mise.Frontend.Sem", "Mise/Frontend/Graph.lean", 165, 178, "https://github.com/benmandrew/mise/blob/main/Mise/Frontend/Graph.lean#L165-L178", ())[
 #"What commands mean.";
 ]
 #raw(lang: "lean", block: true, "structure Sem (V : Type) where\n  /-- A static command's outputs from its inputs' contents. -/\n  exec : String → List V → List V\n  /-- A depfile command: what it reads, and its outputs. -/\n  dyn : String → Task Path V (List V)\n  /-- Stage 7: when a `restat` command would write `new` over `old`, it may\n  leave the file untouched when `keep old new` holds. -/\n  keep : V → V → Bool := fun _ _ => false\n  /-- The assumption behind early cutoff: a command leaves a file untouched\n  only when its new contents would be identical. -/\n  keep_eq : ∀ a b, keep a b = true → a = b := by intro a b h; simp at h")
 
-#def-head("Frontend.cmdTask", "def:Mise.Frontend.cmdTask", "Mise/Frontend/Graph.lean", 188, 191, ())[
+#def-head("Frontend.cmdTask", "def:Mise.Frontend.cmdTask", "Mise/Frontend/Graph.lean", 188, 191, "https://github.com/benmandrew/mise/blob/main/Mise/Frontend/Graph.lean#L188-L191", ())[
 #"A command as a task returning all its outputs. A static command fetches its explicit and implicit inputs in order.";
 ]
 #raw(lang: "lean", block: true, "def cmdTask {V : Type} (sem : Sem V) (dyn : Bool) (cmd : String) (ins : List Path) : Task Path V (List V) :=\n  if dyn then sem.dyn cmd else (fetchAll ins).bind fun vs => .pure (sem.exec cmd vs)")
 
-#def-head("Frontend.outTask", "def:Mise.Frontend.outTask", "Mise/Frontend/Graph.lean", 193, 195, ())[
+#def-head("Frontend.outTask", "def:Mise.Frontend.outTask", "Mise/Frontend/Graph.lean", 193, 195, "https://github.com/benmandrew/mise/blob/main/Mise/Frontend/Graph.lean#L193-L195", ())[
 #"Output ";#raw("i");#" of a command.";
 ]
 #raw(lang: "lean", block: true, "def outTask {V : Type} [Inhabited V] (t : Task Path V (List V)) (i : Nat) : Task Path V V :=\n  t.bind fun vs => .pure (vs.getD i default)")
 
-#def-head("Frontend.Graph.cmd", "def:Mise.Frontend.Graph.cmd", "Mise/Frontend/Graph.lean", 200, 204, ())[
+#def-head("Frontend.Graph.cmd", "def:Mise.Frontend.Graph.cmd", "Mise/Frontend/Graph.lean", 200, 204, "https://github.com/benmandrew/mise/blob/main/Mise/Frontend/Graph.lean#L200-L204", ())[
 #"The command the DSL means for an edge.";
 ]
 #raw(lang: "lean", block: true, "def Graph.cmd (g : Graph) (e : GEdge) : String :=\n  match g.ruleOf e with\n  | some r => evalWith e.look r.command\n  | none => \"\"")
 
-#def-head("Frontend.Graph.isDyn", "def:Mise.Frontend.Graph.isDyn", "Mise/Frontend/Graph.lean", 206, 210, ())[
+#def-head("Frontend.Graph.isDyn", "def:Mise.Frontend.Graph.isDyn", "Mise/Frontend/Graph.lean", 206, 210, "https://github.com/benmandrew/mise/blob/main/Mise/Frontend/Graph.lean#L206-L210", ())[
 #"Whether an edge's rule has a depfile.";
 ]
 #raw(lang: "lean", block: true, "def Graph.isDyn (g : Graph) (e : GEdge) : Bool :=\n  match g.ruleOf e with\n  | some r => r.depfile\n  | none => false")
 
-#def-head("Frontend.Graph.isSource", "def:Mise.Frontend.Graph.isSource", "Mise/Frontend/Graph.lean", 218, 219, ())[
+#def-head("Frontend.Graph.isSource", "def:Mise.Frontend.Graph.isSource", "Mise/Frontend/Graph.lean", 218, 219, "https://github.com/benmandrew/mise/blob/main/Mise/Frontend/Graph.lean#L218-L219", ())[
 #"Paths no edge produces.";
 ]
 #raw(lang: "lean", block: true, "def Graph.isSource (g : Graph) (k : Path) : Bool := (findOut GEdge.allOuts k g.edges).isNone")
 
-#def-head("Frontend.Graph.spec", "def:Mise.Frontend.Graph.spec", "Mise/Frontend/Graph.lean", 223, 229, (("Gloss", "the specification of {g}"),))[
+#def-head("Frontend.Graph.spec", "def:Mise.Frontend.Graph.spec", "Mise/Frontend/Graph.lean", 223, 229, "https://github.com/benmandrew/mise/blob/main/Mise/Frontend/Graph.lean#L223-L229", (("Gloss", "the specification of {g}"),))[
 #"The meaning of a graph, straight from the DSL.";
 ]
 #raw(lang: "lean", block: true, "def Graph.spec (sem : Sem V) (g : Graph) : BuildSpec Path V where\n  isSource := g.isSource\n  task k := match findOut GEdge.allOuts k g.edges with\n    | some (_, e) => outTask (cmdTask sem (g.isDyn e) (g.cmd e) e.inputs) (e.allOuts.idxOf k)\n    | none => .pure default")
 
-#def-head("Frontend.Graph.DynOK", "def:Mise.Frontend.Graph.DynOK", "Mise/Frontend/Graph.lean", 231, 236, (("Gloss", "the depfile commands of {g} read only allowed inputs"),))[
+#def-head("Frontend.Graph.DynOK", "def:Mise.Frontend.Graph.DynOK", "Mise/Frontend/Graph.lean", 231, 236, "https://github.com/benmandrew/mise/blob/main/Mise/Frontend/Graph.lean#L231-L236", (("Gloss", "the depfile commands of {g} read only allowed inputs"),))[
 #"The static-ancestor condition (Stage 6): every depfile command reads only sources and the edge's own inputs, order-only inputs included. It holds for any graph without depfile rules (";#raw("Mise.Model.dynOK_static");#").";
 ]
 #raw(lang: "lean", block: true, "def Graph.DynOK (sem : Sem V) (g : Graph) : Prop :=\n  ∀ e ∈ g.edges, g.isDyn e = true → (sem.dyn (g.cmd e)).FetchesOnly fun k => g.isSource k = true ∨ k ∈ e.allIns")
 
-#def-head("Frontend.emitRule", "def:Mise.Frontend.emitRule", "Mise/Frontend/Graph.lean", 246, 251, ())[
+#def-head("Frontend.emitRule", "def:Mise.Frontend.emitRule", "Mise/Frontend/Graph.lean", 246, 251, "https://github.com/benmandrew/mise/blob/main/Mise/Frontend/Graph.lean#L246-L251", ())[
 #"A DSL rule as a Ninja rule: ";#raw("command");#", then ";#raw("description");#" when it is nonempty, then the depfile and ";#raw("restat");#" bindings when the rule asks for them.";
 ]
 #raw(lang: "lean", block: true, "def emitRule (r : GRule) : Rule :=\n  ⟨r.name, [(\"command\", r.command)] ++ (if r.description.isEmpty then [] else [(\"description\", r.description)]) ++\n    (if r.depfile then depfileBindings else []) ++ (if r.restat then restatBindings else [])⟩")
 
-#def-head("Frontend.emitEdge", "def:Mise.Frontend.emitEdge", "Mise/Frontend/Graph.lean", 256, 261, ())[
+#def-head("Frontend.emitEdge", "def:Mise.Frontend.emitEdge", "Mise/Frontend/Graph.lean", 256, 261, "https://github.com/benmandrew/mise/blob/main/Mise/Frontend/Graph.lean#L256-L261", ())[
 #"A DSL edge as a Ninja edge with the same paths and rule. Each edge variable becomes a binding to its literal value.";
 ]
 #raw(lang: "lean", block: true, "def emitEdge (e : GEdge) : Edge :=\n  { outs := e.outs, implicitOuts := e.implicitOuts, rule := e.rule, ins := e.ins,\n    implicitIns := e.implicitIns, orderOnly := e.orderOnly,\n    bindings := e.vars.map fun b => (b.1, litVal b.2) }")
 
-#def-head("Frontend.versionStmt", "def:Mise.Frontend.versionStmt", "Mise/Frontend/Graph.lean", 263, 264, ())[
+#def-head("Frontend.versionStmt", "def:Mise.Frontend.versionStmt", "Mise/Frontend/Graph.lean", 263, 264, "https://github.com/benmandrew/mise/blob/main/Mise/Frontend/Graph.lean#L263-L264", ())[
 #"The first statement of every emitted manifest.";
 ]
 #raw(lang: "lean", block: true, "def versionStmt : Stmt := .binding versionVar [.lit ninjaMinVersion]")
 
-#def-head("Frontend.emit", "def:Mise.Frontend.emit", "Mise/Frontend/Graph.lean", 266, 272, (("Gloss", "the manifest for {g}"),))[
+#def-head("Frontend.emit", "def:Mise.Frontend.emit", "Mise/Frontend/Graph.lean", 266, 272, "https://github.com/benmandrew/mise/blob/main/Mise/Frontend/Graph.lean#L266-L272", (("Gloss", "the manifest for {g}"),))[
 #"The manifest ";#raw("mise");#" writes for a graph: the version statement (";#raw("versionStmt");#"), the rules, then the edges in order, then a ";#raw("default");#" statement if the graph has default targets.";
 ]
 #raw(lang: "lean", block: true, "def emit (g : Graph) : Manifest :=\n  ⟨versionStmt :: (g.rules.map (Stmt.rule ∘ emitRule) ++ g.edges.map (Stmt.edge ∘ emitEdge) ++\n    (if g.defaults.isEmpty then [] else [.default g.defaults]))⟩")
 
-#def-head("Frontend.denote", "def:Mise.Frontend.denote", "Mise/Frontend/Graph.lean", 274, 284, (("Gloss", "the meaning of {m}"),))[
+#def-head("Frontend.denote", "def:Mise.Frontend.denote", "Mise/Frontend/Graph.lean", 274, 284, "https://github.com/benmandrew/mise/blob/main/Mise/Frontend/Graph.lean#L274-L284", (("Gloss", "the meaning of {m}"),))[
 #"The meaning of a manifest under the Ninja evaluation model: each output is computed by its edge's evaluated command, which is static or reads a depfile according to the edge's ";#raw("deps");#" binding. Paths no edge produces are sources.";
 ]
 #raw(lang: "lean", block: true, "def denote (sem : Sem V) (m : Manifest) : BuildSpec Path V where\n  isSource k := (findOut (·.edge.allOuts) k m.elab.edges).isNone\n  task k := match findOut (·.edge.allOuts) k m.elab.edges with\n    | some (_, c) => outTask (cmdTask sem (c.isDyn m.elab.file) (c.command m.elab.file)\n        (c.edge.ins ++ c.edge.implicitIns)) (c.edge.allOuts.idxOf k)\n    | none => .pure default")
 
 #file-heading("Mise/Model/Basic.lean")
 
-#def-head("Model.MEdge", "def:Mise.Model.MEdge", "Mise/Model/Basic.lean", 26, 41, (("Gloss", "edges"), ("Gloss.one", "edge")))[
+#def-head("Model.MEdge", "def:Mise.Model.MEdge", "Mise/Model/Basic.lean", 26, 41, "https://github.com/benmandrew/mise/blob/main/Mise/Model/Basic.lean#L26-L41", (("Gloss", "edges"), ("Gloss.one", "edge")))[
 #"What the model needs from an edge: all outputs, the inputs that count for dirtiness and for a static command (explicit and implicit), the order-only inputs, the evaluated command, whether it has a depfile, and whether it has ";#raw("restat");#".";
 ]
 #raw(lang: "lean", block: true, "structure MEdge where\n  /-- All outputs, explicit and implicit.\n  Gloss: the outputs of {self} -/\n  outs : List Path\n  ins : List Path\n  oo : List Path := []\n  cmd : String\n  dyn : Bool := false\n  restat : Bool := false\n  deriving DecidableEq, Repr, Inhabited")
 
-#def-head("Syntax.Manifest.medges", "def:Mise.Syntax.Manifest.medges", "Mise/Model/Basic.lean", 59, 60, ())[
+#def-head("Syntax.Manifest.medges", "def:Mise.Syntax.Manifest.medges", "Mise/Model/Basic.lean", 59, 60, "https://github.com/benmandrew/mise/blob/main/Mise/Model/Basic.lean#L59-L60", ())[
 #"The manifest's edges as the model sees them, in manifest order.";
 ]
 #raw(lang: "lean", block: true, "def medges (m : Manifest) : List Mise.Model.MEdge := m.elab.edges.map (Mise.Model.toMEdge m.elab.file)")
 
-#def-head("Model.St", "def:Mise.Model.St", "Mise/Model/Basic.lean", 66, 81, (("Gloss", "states over {V}"), ("Gloss.one", "state")))[
+#def-head("Model.St", "def:Mise.Model.St", "Mise/Model/Basic.lean", 66, 81, "https://github.com/benmandrew/mise/blob/main/Mise/Model/Basic.lean#L66-L81", (("Gloss.one", "state"),))[
 #"File system, build log, deps log and clock. A log entry is the command and the time recorded for the output; a deps entry is the list of paths the command read.";
 ]
 #raw(lang: "lean", block: true, "structure St (V : Type) where\n  /-- Each path's contents and mtime, or `none` when the file is missing.\n  Gloss: the file at {#2} in {self}\n  Gloss.fun: the file system of {self} -/\n  fs : Path → Option (V × Nat)\n  log : Path → Option (String × Nat)\n  deps : Path → Option (List Path) := fun _ => none\n  /-- The current time. Every edit and every command run advances it by\n  one, and stamps what it writes with the new time.\n  Gloss: the clock of {self} -/\n  clock : Nat")
 
-#def-head("Model.St.content", "def:Mise.Model.St.content", "Mise/Model/Basic.lean", 87, 90, (("Gloss", "the contents of {p} in {st}"), ("Gloss.fun", "the contents of {st}")))[
+#def-head("Model.St.content", "def:Mise.Model.St.content", "Mise/Model/Basic.lean", 87, 90, "https://github.com/benmandrew/mise/blob/main/Mise/Model/Basic.lean#L87-L90", (("Gloss.fun", "the contents of {st}"),))[
 #"Contents; a missing file reads as ";#raw("default");#".";
 ]
 #raw(lang: "lean", block: true, "def content (st : St V) (p : Path) : V := ((st.fs p).map (·.1)).getD default")
 
-#def-head("Model.St.mtime", "def:Mise.Model.St.mtime", "Mise/Model/Basic.lean", 92, 94, (("Gloss", "the mtime of {p} in {st}"),))[
+#def-head("Model.St.mtime", "def:Mise.Model.St.mtime", "Mise/Model/Basic.lean", 92, 94, "https://github.com/benmandrew/mise/blob/main/Mise/Model/Basic.lean#L92-L94", (("Gloss", "the mtime of {p} in {st}"),))[
 #"Modification time; a missing file has time 0.";
 ]
 #raw(lang: "lean", block: true, "def mtime (st : St V) (p : Path) : Nat := ((st.fs p).map (·.2)).getD 0")
 
-#def-head("Model.St.effIns", "def:Mise.Model.St.effIns", "Mise/Model/Basic.lean", 101, 104, ())[
+#def-head("Model.St.effIns", "def:Mise.Model.St.effIns", "Mise/Model/Basic.lean", 101, 104, "https://github.com/benmandrew/mise/blob/main/Mise/Model/Basic.lean#L101-L104", ())[
 #"The inputs Ninja checks for an output: the static inputs, and for a depfile edge the recorded deps. ";#raw("none");#" when a depfile edge has no entry.";
 ]
 #raw(lang: "lean", block: true, "def effIns (st : St V) (e : MEdge) (o : Path) : Option (List Path) :=\n  if e.dyn then (st.deps o).map (e.ins ++ ·) else some e.ins")
 
-#def-head("Model.St.dirty", "def:Mise.Model.St.dirty", "Mise/Model/Basic.lean", 117, 119, (("Gloss", "whether {e} is dirty in {st}"),))[
+#def-head("Model.St.dirty", "def:Mise.Model.St.dirty", "Mise/Model/Basic.lean", 117, 119, "https://github.com/benmandrew/mise/blob/main/Mise/Model/Basic.lean#L117-L119", ())[
 #"Whether Ninja runs the edge: some output is dirty (";#raw("outDirty");#").";
 ]
 #raw(lang: "lean", block: true, "def dirty (st : St V) (e : MEdge) : Bool := e.outs.any (st.outDirty e)")
 
-#def-head("Model.St.step", "def:Mise.Model.St.step", "Mise/Model/Basic.lean", 144, 146, ())[
+#def-head("Model.St.step", "def:Mise.Model.St.step", "Mise/Model/Basic.lean", 144, 146, "https://github.com/benmandrew/mise/blob/main/Mise/Model/Basic.lean#L144-L146", ())[
 #"Ninja's visit to an edge: run it if it is dirty, otherwise change nothing.";
 ]
 #raw(lang: "lean", block: true, "def step (sem : Sem V) (st : St V) (e : MEdge) : St V :=\n  if st.dirty e then st.run sem e else st")
 
-#def-head("Model.St.edit", "def:Mise.Model.St.edit", "Mise/Model/Basic.lean", 148, 150, ())[
+#def-head("Model.St.edit", "def:Mise.Model.St.edit", "Mise/Model/Basic.lean", 148, 150, "https://github.com/benmandrew/mise/blob/main/Mise/Model/Basic.lean#L148-L150", ())[
 #"A source edit: new contents at a fresh time.";
 ]
 #raw(lang: "lean", block: true, "def edit (st : St V) (p : Path) (v : V) : St V :=\n  { st with fs := fun q => if q = p then some (v, st.clock + 1) else st.fs q, clock := st.clock + 1 }")
 
-#def-head("Model.St.edits", "def:Mise.Model.St.edits", "Mise/Model/Basic.lean", 152, 156, (("Gloss", "the state after applying {#2} to {#1}"),))[
+#def-head("Model.St.edits", "def:Mise.Model.St.edits", "Mise/Model/Basic.lean", 152, 156, "https://github.com/benmandrew/mise/blob/main/Mise/Model/Basic.lean#L152-L156", (("Gloss", "the state after applying {#2} to {#1}"),))[
 #"Apply source edits in list order, each with ";#raw("edit");#".";
 ]
 #raw(lang: "lean", block: true, "def edits (st : St V) : List (Path × V) → St V\n  | [] => st\n  | (p, v) :: es => (st.edit p v).edits es")
 
-#def-head("Model.buildTrace", "def:Mise.Model.buildTrace", "Mise/Model/Basic.lean", 174, 182, (("Gloss", "the trace of visiting {#2} from {#3}"), ("Gloss.fst", "the state after visiting {#2} from {#3}"), ("Gloss.snd", "the edges run by visiting {#2} from {#3}")))[
+#def-head("Model.buildTrace", "def:Mise.Model.buildTrace", "Mise/Model/Basic.lean", 174, 182, "https://github.com/benmandrew/mise/blob/main/Mise/Model/Basic.lean#L174-L182", (("Gloss.fst", "the state after visiting {#2} from {#3}"), ("Gloss.snd", "the edges run by visiting {#2} from {#3}")))[
 #"Visit edges in order, running the dirty ones. Also returns the edges run.";
 ]
 #raw(lang: "lean", block: true, "def buildTrace (sem : Sem V) : List MEdge → St V → St V × List MEdge\n  | [], st => (st, [])\n  | e :: es, st =>\n    let r := buildTrace sem es (st.step sem e)\n    (r.1, if st.dirty e then e :: r.2 else r.2)")
 
-#def-head("Model.ninjaBuild", "def:Mise.Model.ninjaBuild", "Mise/Model/Basic.lean", 184, 187, ())[
+#def-head("Model.ninjaBuild", "def:Mise.Model.ninjaBuild", "Mise/Model/Basic.lean", 184, 187, "https://github.com/benmandrew/mise/blob/main/Mise/Model/Basic.lean#L184-L187", ())[
 #"One ";#raw("ninja");#" run on a manifest: visit the edges in manifest order, running the dirty ones, and return the final state.";
 ]
 #raw(lang: "lean", block: true, "def ninjaBuild (sem : Sem V) (m : Manifest) (st : St V) : St V :=\n  (buildTrace sem m.medges st).1")
 
-#def-head("Model.Sched", "def:Mise.Model.Sched", "Mise/Model/Basic.lean", 211, 216, ())[
+#def-head("Model.Sched", "def:Mise.Model.Sched", "Mise/Model/Basic.lean", 211, 216, "https://github.com/benmandrew/mise/blob/main/Mise/Model/Basic.lean#L211-L216", ())[
 #"Edges in a schedulable order: no edge reads its own outputs or a later edge's outputs, order-only inputs included, and no two edges share an output.";
 ]
 #raw(lang: "lean", block: true, "def Sched : List MEdge → Prop\n  | [] => True\n  | e :: es => Disjoint e.reads e.outs ∧ (∀ e' ∈ es, Disjoint e.reads e'.outs ∧ Disjoint e.outs e'.outs) ∧ Sched es")
 
 #file-heading("Mise/Model/Sound.lean")
 
-#def-head("Model.Reach", "def:Mise.Model.Reach", "Mise/Model/Sound.lean", 729, 735, ())[
+#def-head("Model.Reach", "def:Mise.Model.Reach", "Mise/Model/Sound.lean", 729, 735, "https://github.com/benmandrew/mise/blob/main/Mise/Model/Sound.lean#L729-L735", ())[
 #"The states reachable from empty logs by source edits and by running or skipping edges in any order. Interrupted builds, builds of some targets, and full builds are all sequences of steps.";
 ]
 #raw(lang: "lean", block: true, "inductive Reach (es : List MEdge) : St V → Prop\n  | init {st : St V} : st.Fresh → (∀ p, st.log p = none) → (∀ p, st.deps p = none) → Reach es st\n  | edit {st : St V} (p : Path) (v : V) : Reach es st → (∀ e ∈ es, p ∉ e.outs) → Reach es (st.edit p v)\n  | step {st : St V} {e : MEdge} : Reach es st → e ∈ es → Reach es (st.step sem e)")
 
 #file-heading("Mise/Headline.lean")
 
-#def-head("Headline.edges", "def:Mise.Headline.edges", "Mise/Headline.lean", 23, 26, (("Gloss", "the manifest edges of {g}"),))[
+#def-head("Headline.edges", "def:Mise.Headline.edges", "Mise/Headline.lean", 23, 26, "https://github.com/benmandrew/mise/blob/main/Mise/Headline.lean#L23-L26", (("Gloss", "the manifest edges of {g}"),))[
 #"The edges of the manifest ";#raw("mise");#" emits for ";#raw("g");#", as the Ninja model sees them.";
 ]
 #raw(lang: "lean", block: true, "abbrev edges (g : Graph) : List MEdge := (emit g).medges")
 
-#def-head("Headline.Reachable", "def:Mise.Headline.Reachable", "Mise/Headline.lean", 28, 32, (("Gloss", "{st} is reachable for {g}"),))[
+#def-head("Headline.Reachable", "def:Mise.Headline.Reachable", "Mise/Headline.lean", 28, 32, "https://github.com/benmandrew/mise/blob/main/Mise/Headline.lean#L28-L32", (("Gloss", "{st} is reachable for {g}"),))[
 #raw("st");#" can arise from empty build and deps logs by any sequence of source edits and of edges run or skipped as Ninja would. Full builds, builds of some targets and interrupted builds are all such sequences.";
 ]
 #raw(lang: "lean", block: true, "abbrev Reachable (g : Graph) (st : St V) : Prop := Reach sem (edges g) st")
 
-#def-head("Headline.build", "def:Mise.Headline.build", "Mise/Headline.lean", 34, 36, (("Gloss", "the state after building {g} from {st}"),))[
+#def-head("Headline.build", "def:Mise.Headline.build", "Mise/Headline.lean", 34, 36, "https://github.com/benmandrew/mise/blob/main/Mise/Headline.lean#L34-L36", (("Gloss", "the state after building {g} from {st}"),))[
 #"The state after one ";#raw("ninja");#" run on the emitted manifest.";
 ]
 #raw(lang: "lean", block: true, "abbrev build (g : Graph) (st : St V) : St V := ninjaBuild sem (emit g) st")
 
-#def-head("Headline.ran", "def:Mise.Headline.ran", "Mise/Headline.lean", 38, 40, (("Gloss", "the edges run by building {g} from {st}"),))[
+#def-head("Headline.ran", "def:Mise.Headline.ran", "Mise/Headline.lean", 38, 40, "https://github.com/benmandrew/mise/blob/main/Mise/Headline.lean#L38-L40", (("Gloss", "the edges run by building {g} from {st}"),))[
 #"The edges that one ";#raw("ninja");#" run executes, in order.";
 ]
 #raw(lang: "lean", block: true, "abbrev ran (g : Graph) (st : St V) : List MEdge := (buildTrace sem (edges g) st).2")
 
-#def-head("Headline.IsSource", "def:Mise.Headline.IsSource", "Mise/Headline.lean", 42, 44, (("Gloss", "{p} is a source of {g}"),))[
+#def-head("Headline.IsSource", "def:Mise.Headline.IsSource", "Mise/Headline.lean", 42, 44, "https://github.com/benmandrew/mise/blob/main/Mise/Headline.lean#L42-L44", (("Gloss", "{p} is a source of {g}"),))[
 #"No edge of the manifest writes ";#raw("p");#".";
 ]
 #raw(lang: "lean", block: true, "abbrev IsSource (g : Graph) (p : Path) : Prop := ∀ e ∈ edges g, p ∉ e.outs")
 
-#def-head("Headline.ValidOrder", "def:Mise.Headline.ValidOrder", "Mise/Headline.lean", 46, 50, (("Gloss", "{es} is a valid parallel order for {g}"),))[
+#def-head("Headline.ValidOrder", "def:Mise.Headline.ValidOrder", "Mise/Headline.lean", 46, 50, "https://github.com/benmandrew/mise/blob/main/Mise/Headline.lean#L46-L50", (("Gloss", "{es} is a valid parallel order for {g}"),))[
 #raw("es");#" is an order a parallel Ninja could run the edges in: the same edges as the manifest, where each edge reads no output of itself or of a later edge.";
 ]
 #raw(lang: "lean", block: true, "abbrev ValidOrder (g : Graph) (es : List MEdge) : Prop := es.Perm (edges g) ∧ Sched es")
 
-#def-head("Headline.Checks", "def:Mise.Headline.Checks", "Mise/Headline.lean", 52, 56, (("Gloss", "Ninja checks input {p} of {e} in {st}"),))[
+#def-head("Headline.Checks", "def:Mise.Headline.Checks", "Mise/Headline.lean", 52, 56, "https://github.com/benmandrew/mise/blob/main/Mise/Headline.lean#L52-L56", (("Gloss", "Ninja checks input {p} of {e} in {st}"),))[
 #raw("p");#" is an input Ninja checks for some output of ";#raw("e");#" in state ";#raw("st");#": a static input, or for a depfile edge a path its deps log entry records.";
 ]
 #raw(lang: "lean", block: true, "abbrev Checks (st : St V) (e : MEdge) (p : Path) : Prop :=\n  ∃ o ∈ e.outs, ∃ D, st.effIns e o = some D ∧ p ∈ D")
@@ -433,16 +433,16 @@
 
 = Other theorems
 
-#other-theorem("correct_unique", "Mise/Headline.lean", 68)[
+#other-theorem("correct_unique", "Mise/Headline.lean", 68, "https://github.com/benmandrew/mise/blob/main/Mise/Headline.lean#L68-L75")[
 #"A build described by a valid graph has at most one correct result for any sources. ";#raw("Correct");#" is the correctness predicate of ";#emph[#"Build Systems à la Carte";];#": sources keep their values, and every target holds what its task computes from the result.";
 ]
-#other-theorem("ran_nodup", "Mise/Headline.lean", 99)[
+#other-theorem("ran_nodup", "Mise/Headline.lean", 99, "https://github.com/benmandrew/mise/blob/main/Mise/Headline.lean#L99-L101")[
 #"One ";#raw("ninja");#" run executes each edge at most once.";
 ]
-#other-theorem("restat_cutoff", "Mise/Headline.lean", 124)[
+#other-theorem("restat_cutoff", "Mise/Headline.lean", 124, "https://github.com/benmandrew/mise/blob/main/Mise/Headline.lean#L124-L128")[
 #strong[#"Early cutoff.";];#" A ";#raw("restat");#" edge that keeps every output changes no other edge's dirtiness, so nothing is rebuilt on its account.";
 ]
-#other-theorem("wrapped_run", "Mise/Headline.lean", 146)[
+#other-theorem("wrapped_run", "Mise/Headline.lean", 146, "https://github.com/benmandrew/mise/blob/main/Mise/Headline.lean#L146-L168")[
 #strong[#"Failed commands.";];#" The DSL wraps every command, unless its rule opts out, in a script that ";#raw("Mise.Model.script");#" models. The command leaves ";#raw("written");#" at the outputs, writing what ";#raw("sem");#" says (";#raw("writesSem");#"), and exits 0 when ";#raw("exitedZero");#". If it fails or leaves an output missing, the state after the run is the state before it; otherwise the run is the model's run. In both cases the state after the run is reachable under ";#raw("Sem.withCmp");#", which keeps a ";#raw("restat");#" output exactly when ";#raw("cmp");#" finds it unchanged, so the theorems above apply to it. The script needs that no output is another output's ";#raw(".mise-old");#" file (";#raw("asideNotOutput");#") and that no ";#raw(".mise-old");#" file of an output exists (";#raw("asideMissing");#").";
 ]
 

@@ -14,12 +14,21 @@
   body
 }
 
+#let body-size = 9.5pt
+
+// Code at a fixed size, for names in headings. Inline code is otherwise
+// scaled down relative to the text around it.
+#let code-at(size, body) = {
+  show raw: set text(size: size)
+  body
+}
+
 #let grey(body) = text(size: 7.5pt, fill: luma(100), body)
 
 #let doc(body) = {
   set document(title: "What mise proves")
   set page(paper: "a4", margin: (x: 1.7cm, y: 1.7cm), numbering: "1")
-  set text(size: 9.5pt, lang: "en", region: "gb")
+  set text(size: body-size, lang: "en", region: "gb")
   set par(justify: false, spacing: 0.6em, leading: 0.5em)
   set list(spacing: 0.4em, indent: 0.2em)
   set enum(spacing: 0.4em)
@@ -28,7 +37,7 @@
   set heading(numbering: none)
   show heading.where(level: 1): set text(size: 12pt)
   show heading.where(level: 1): set block(above: 1.2em, below: 0.6em)
-  show heading.where(level: 2): set text(size: 10.5pt)
+  show heading.where(level: 2): set text(size: 1.2 * body-size)
   show heading.where(level: 2): set block(above: 1em, below: 0.3em)
   align(center, text(size: 16pt, weight: "bold")[What `mise` proves])
   v(-0.4em)
@@ -51,9 +60,12 @@
 #let english(body) = block(
   above: 0.5em, inset: (left: 7pt), stroke: (left: 1.2pt + luma(200)), body)
 
-#let theorem-heading(name, file, line) = {
-  heading(level: 2, raw(name))
-  block(above: 0.2em, below: 0.4em, sticky: true, grey(raw(file + ":" + str(line))))
+// A source location, linked to the lines on GitHub.
+#let source(url, body) = link(url, raw(body))
+
+#let theorem-heading(name, file, line, url) = {
+  heading(level: 2, code-at(1.2 * body-size, raw(name)))
+  block(above: 0.2em, below: 0.4em, sticky: true, grey(source(url, file + ":" + str(line))))
 }
 
 #let defs-intro = [
@@ -64,10 +76,11 @@
   above: 1em, below: 0.4em, sticky: true, text(size: 8.5pt, weight: "bold", fill: luma(70), raw(file)))
 
 // One definition: name and location on one line, then the docstring and the
-// templates, kept on the page of the code that follows.
-#let def-head(name, lbl, file, a, b, glosses, body) = block(
+// templates that the English of a core theorem uses, kept on the page of the
+// code that follows.
+#let def-head(name, lbl, file, a, b, url, glosses, body) = block(
   above: 0.8em, below: 0.3em, sticky: true, width: 100%)[
-  #box[#strong(raw(name))#label(lbl)] #h(0.3em) #grey(raw(file + ":" + str(a) + "–" + str(b)))
+  #box[#code-at(body-size, strong(raw(name)))#label(lbl)] #h(0.3em) #grey(source(url, file + ":" + str(a) + "–" + str(b)))
   #v(0.25em, weak: true)
   #body
   #if glosses.len() > 0 [
@@ -82,8 +95,8 @@
   #strong[Not shown.] The other #n of the #total trusted declarations, which the ones above use: #names. `docs/trusted.md` lists all of them with their sources; the printer and parser among them are covered by the round trip in `meaning` and by `test/stage3-diff.sh` against Ninja.
 ]
 
-#let other-theorem(name, file, line, body) = block(above: 0.7em)[
-  #strong(raw(name)) #h(0.3em) #grey(raw(file + ":" + str(line)))
+#let other-theorem(name, file, line, url, body) = block(above: 0.7em)[
+  #strong(raw(name)) #h(0.3em) #grey(source(url, file + ":" + str(line)))
   #v(0.25em, weak: true)
   #body
 ]
