@@ -377,7 +377,7 @@ variable [Inhabited V]
 command leaves `w` at the outputs and exits 0 when `ok`. The files are what
 the script leaves. Ninja writes the log and deps entries only when the
 script exits 0.
-Gloss: the state after Ninja runs {e} from {st} through the wrapper, where the command leaves {w} at the outputs and exits 0 when {ok} -/
+Gloss: the state after {e} runs wrapped in {st}, writing {w} and exiting 0 when {ok} -/
 def St.runWrapped (sem : Sem V) (st : St V) (e : MEdge) (w : Path → Option V) (ok : Bool) : St V :=
   let r := script e.restat e.outs w ok (st.clock + 1) st.fs
   if r.2 then { st.run sem e with fs := r.1 } else { st with fs := r.1 }

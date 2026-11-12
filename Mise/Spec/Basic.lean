@@ -14,8 +14,8 @@ namespace Mise
 /-- A build specification: which keys are sources, and for every key a task
 that computes its value from the values of other keys. Correctness
 (`Correct`) ignores the task of a source.
-Gloss: build specifications with keys {K} and values {V}
-Gloss.one: build specification -/
+Gloss: specifications with keys {K} and values {V}
+Gloss.one: specification -/
 structure BuildSpec (K V : Type) where
   isSource : K → Bool
   task : K → Task K V V
@@ -43,7 +43,7 @@ namespace BuildSpec
 variable {K V : Type} (b : BuildSpec K V)
 
 /-- `R` is a correct result of building `b` from sources `S`.
-Gloss: {R} is a correct result of building {b} with {S} as the sources -/
+Gloss: {R} is a correct result of {b} when the sources are {S} -/
 def Correct (S R : Store K V) : Prop :=
   (∀ k, b.isSource k = true → R k = S k) ∧
   (∀ k, b.isSource k = false → R k = (b.task k).run R)

@@ -284,7 +284,7 @@ def parseChars (cs : List Char) : Option Manifest :=
 
 /-- The parser model: the manifest the text describes, or `none` when the
 model rejects the text.
-Gloss: the result of parsing {s} -/
+Gloss: the parse of {s} -/
 def parse (s : String) : Option Manifest := parseChars s.toList
 
 end Mise.Syntax

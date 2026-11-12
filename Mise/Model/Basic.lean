@@ -27,8 +27,8 @@ open Mise Mise.Syntax Mise.Frontend
 for dirtiness and for a static command (explicit and implicit), the
 order-only inputs, the evaluated command, whether it has a depfile, and
 whether it has `restat`.
-Gloss: model edges
-Gloss.one: model edge -/
+Gloss: edges
+Gloss.one: edge -/
 structure MEdge where
   /-- All outputs, explicit and implicit.
   Gloss: the outputs of {self} -/
@@ -66,8 +66,8 @@ open Mise Mise.Syntax Mise.Frontend
 /-- File system, build log, deps log and clock. A log entry is the command
 and the time recorded for the output; a deps entry is the list of paths the
 command read.
-Gloss: model states over {V}
-Gloss.one: model state -/
+Gloss: states over {V}
+Gloss.one: state -/
 structure St (V : Type) where
   /-- Each path's contents and mtime, or `none` when the file is missing.
   Gloss: the file at {#2} in {self}
@@ -86,7 +86,7 @@ namespace St
 
 /-- Contents; a missing file reads as `default`.
 Gloss: the contents of {p} in {st}
-Gloss.fun: the file contents of {st} -/
+Gloss.fun: the contents of {st} -/
 def content (st : St V) (p : Path) : V := ((st.fs p).map (·.1)).getD default
 
 /-- Modification time; a missing file has time 0.
@@ -119,12 +119,12 @@ Gloss: whether {e} is dirty in {st} -/
 def dirty (st : St V) (e : MEdge) : Bool := e.outs.any (st.outDirty e)
 
 /-- The contents a run writes to output `o`.
-Gloss: the contents that running {e} in {st} writes to {o} -/
+Gloss: what {e} writes to {o} in {st} -/
 def outVal (sem : Sem V) (st : St V) (e : MEdge) (o : Path) : V :=
   ((e.task sem).run st.content).getD (e.outs.idxOf o) default
 
 /-- A `restat` command leaves output `o` untouched (Stage 7).
-Gloss: whether running {e} in {st} leaves its output {o} untouched -/
+Gloss: whether {e} keeps {o} in {st} -/
 def kept (sem : Sem V) (st : St V) (e : MEdge) (o : Path) : Bool :=
   e.restat && match st.fs o with
     | some (old, _) => sem.keep old (st.outVal sem e o)
@@ -150,7 +150,7 @@ def edit (st : St V) (p : Path) (v : V) : St V :=
   { st with fs := fun q => if q = p then some (v, st.clock + 1) else st.fs q, clock := st.clock + 1 }
 
 /-- Apply source edits in list order, each with `edit`.
-Gloss: {#1} after the edits {#2} -/
+Gloss: the state after applying {#2} to {#1} -/
 def edits (st : St V) : List (Path × V) → St V
   | [] => st
   | (p, v) :: es => (st.edit p v).edits es
@@ -172,9 +172,9 @@ def EdgeOK (sem : Sem V) (st : St V) (e : MEdge) : Prop :=
 end St
 
 /-- Visit edges in order, running the dirty ones. Also returns the edges run.
-Gloss: the final state and the edges run when Ninja visits {#2} in order from {#3}
-Gloss.fst: the state after Ninja visits {#2} in order from {#3}
-Gloss.snd: the edges that run when Ninja visits {#2} in order from {#3} -/
+Gloss: the trace of visiting {#2} from {#3}
+Gloss.fst: the state after visiting {#2} from {#3}
+Gloss.snd: the edges run by visiting {#2} from {#3} -/
 def buildTrace (sem : Sem V) : List MEdge → St V → St V × List MEdge
   | [], st => (st, [])
   | e :: es, st =>

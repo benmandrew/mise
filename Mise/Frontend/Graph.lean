@@ -79,8 +79,8 @@ end GEdge
 
 /-- A build as the DSL describes it: declared sources, rules, edges in the
 order they were added, and default targets.
-Gloss: build graphs
-Gloss.one: build graph -/
+Gloss: graphs
+Gloss.one: graph -/
 structure Graph where
   sources : List Path := []
   rules : List GRule := []
@@ -181,7 +181,7 @@ structure Sem (V : Type) where
 command wrapper (`wrapCommand`), which compares with `cmp`: an output is
 left untouched exactly when its contents are equal, so `keep_eq` holds by
 construction.
-Gloss: {sem} with each `restat` output kept exactly when its contents are unchanged -/
+Gloss: {sem} with `cmp` on `restat` outputs -/
 def Sem.withCmp {V : Type} [DecidableEq V] (sem : Sem V) : Sem V :=
   { sem with keep := fun a b => decide (a = b), keep_eq := fun _ _ h => of_decide_eq_true h }
 
@@ -221,7 +221,7 @@ def Graph.isSource (g : Graph) (k : Path) : Bool := (findOut GEdge.allOuts k g.e
 variable {V : Type} [Inhabited V]
 
 /-- The meaning of a graph, straight from the DSL.
-Gloss: the build specification {g} describes -/
+Gloss: the specification of {g} -/
 def Graph.spec (sem : Sem V) (g : Graph) : BuildSpec Path V where
   isSource := g.isSource
   task k := match findOut GEdge.allOuts k g.edges with
@@ -229,8 +229,9 @@ def Graph.spec (sem : Sem V) (g : Graph) : BuildSpec Path V where
     | none => .pure default
 
 /-- The static-ancestor condition (Stage 6): every depfile command reads
-only sources and the edge's own inputs, order-only inputs included.
-Gloss: every depfile command of {g} reads only sources and its edge's inputs -/
+only sources and the edge's own inputs, order-only inputs included. It holds
+for any graph without depfile rules (`Mise.Model.dynOK_static`).
+Gloss: the depfile commands of {g} read only allowed inputs -/
 def Graph.DynOK (sem : Sem V) (g : Graph) : Prop :=
   ∀ e ∈ g.edges, g.isDyn e = true → (sem.dyn (g.cmd e)).FetchesOnly fun k => g.isSource k = true ∨ k ∈ e.allIns
 
@@ -265,7 +266,7 @@ def versionStmt : Stmt := .binding versionVar [.lit ninjaMinVersion]
 /-- The manifest `mise` writes for a graph: the version statement
 (`versionStmt`), the rules, then the edges in order, then a `default`
 statement if the graph has default targets.
-Gloss: the manifest `mise` emits for {g} -/
+Gloss: the manifest for {g} -/
 def emit (g : Graph) : Manifest :=
   ⟨versionStmt :: (g.rules.map (Stmt.rule ∘ emitRule) ++ g.edges.map (Stmt.edge ∘ emitEdge) ++
     (if g.defaults.isEmpty then [] else [.default g.defaults]))⟩
@@ -274,7 +275,7 @@ def emit (g : Graph) : Manifest :=
 is computed by its edge's evaluated command, which is static or reads a
 depfile according to the edge's `deps` binding. Paths no edge produces are
 sources.
-Gloss: the meaning of {m} under the Ninja evaluation model -/
+Gloss: the meaning of {m} -/
 def denote (sem : Sem V) (m : Manifest) : BuildSpec Path V where
   isSource k := (findOut (·.edge.allOuts) k m.elab.edges).isNone
   task k := match findOut (·.edge.allOuts) k m.elab.edges with
