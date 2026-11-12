@@ -24,7 +24,14 @@ A mutant is killed when the generator or a check against Ninja fails. The
 unmutated model runs first and must pass both. The results table goes to
 `test/out/mutants/results.md`.
 
-usage: mutants.py [--cases N] [--seed S] [--workers W] [MUTANT...]
+With `--via inproc`, steps 2 to 4 are instead: build the in-process build
+fuzzer in the copy (`fuzz/build.sh build standalone`, in
+`test/out/mutants-inproc/tree`) and replay N pseudo-random inputs against
+Ninja's own code with the model's checks off (`MISE_FUZZ_NO_SELF_CHECK`),
+so that only the comparison with Ninja can kill the mutant. The results
+table goes to `test/out/mutants-inproc/results.md`.
+
+usage: mutants.py [--via real|inproc] [--cases N] [--seed S] [--workers W] [MUTANT...]
 """
 import argparse
 import collections
@@ -37,6 +44,7 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+# Set by `--via`: test/out/mutants or test/out/mutants-inproc.
 OUT = ROOT / "test" / "out" / "mutants"
 TREE = OUT / "tree"
 BASIC = "Mise/Model/Basic.lean"
@@ -101,8 +109,8 @@ MUTANTS = [
 ]
 
 
-def sh(cmd, cwd=TREE, env=None):
-    return subprocess.run(cmd, cwd=cwd, env=env, capture_output=True, text=True)
+def sh(cmd, cwd=None, env=None):
+    return subprocess.run(cmd, cwd=cwd or TREE, env=env, capture_output=True, text=True)
 
 
 def copy_tree():
@@ -110,7 +118,7 @@ def copy_tree():
     where the file system has them."""
     shutil.rmtree(TREE, ignore_errors=True)
     (TREE / "test").mkdir(parents=True)
-    items = [".lake", "Mise", "Main.lean", "Mise.lean", "lakefile.toml", "lean-toolchain", "lake-manifest.json"]
+    items = [".lake", "Mise", "Main.lean", "Mise.lean", "lakefile.toml", "lean-toolchain", "lake-manifest.json", "fuzz"]
     tests = [p.name for p in (ROOT / "test").iterdir() if p.name != "out"]
     for src, dst in [(items, TREE), ([f"test/{t}" for t in tests], TREE / "test")]:
         args = [str(ROOT / s) for s in src] + [str(dst)]
@@ -158,8 +166,30 @@ def ninja_checks(n, seed, workers):
     return total - int(m.group(1)), total, kinds
 
 
-def run_one(name, n, seed, workers):
+def inproc_checks(n, seed):
+    """Build the in-process harness and replay n inputs: (inputs failed,
+    inputs, Counter of failing checks), or an error string."""
+    r = sh(["fuzz/build.sh", "build", "standalone"])
+    if r.returncode != 0:
+        return "does not compile:\n" + (r.stdout + r.stderr)[-2000:]
+    out = TREE / "test/out/fuzz/inproc"
+    shutil.rmtree(out, ignore_errors=True)
+    env = dict(os.environ, MISE_FUZZ_NO_SELF_CHECK="1", MISE_FUZZ_OUT=str(out))
+    r = sh([r.stdout.strip(), str(n), str(seed)], env=env)
+    m = re.search(r"^(\d+) inputs in .*; (\d+) failures$", r.stdout, re.M)
+    if not m:
+        return f"harness: {(r.stdout + r.stderr).strip()[-300:]}"
+    kinds = collections.Counter(re.findall(r"^mise-fuzz: (\w+): ", r.stderr, re.M))
+    return int(m.group(2)), int(m.group(1)), kinds
+
+
+def run_one(name, n, seed, workers, via):
     t = time.time()
+    if via == "inproc":
+        nin = inproc_checks(n, seed)
+        if isinstance(nin, str) and nin.startswith("does not compile"):
+            return {"name": name, "error": nin, "time": time.time() - t}
+        return {"name": name, "ninja": nin, "time": time.time() - t}
     err = build()
     if err:
         return {"name": name, "error": "does not compile:\n" + err, "time": time.time() - t}
@@ -187,7 +217,19 @@ def main():
     ap.add_argument("--cases", type=int, default=200)
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--workers", type=int, default=os.cpu_count())
+    ap.add_argument("--via", choices=["real", "inproc"], default="real",
+                    help="check against real Ninja (default) or Ninja's code in process")
     a = ap.parse_args()
+    global OUT, TREE
+    if a.via == "inproc":
+        OUT = ROOT / "test" / "out" / "mutants-inproc"
+        TREE = OUT / "tree"
+        # The copy has no flake, so the Ninja sources come from this tree's.
+        if not os.environ.get("NINJA_SRC"):
+            r = sh(["nix", "build", "--no-link", "--print-out-paths", ".#ninja-1_13_2.src"], cwd=ROOT)
+            if r.returncode != 0:
+                sys.exit(f"cannot fetch Ninja's sources: {r.stderr.strip()[-300:]}")
+            os.environ["NINJA_SRC"] = r.stdout.strip()
     unknown = set(a.only) - {m[0] for m in MUTANTS}
     if unknown:
         sys.exit(f"unknown mutants: {sorted(unknown)}")
@@ -199,8 +241,9 @@ def main():
         if basic.count(old) != 1:
             sys.exit(f"{name}: the text to replace occurs {basic.count(old)} times in {BASIC}")
 
-    base = run_one("(real model)", a.cases, a.seed, a.workers)
-    print(f"real model: generator {base.get('gen') or 'ok'}, ninja {fmt_ninja(base.get('ninja', base.get('error')))}, "
+    base = run_one("(real model)", a.cases, a.seed, a.workers, a.via)
+    gen = lambda r: "" if a.via == "inproc" else f"generator {r.get('gen') or 'ok'}; "
+    print(f"real model: {gen(base)}ninja {fmt_ninja(base.get('ninja', base.get('error')))}, "
           f"{base['time']:.0f}s", flush=True)
     if base.get("error") or killed(base):
         sys.exit("the real model fails; mutant results would mean nothing")
@@ -208,23 +251,28 @@ def main():
     rows = []
     for name, area, what, old, new in todo:
         (TREE / BASIC).write_text(basic.replace(old, new))
-        r = run_one(name, a.cases, a.seed, a.workers)
+        r = run_one(name, a.cases, a.seed, a.workers, a.via)
         r.update(area=area, what=what)
         rows.append(r)
         verdict = "error" if r.get("error") else "killed" if killed(r) else "SURVIVED"
-        print(f"{name}: {verdict}; generator {r.get('gen') or 'ok'}; "
+        print(f"{name}: {verdict}; {gen(r)}"
               f"ninja {fmt_ninja(r['ninja']) if 'ninja' in r else r['error']}; {r['time']:.0f}s", flush=True)
     (TREE / BASIC).write_text(basic)
 
     total = time.time() - start
     k = sum(map(killed, rows))
-    lines = [f"{k} of {len(rows)} mutants killed; {a.cases} cases, seed {a.seed}, {a.workers} workers, {total:.0f} s.", "",
-             "| Mutant | Area | Change | Generator check | Failing cases against Ninja | Killed |",
-             "|---|---|---|---|---|---|"]
+    if a.via == "inproc":
+        lines = [f"{k} of {len(rows)} mutants killed in process; {a.cases} cases, seed {a.seed}, {total:.0f} s.", "",
+                 "| Mutant | Area | Change | Failing cases against Ninja's code | Killed |",
+                 "|---|---|---|---|---|"]
+    else:
+        lines = [f"{k} of {len(rows)} mutants killed; {a.cases} cases, seed {a.seed}, {a.workers} workers, {total:.0f} s.",
+                 "", "| Mutant | Area | Change | Generator check | Failing cases against Ninja | Killed |",
+                 "|---|---|---|---|---|---|"]
     for r in rows:
         nin = fmt_ninja(r["ninja"]) if "ninja" in r else r["error"].splitlines()[0]
-        lines.append(f"| `{r['name']}` | {r['area']} | {r['what']} | {r.get('gen') or 'passes'} | {nin} | "
-                     f"{'yes' if killed(r) else 'no'} |")
+        cols = [f"`{r['name']}`", r["area"], r["what"]] + ([] if a.via == "inproc" else [r.get("gen") or "passes"])
+        lines.append("| " + " | ".join(cols + [nin, "yes" if killed(r) else "no"]) + " |")
     report = "\n".join(lines) + "\n"
     OUT.mkdir(parents=True, exist_ok=True)
     (OUT / "results.md").write_text(report)
