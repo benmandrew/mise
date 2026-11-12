@@ -19,31 +19,27 @@ runs:
       with:
         github_access_token: ${{ github.token }}
 
-    # The Nix store: Lean, Python, ccache, the C compiler and the Ninja
-    # releases of the conformance matrix, which the flake builds from source.
-    # The dev shell's closure is about 3.9 GiB on aarch64-darwin. GitHub keeps
-    # 10 GB of caches per repository, so only macOS saves the store; the
-    # experimental Linux jobs restore nothing and fetch from cache.nixos.org.
+    # The Nix store: Lean, Python, ccache, the C compiler, Typst, and the
+    # Ninja releases the flake builds from source.
+    # The dev shell's closure is about 3.9 GiB on aarch64-darwin. Both OSes
+    # save it under their own key; GitHub keeps 10 GB of caches per
+    # repository and evicts the least recently used.
     - name: Restore the Nix store
       uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569 # v7.0.2
       with:
         primary-key: nix-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.nix', 'flake.lock') }}
         restore-prefixes-first-match: nix-${{ runner.os }}-${{ runner.arch }}-
-        save: ${{ runner.os == 'macOS' }}
+        save: "true"
 
-    # Every job realises the same paths, so whichever job saves the store
-    # first saves all of them. On Linux only the dev shell is realised, and
-    # test/ninja-matrix.sh builds the one release it needs.
-    - name: Realise the dev shell and the Ninja releases
+    # Every job realises the same paths, the dev shell and the supported
+    # Ninja releases (the default list in test/ninja-matrix.sh), so whichever
+    # job saves the store first saves all of them, and a cache hit never
+    # rebuilds Ninja from source. CI does not use 1.10.2 or 1.11.1.
+    - name: Realise the dev shell and the supported Ninja releases
       shell: bash
       run: |
         nix develop -c true
-        if [ "$RUNNER_OS" = macOS ]; then
-          sys=$(nix eval --raw --impure --expr builtins.currentSystem)
-          read -r -a pkgs <<<"$(nix eval --raw ".#packages.$sys" \
-            --apply 'ps: builtins.concatStringsSep " " (builtins.attrNames ps)')"
-          nix build --no-link "${pkgs[@]/#/.#}"
-        fi
+        nix build --no-link .#ninja-1_12_1 .#ninja-1_13_2
 
     # The Lake build. A clean `lake build` of every target took 10 seconds
     # on an 8-core M1 shared with other jobs (46 jobs, 22 MB of `.lake`), so

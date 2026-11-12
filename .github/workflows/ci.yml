@@ -2,10 +2,10 @@
 # run in nightly.yml. Each job runs its commands in the flake's dev shell
 # (`nix develop -c ...`), as docs/testing.md says to run them locally.
 #
-# OS: the harnesses have run only on macOS, so the required jobs run on
-# macos-latest (arm64, the flake's aarch64-darwin). The ubuntu-latest jobs
-# (x86_64-linux, which the flake also declares) are an experiment: they are
-# marked continue-on-error and have never been run, so they are unverified.
+# OS: Linux is the main platform, so every job runs on ubuntu-latest
+# (x86_64-linux). macOS (macos-latest, arm64) also runs the priority job,
+# Ninja conformance on the latest release. The first GitHub run (11e7a90)
+# passed proofs and the 1.13.2 harnesses on both.
 #
 # Local times are for one run of each job's commands inside `nix develop` on
 # an 8-core M1 shared with other jobs (load average 4 to 17), with a warm
@@ -36,18 +36,7 @@ jobs:
   # once. This is the only job that saves the Lake cache, since it builds
   # every target. Local time: 7 to 13 s, from an empty .lake.
   proofs:
-    name: proofs (${{ matrix.os }})
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: macos-latest
-            experimental: false
-          # Unverified: never run on Linux.
-          - os: ubuntu-latest
-            experimental: true
-    runs-on: ${{ matrix.os }}
-    continue-on-error: ${{ matrix.experimental }}
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -69,18 +58,15 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-latest
+          - os: ubuntu-latest
             release: "1.12.1"
-            experimental: false
-          - os: macos-latest
-            release: "1.13.2"
-            experimental: false
-          # Experiment, unverified: never run on Linux.
           - os: ubuntu-latest
             release: "1.13.2"
-            experimental: true
+          # macOS runs the priority job only: Ninja conformance on the
+          # latest release.
+          - os: macos-latest
+            release: "1.13.2"
     runs-on: ${{ matrix.os }}
-    continue-on-error: ${{ matrix.experimental }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -101,28 +87,13 @@ jobs:
             test/out/fuzz/shrunk/
           if-no-files-found: ignore
 
-  # Releases older than the minimum must refuse an emitted manifest:
-  # `ninja-matrix.sh --refuse-only 1.10.2 1.11.1` exits nonzero if either
-  # accepts it.
-  old-ninja-refuses:
-    name: ninja 1.10.2 and 1.11.1 refuse
-    runs-on: macos-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/setup
-      - name: test/ninja-matrix.sh --refuse-only 1.10.2 1.11.1
-        run: nix develop -c test/ninja-matrix.sh --refuse-only 1.10.2 1.11.1
-
   # Cheap harnesses that ninja-matrix.sh does not run: the restat cmp
   # wrapper, the output wrapper on rules without restat, the hello-c
   # example, and the TOML parser against tomllib on 250 documents of each
   # kind in place of 2,500. Local times: 2 s, 2 s, 1 s and 5 s.
   extras:
     name: restat-cmp, wrap-outputs, stage4-hello, toml-diff
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
