@@ -8,17 +8,14 @@ model into one process with Ninja's build logic. For each fuzzer input it
 calls `mise_fuzz_case`, which turns the input into a case and runs the
 model on it, and replays the case against Ninja in memory.
 
-Until `MiseTest.Rng` can read a choice sequence, the input only seeds the
-generator: its FNV-1a hash is the seed, so the fuzzer's mutations do not
-keep a case's structure. The low bit of the first byte turns on
-`Opts.absent`.
+The low bit of the first byte turns on `Opts.absent`. The rest of the input
+is the generator's choice sequence (`Rng.ofBytes`), read from the front, so
+a mutation of one byte changes one choice of the case. The harness reads
+its scheduling choices from the back.
 -/
 
 namespace MiseFuzz
 open MiseTest.Fuzz Lean
-
-def fnv (b : ByteArray) : UInt64 :=
-  b.foldl (fun h x => (h ^^^ x.toUInt64) * 1099511628211) 14695981039346656037
 
 def optsOf (b : ByteArray) : Opts := { absent := b.size > 0 && b[0]! % 2 == 1 }
 
@@ -44,7 +41,7 @@ checks itself, which mutation testing turns off. -/
 @[export mise_fuzz_case]
 def fuzzCase (input : ByteArray) (fins : String) (strict : UInt8) : String :=
   let o := optsOf input
-  let (c, steps) := genOne o (fnv input).toNat 0
+  let (c, steps) := (genFull o).runBytes (input.extract 1 input.size)
   match runCase (strict != 0) c (withFinished steps fins) (checkToml := false) with
   | .ok j => (j.setObjVal! "missingOk" (toJson false)).compress
   | .error e => "error: " ++ e

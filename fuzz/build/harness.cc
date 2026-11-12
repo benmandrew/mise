@@ -1,8 +1,8 @@
 // In-process build fuzzer: Ninja's build logic against the Lean model.
 //
-// For each input, the Lean side (MiseFuzz.lean) generates a random case and
-// runs the model on it, exactly as `lake exe fuzzgen` does, and returns the
-// case as JSON. This file replays the case against Ninja's own State,
+// For each input, the Lean side (MiseFuzz.lean) generates a case from the
+// input's bytes, as `lake exe fuzzgen bytes` does, runs the model on it and
+// returns the case as JSON. This file replays the case against Ninja's own State,
 // ManifestParser, BuildLog, DepsLog and Builder, linked into the same
 // process, with an in-memory file system and a command runner that does
 // what `test/fz.c` and the DSL's wrapper do. It checks what
@@ -472,16 +472,30 @@ struct QuietStatus : public Status {
   }
 };
 
+// The scheduling choices (`-j` per step, which command finishes next). They
+// read the input backwards from its end, one to four bytes per choice as
+// `MiseTest.Rng` reads forwards, with zeros once the bytes run out, so the
+// generator's choices at the front and these at the back move independently
+// when the fuzzer inserts or deletes bytes in the middle.
 struct Rng {
-  uint64_t s;
-  uint64_t next() {
-    uint64_t z = (s += 0x9E3779B97F4A7C15ULL);
-    z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;
-    z = (z ^ (z >> 27)) * 0x94D049BB133111EBULL;
-    return z ^ (z >> 31);
+  const uint8_t* d;
+  size_t n;
+  size_t pos = 0;
+  size_t below(size_t k) {
+    if (k <= 1) return 0;
+    int w = k <= 0x100 ? 1 : k <= 0x10000 ? 2 : k <= 0x1000000 ? 3 : 4;
+    uint64_t x = 0;
+    for (int i = 0; i < w; i++, pos++) x = x * 256 + (pos < n ? d[n - 1 - pos] : 0);
+    return x % k;
   }
-  size_t below(size_t n) { return n ? next() % n : 0; }
 };
+
+static uint64_t splitmix(uint64_t* s) {
+  uint64_t z = (*s += 0x9E3779B97F4A7C15ULL);
+  z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;
+  z = (z ^ (z >> 27)) * 0x94D049BB133111EBULL;
+  return z ^ (z >> 31);
+}
 
 struct Mismatch {
   string kind, msg;
@@ -681,7 +695,7 @@ static struct {
 } stats;
 
 static optional<Mismatch> replay(const uint8_t* data, size_t size, const string& first) {
-  Rng rng{feed(0x6d697365ULL, (const char*)data, size)};
+  Rng rng{data, size};
   J c = parseJson(first);
   vector<J> steps = c["steps"].a;
   string fins;
@@ -811,8 +825,12 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
 }
 
 #ifdef MISE_FUZZ_STANDALONE
-// Without a fuzzer: `harness N [SEED]` replays N inputs of eight bytes
-// counting up from SEED and prints the rate; `harness FILE...` replays
+// Enough bytes for the generator's choices at the front and the schedule's
+// at the back of a typical case.
+static const size_t kRandomBytes = 4096;
+
+// Without a fuzzer: `harness N [SEED]` replays N inputs of kRandomBytes
+// pseudo-random bytes, the i-th from seed SEED + i, and prints the rate; `harness FILE...` replays
 // the inputs in the files.
 int main(int argc, char** argv) {
   if (argc >= 2 && access(argv[1], F_OK) == 0) {
@@ -837,9 +855,11 @@ int main(int argc, char** argv) {
   double lean_s = 0;
   for (long i = 0; i < n; i++) {
     uint64_t x = seed + i;
+    vector<uint8_t> in(kRandomBytes);
+    for (auto& byte : in) byte = (uint8_t)splitmix(&x);
     struct timespec a, b;
     clock_gettime(CLOCK_MONOTONIC, &a);
-    string json = leanCase((const uint8_t*)&x, sizeof x, "");
+    string json = leanCase(in.data(), in.size(), "");
     clock_gettime(CLOCK_MONOTONIC, &b);
     lean_s += (b.tv_sec - a.tv_sec) + (b.tv_nsec - a.tv_nsec) / 1e9;
     if (json.rfind("error: ", 0) == 0) {
@@ -847,7 +867,7 @@ int main(int argc, char** argv) {
       bad++;
       continue;
     }
-    if (auto m = replay((const uint8_t*)&x, sizeof x, json)) {
+    if (auto m = replay(in.data(), in.size(), json)) {
       report(json, *m);
       bad++;
     }
