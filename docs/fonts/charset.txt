@@ -1,0 +1,13 @@
+# Codepoints kept in the Iosevka subsets (scripts/subset-fonts.sh).
+# scripts/trusted.sh --check fails if docs/headline.typ uses a character
+# outside these ranges. Sizes are for the regular face with ASCII alone
+# (12,408 bytes) plus that range.
+U+0020-007E  # ASCII
+U+00A0-00FF  # Latin-1 Supplement, 20,444
+U+0370-03FF  # Greek, 23,276
+U+2010-205E  # General Punctuation, 20,016
+U+2070-209F  # superscripts and subscripts, 17,300
+U+2100-214F  # Letterlike Symbols, 23,484
+U+2190-21FF  # Arrows, 20,460
+U+2200-22FF  # Mathematical Operators, 40,060
+U+27C0-27FF  # Miscellaneous Mathematical Symbols-A, Supplemental Arrows-A, 16,304

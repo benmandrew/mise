@@ -1,6 +1,11 @@
 // Layout for docs/headline.typ, which scripts/trusted.sh generates.
 // Everything here is presentation: the content comes from the generator.
 
+// Fonts: Libertinus Serif, which typst embeds, for text and headings, and
+// Iosevka Extended for code. The Iosevka files in docs/fonts are subsets made
+// by scripts/subset-fonts.sh; scripts/trusted.sh passes that directory to
+// typst with --font-path.
+
 // Lean highlighting. The grammar's source and licence are at the top of
 // lean4.sublime-syntax. scripts/trusted.sh --check compiles a probe through
 // this function and fails if the code comes out in one colour. Inline code
@@ -11,7 +16,7 @@
 
 #let lean-code(body) = {
   set raw(syntaxes: "lean4.sublime-syntax")
-  show raw: set text(font: "DejaVu Sans Mono", size: 1em)
+  show raw: set text(font: "Iosevka Extended", size: 1em)
   show raw.where(block: true): set text(size: 8pt)
   show raw.where(block: true): code-box
   body
@@ -42,7 +47,7 @@
 #let doc(body) = {
   set document(title: "What mise proves")
   set page(paper: "a4", margin: (x: 1.7cm, y: 1.7cm), numbering: "1")
-  set text(size: body-size, lang: "en", region: "gb")
+  set text(font: "Libertinus Serif", size: body-size, lang: "en", region: "gb")
   set par(justify: false, spacing: 1.1em, leading: 0.65em)
   set list(spacing: 0.65em, indent: 0.4em)
   set enum(spacing: 0.65em)

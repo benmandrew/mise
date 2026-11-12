@@ -30,7 +30,24 @@ if [ "$mode" = "--check" ]; then
     echo "check: every trusted declaration needs a docstring" >&2
     exit 1
   fi
-  typst compile --ignore-system-fonts docs/headline.typ "$tmp/headline.pdf"
+  # Typst silently falls back to another font for a character the Iosevka
+  # subset lacks, so check every character against the subset's ranges.
+  python3 - docs/fonts/charset.txt docs/headline.typ docs/headline-style.typ <<'EOF'
+import re, sys
+ranges = []
+for line in open(sys.argv[1], encoding="utf-8"):
+    m = re.match(r"U\+([0-9A-F]+)-([0-9A-F]+)", line.split("#")[0].strip())
+    if m:
+        ranges.append((int(m[1], 16), int(m[2], 16)))
+bad = sorted({c for f in sys.argv[2:] for c in open(f, encoding="utf-8").read()
+              if ord(c) > 0x7E and not any(a <= ord(c) <= b for a, b in ranges)})
+if bad:
+    print("check: docs/fonts/charset.txt does not cover "
+          + " ".join(f"{c} U+{ord(c):04X}" for c in bad)
+          + "; add the range and run scripts/subset-fonts.sh", file=sys.stderr)
+    sys.exit(1)
+EOF
+  typst compile --ignore-system-fonts --font-path docs/fonts docs/headline.typ "$tmp/headline.pdf"
   # A grammar that does not match `lang: "lean"` leaves code in one colour
   # without an error, so count the colours in a highlighted probe.
   cat > "$tmp/probe.typ" <<EOF
@@ -38,7 +55,7 @@ if [ "$mode" = "--check" ]; then
 #show: lean-code
 #raw(lang: "lean", block: true, "/-- Doc. -/\ntheorem t : ∀ x : Nat, x = x := by\n  -- comment\n  rfl")
 EOF
-  typst compile --ignore-system-fonts --root / "$tmp/probe.typ" "$tmp/probe.svg"
+  typst compile --ignore-system-fonts --font-path docs/fonts --root / "$tmp/probe.typ" "$tmp/probe.svg"
   colours=$(grep -o 'fill="#[0-9a-fA-F]*"' "$tmp/probe.svg" | sort -u | grep -vic 'fill="#ffffff"' || true)
   if [ "$colours" -lt 4 ]; then
     echo "check: Lean code in docs/headline.typ is not highlighted ($colours colours)" >&2
@@ -47,7 +64,7 @@ EOF
 else
   cp "$tmp/trusted.md" "$tmp/headline.typ" docs/
   if [ "$mode" = "--pdf" ]; then
-    typst compile --ignore-system-fonts docs/headline.typ docs/headline.pdf
+    typst compile --ignore-system-fonts --font-path docs/fonts docs/headline.typ docs/headline.pdf
     echo "wrote docs/headline.pdf"
   fi
 fi
