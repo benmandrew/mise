@@ -11,7 +11,8 @@ namespace Mise.Syntax
 
 /-- A path is a string. `validPath` says which strings the printer and the
 parser model accept.
-Gloss: paths -/
+Gloss: paths
+Gloss.one: path -/
 abbrev Path := String
 
 /-- A piece of an evaluated string: literal text or a variable reference. -/
@@ -55,7 +56,8 @@ inductive Stmt where
   deriving DecidableEq, Repr, Inhabited
 
 /-- A manifest: its statements in file order.
-Gloss: manifests -/
+Gloss: manifests
+Gloss.one: manifest -/
 structure Manifest where
   stmts : List Stmt
   deriving DecidableEq, Repr, Inhabited

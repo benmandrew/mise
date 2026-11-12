@@ -174,6 +174,7 @@ where
     | .txt s => tText s
     | .code s => tCode s
     | .grp b => tText "(" ++ String.join (b.toList.map go) ++ tText ")"
+    | .intro b => String.join (b.toList.map go)
 
 /-- Inline Markdown (code, `**strong**`, `*emphasis*`) as Typst markup. -/
 partial def mdInline (s : String) : String :=
@@ -309,6 +310,7 @@ open Trusted in
   thmRows := thmRows.qsort (·.1 < ·.1)
   let mut noTemplate : NameSet := {}
   let mut omits : NameSet := {}
+  let mut noSingular : NameSet := {}
   typ := typ ++ "= Theorems\n\n"
   for (_, t) in thmRows do
     let (m, _, a, b) ← location t
@@ -320,6 +322,7 @@ open Trusted in
     let (st, s) ← liftTermElabM (Gloss.statement ty |>.run {})
     noTemplate := s.missing.foldl (·.insert ·) noTemplate
     omits := s.omits.foldl (·.insert ·) omits
+    noSingular := s.noSingular.foldl (·.insert ·) noSingular
     typ := typ ++ s!"#theorem-heading({tq (shortThm t)}, {tq (modPath m)}, {a.line})\n\n"
     typ := typ ++ mdBlocks doc ++ "\n#part[Statement]\n" ++
       s!"#raw(lang: \"lean\", block: true, {tq src})\n\n#part[In English]\n#english[\n"
@@ -361,7 +364,8 @@ open Trusted in
       typ := typ ++ s!"#def-heading({tq (short d)}, {defLabel d}, {tq (modPath m)}, {a.line}, {b.line})\n\n"
       typ := typ ++ (if g.rest.isEmpty then "#no-doc\n" else mdBlocks g.rest)
       for (k, t?) in [("Template", g.main), ("Template, first component", g.fst),
-          ("Template, second component", g.snd), ("Template, as a function", g.fn)] do
+          ("Template, second component", g.snd), ("Template, as a function", g.fn),
+          ("Template, singular", g.one)] do
         if let some t := t? then typ := typ ++ s!"\n#template({tq k}, {tq t})\n"
       typ := typ ++ s!"\n#raw(lang: \"lean\", block: true, {tq src})\n"
       let uses := sortNames (usesOf env all d)
@@ -372,6 +376,8 @@ open Trusted in
     report := report.push s!"no template: {n}"
   for n in sortNames omits do
     report := report.push s!"template omits argument: {n}"
+  for n in sortNames noSingular do
+    report := report.push s!"no singular noun: {n}"
   if !noTemplate.isEmpty || !omits.isEmpty then
     typ := typ ++ "= Warnings\n\n"
     if !noTemplate.isEmpty then

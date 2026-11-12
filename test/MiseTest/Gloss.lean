@@ -15,7 +15,9 @@ one of two places:
   docstring that starts with `Gloss:`. `Gloss.fst:` and `Gloss.snd:` give the
   two components of a definition whose value is a pair, and `Gloss.fun:`
   reads the definition with its last explicit argument missing, as a
-  function (`st.content` rather than `st.content p`).
+  function (`st.content` rather than `st.content p`). A type carries a
+  plural template, used where the statement ranges over the type, and a
+  singular noun on a `Gloss.one:` line (`coreSingulars` for core types).
 
 A template is text with slots. `{x}` is the argument whose binder is named
 `x`; `{#k}` is the `k`-th explicit argument, counting from 1. Text between
@@ -30,6 +32,13 @@ a `Gloss.fun:` line is read as `fun x => f … x`.
 A constant without a template is printed in Lean notation, in code font, and
 recorded in `missing`, so the output lists it as a warning. Definitions are
 never unfolded, so the English follows the statement as written.
+
+The list of variables a statement ranges over is far from where they are
+used, so the first mention of each one in the hypotheses and conclusions
+names its type's singular noun ("the model edge `e`"), and later mentions are
+the bare name. A variable bound inside the statement by `∀ x ∈ l` or
+`∃ x ∈ l`, which names no type, gets the noun at its binder ("for every path
+`o` in …"). A type without a singular noun is recorded in `noSingular`.
 -/
 
 namespace Gloss
@@ -39,6 +48,9 @@ inductive Inl where
   | txt (s : String)
   | code (s : String)
   | grp (body : Array Inl)
+  /-- The first mention of a variable, with its type's noun. It reads as one
+  noun phrase, so it is never parenthesised. -/
+  | intro (body : Array Inl)
   deriving Inhabited, BEq
 
 abbrev Phrase := Array Inl
@@ -49,6 +61,7 @@ structure Glosses where
   fst : Option String := none
   snd : Option String := none
   fn : Option String := none
+  one : Option String := none
   rest : String := ""
   deriving Inhabited
 
@@ -61,6 +74,7 @@ def Glosses.parse (doc : String) : Glosses := Id.run do
     if t.startsWith "Gloss.fst:" then g := { g with fst := some (t.drop 10).trimAscii.toString }
     else if t.startsWith "Gloss.snd:" then g := { g with snd := some (t.drop 10).trimAscii.toString }
     else if t.startsWith "Gloss.fun:" then g := { g with fn := some (t.drop 10).trimAscii.toString }
+    else if t.startsWith "Gloss.one:" then g := { g with one := some (t.drop 10).trimAscii.toString }
     else if t.startsWith "Gloss:" then g := { g with main := some (t.drop 6).trimAscii.toString }
     else keep := keep.push line
   return { g with rest := ("\n".intercalate keep.toList).trimAscii.toString }
@@ -100,6 +114,15 @@ def coreTemplates : List (Name × Mode × String) := [
   (``Bool, .typ, "Booleans"),
   (``String, .typ, "strings")]
 
+/-- Singular nouns for the core types in `coreTemplates`. -/
+def coreSingulars : List (Name × String) := [
+  (``List, "list"),
+  (``Prod, "pair"),
+  (``Option, "optional value"),
+  (``Nat, "natural number"),
+  (``Bool, "Boolean"),
+  (``String, "string")]
+
 /-- One piece of a parsed template. -/
 inductive Piece where
   | txt (s : String)
@@ -131,6 +154,13 @@ structure State where
   used : NameSet := {}
   /-- Explicit arguments, other than `sem`, that a template leaves out. -/
   omits : NameSet := {}
+  /-- Types with a plural template but no singular noun. -/
+  noSingular : NameSet := {}
+  /-- Variables of the statement not yet mentioned, each with the phrase that
+  introduces it. -/
+  intros : Std.HashMap FVarId Phrase := {}
+  /-- Set while writing the list of variables, which is not a mention. -/
+  quiet : Bool := false
 
 abbrev M := StateT State MetaM
 
@@ -151,6 +181,7 @@ def isAtom (p : Phrase) : Bool :=
   match p.toList with
   | [.code _] => true
   | [.grp _] => true
+  | [.intro _] => true
   | [.txt s] => !s.contains ' '
   | _ => false
 
@@ -159,7 +190,7 @@ def group (p : Phrase) : Phrase := if isAtom p then p else #[.grp p]
 /-- Which template of a constant: the main one, a component of a pair, or
 the function form. -/
 inductive Which where
-  | main | fst | snd | fn
+  | main | fst | snd | fn | one
   deriving BEq
 
 /-- The template of a constant: from its docstring, or the core table. -/
@@ -173,6 +204,7 @@ def templateOf (n : Name) (which : Which := .main) : M (Option (Mode × String))
     | .fst => g.fst
     | .snd => g.snd
     | .fn => g.fn
+    | .one => g.one
   let some t := t | return none
   let ty := (← getConstInfo n).type
   let m ← forallTelescope ty fun _ r => do
@@ -187,6 +219,54 @@ def localName (e : Expr) : MetaM String := do
 
 def ppCode (e : Expr) : MetaM Phrase := do
   return code (toString (← ppExpr e)).trimAscii.toString
+
+/-- A mention of a local: the phrase that introduces it the first time, and
+its name after that. -/
+def mention (x : Expr) : M Phrase := do
+  let s ← get
+  if !s.quiet then
+    if let some p := s.intros[x.fvarId!]? then
+      set { s with intros := s.intros.erase x.fvarId! }
+      return #[.intro p]
+  return code (← localName x)
+
+/-- The singular noun for the values of type `t`, as the text before and
+after a name: `model edge` for `MEdge`, and `element`, `of V` for a type
+variable `V`. -/
+def singular (t : Expr) : M (Option (Phrase × Phrase)) := do
+  match t.consumeMData with
+  | .sort .zero => return some (txt "proposition", #[])
+  | .sort _ => return some (txt "type", #[])
+  | .fvar _ => return some (txt "element", txt " of " ++ code (← localName t))
+  | .forallE _ _ b _ => if b.hasLooseBVars then return none else return some (txt "function", #[])
+  | t =>
+    let .const n _ := t.getAppFn | return none
+    let one? ← if let some (_, s) := coreSingulars.find? (·.1 == n) then pure (some s) else
+      match ← findDocString? (← getEnv) n with
+      | some doc => pure (Glosses.parse doc).one
+      | none => pure none
+    let some one := one? | do
+      modify fun s => { s with noSingular := s.noSingular.insert n }
+      return none
+    let ph := (pieces one).map fun
+      | .txt s => Inl.txt s
+      | .code s => .code s
+      | .slot k => .txt s!"\{{k}}"
+    return some (ph, #[])
+
+/-- The variable `x` of type `t` named with its type's noun, without an
+article: `model edge e`. -/
+def named (x t : Expr) : M Phrase := do
+  let name := code (← localName x)
+  match ← singular t with
+  | some (pre, post) => return pre ++ txt " " ++ name ++ post
+  | none => return name
+
+/-- `a` or `an`, by the first letter of `p`. -/
+def article (p : Phrase) : String :=
+  match p.toList with
+  | Inl.txt s :: _ => if "aeiouAEIOU".contains (s.front) then "an " else "a "
+  | _ => "a "
 
 /-- Bind a local whose name is readable. -/
 def withNamed {α} (n : Name) (t : Expr) (k : Expr → M α) : M α := do
@@ -231,6 +311,19 @@ partial def fill (n : Name) (mode : Mode) (t : String) (args : Array Expr) : M (
   -- applied) count as further explicit arguments.
   let explicit := (List.range binders.size).filter (fun i => binders[i]!.2) ++
     (List.range args.size).filter (· ≥ binders.size)
+  let slot (key : String) : M Nat := do
+    let idx? := if key.startsWith "#" then
+        (key.drop 1).toString.toNat?.bind fun k => explicit[k - 1]?
+      else
+        let hits := (List.range binders.size).filter fun i => binders[i]!.1 == key
+        if hits.length == 1 then hits.head? else none
+    let some i := idx? | throwError "template of {n}: unknown slot \{{key}}"
+    return i
+  -- Check every slot first, so that a template that does not apply mentions
+  -- no variable.
+  for p in pieces t do
+    if let .slot key := p then
+      if args[← slot key]?.isNone then return none
   let mut out : Phrase := #[]
   let mut seen : List Nat := []
   for p in pieces t do
@@ -238,14 +331,9 @@ partial def fill (n : Name) (mode : Mode) (t : String) (args : Array Expr) : M (
     | .txt s => out := out.push (.txt s)
     | .code s => out := out.push (.code s)
     | .slot key =>
-      let idx? := if key.startsWith "#" then
-          (key.drop 1).toString.toNat?.bind fun k => explicit[k - 1]?
-        else
-          let hits := (List.range binders.size).filter fun i => binders[i]!.1 == key
-          if hits.length == 1 then hits.head? else none
-      let some i := idx? | throwError "template of {n}: unknown slot \{{key}}"
+      let i ← slot key
       seen := i :: seen
-      let some a := args[i]? | return none
+      let a := args[i]!
       let ph ← argPhrase mode a
       -- Plural type phrases nest without ambiguity, so they are not grouped.
       out := out ++ (if mode == .typ then ph else group ph)
@@ -268,7 +356,7 @@ partial def argPhrase (mode : Mode) (a : Expr) : M Phrase := do
   if (← isType a) && (mode == .typ || !a.isFVar) then return ← typ a
   noun a
 
-/-- Apply a named template, or fall back to Lean notation. -/
+/-- Apply a named template or a variable, or fall back to Lean notation. -/
 partial def applied (mode : Mode) (e : Expr) : M Phrase := do
   let f := e.getAppFn
   let args := e.getAppArgs
@@ -293,6 +381,12 @@ partial def applied (mode : Mode) (e : Expr) : M Phrase := do
       let e' ← etaExpand e
       if e'.isLambda then return ← noun e'
     modify fun s => { s with missing := s.missing.insert n }
+  -- A variable applied to arguments: `the value of f at x`.
+  if f.isFVar && !args.isEmpty && mode != .typ then
+    let as ← args.toList.mapM fun a => return group (← noun a)
+    let fn ← mention f
+    if mode == .prop then return fn ++ txt " holds at " ++ andList as
+    return txt "the value of " ++ fn ++ txt " at " ++ andList as
   ppCode e
 
 /-- A run of `∃`. A bounded binder (`∃ x ∈ l, P`, which elaborates to
@@ -303,7 +397,8 @@ partial def exists_ (e : Expr) : M Phrase := do
   withNamed n t fun x => do
     let b := body.instantiate1 x
     if let some (coll, rest) := boundedAnd x b then
-      return txt "there is " ++ code (← localName x) ++ txt " in " ++ group (← noun coll) ++
+      let nm ← named x t
+      return txt "there is " ++ txt (article nm) ++ nm ++ txt " in " ++ group (← noun coll) ++
         txt " such that " ++ (← prop rest)
     existsRun t #[x] b
 
@@ -334,7 +429,7 @@ partial def prop (e : Expr) : M Phrase := do
       if let .forallE _ h r _ := body then
         if !r.hasLooseBVars then
           if let some coll := memOf x h then
-            return txt "for every " ++ code (← localName x) ++ txt " in " ++ group (← noun coll) ++
+            return txt "for every " ++ (← named x t) ++ txt " in " ++ group (← noun coll) ++
               txt ", " ++ (← prop r)
       return txt "for every " ++ code (← localName x) ++ txt " among " ++ (← typ t) ++ txt ", " ++
         (← prop body)
@@ -362,14 +457,14 @@ partial def prop (e : Expr) : M Phrase := do
   | some ``GT.gt, #[_, _, x, y] => return group (← noun x) ++ txt " is greater than " ++ group (← noun y)
   | some ``GE.ge, #[_, _, x, y] => return group (← noun x) ++ txt " is at least " ++ group (← noun y)
   | _, _ =>
-    if e.isFVar then return code (← localName e)
+    if e.isFVar then return ← mention e
     applied .prop e
 
 /-- A noun phrase for a value. -/
 partial def noun (e : Expr) : M Phrase := do
   let e := e.consumeMData
   match e with
-  | .fvar _ => return code (← localName e)
+  | .fvar _ => mention e
   | .lit (.natVal k) => return code (toString k)
   | .lit (.strVal s) => return code s.quote
   | .lam n t b _ =>
@@ -387,7 +482,7 @@ partial def noun (e : Expr) : M Phrase := do
         | _ => (`x, mkApp f (.bvar 0))
       return ← withNamed n elemTy fun x => do
         return txt "the list of " ++ group (← noun (b.instantiate1 x)) ++ txt " for each " ++
-          code (← localName x) ++ txt " in " ++ group (← noun l)
+          (← named x elemTy) ++ txt " in " ++ group (← noun l)
     if ← isProp e then return ← prop e
     applied .noun e
 
@@ -428,7 +523,12 @@ partial def statementAux (e : Expr) (vars : Array (Array String × Phrase))
         let h := if readable then some name else none
         statementAux (b.instantiate1 x) vars (hyps.push (h, ← prop t))
       else
+        modify fun s => { s with quiet := true }
         let ty ← typ t
+        modify fun s => { s with quiet := false }
+        if let some (pre, post) ← singular t then
+          let intro := txt "the " ++ pre ++ txt " " ++ code name ++ post
+          modify fun s => { s with intros := s.intros.insert x.fvarId! intro }
         -- Variables of the same type in a row share an entry.
         let vars := match vars.back? with
           | some (vs, ty') => if ty' == ty then vars.pop.push (vs.push name, ty) else vars.push (#[name], ty)

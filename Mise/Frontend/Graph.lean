@@ -79,7 +79,8 @@ end GEdge
 
 /-- A build as the DSL describes it: declared sources, rules, edges in the
 order they were added, and default targets.
-Gloss: build graphs -/
+Gloss: build graphs
+Gloss.one: build graph -/
 structure Graph where
   sources : List Path := []
   rules : List GRule := []
@@ -162,7 +163,8 @@ def fetchAll {K V : Type} : List K → Task K V (List V)
   | k :: ks => .fetch k fun v => (fetchAll ks).bind fun vs => .pure (v :: vs)
 
 /-- What commands mean.
-Gloss: command meanings over {V} -/
+Gloss: command meanings over {V}
+Gloss.one: command meaning -/
 structure Sem (V : Type) where
   /-- A static command's outputs from its inputs' contents. -/
   exec : String → List V → List V

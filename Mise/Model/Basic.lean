@@ -27,7 +27,8 @@ open Mise Mise.Syntax Mise.Frontend
 for dirtiness and for a static command (explicit and implicit), the
 order-only inputs, the evaluated command, whether it has a depfile, and
 whether it has `restat`.
-Gloss: model edges -/
+Gloss: model edges
+Gloss.one: model edge -/
 structure MEdge where
   /-- All outputs, explicit and implicit.
   Gloss: the outputs of {self} -/
@@ -65,7 +66,8 @@ open Mise Mise.Syntax Mise.Frontend
 /-- File system, build log, deps log and clock. A log entry is the command
 and the time recorded for the output; a deps entry is the list of paths the
 command read.
-Gloss: model states over {V} -/
+Gloss: model states over {V}
+Gloss.one: model state -/
 structure St (V : Type) where
   /-- Each path's contents and mtime, or `none` when the file is missing.
   Gloss: the file at {#2} in {self}
