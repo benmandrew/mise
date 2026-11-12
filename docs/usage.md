@@ -6,6 +6,8 @@
 
 Running `ninja` directly also works, but it does not notice an edit to `mise.toml`.
 
+`mise` needs Ninja 1.12.1 or later. Every `build.ninja` starts with `ninja_required_version = 1.12.1`, so an older Ninja refuses it with "incompatible with build file ninja_required_version". After `.ninja_deps` is deleted, Ninja 1.10.2 and 1.11.1 can rerun a `restat` depfile edge once in a build that should have no work ([testing.md](testing.md)). Because the binding is in the file scope, a rule command and an edge variable may not use the name `ninja_required_version`.
+
 From `examples/hello-c/mise.toml`:
 
 ```toml

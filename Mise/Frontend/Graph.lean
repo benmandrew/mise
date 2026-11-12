@@ -19,9 +19,18 @@ what it reads and returns its outputs.
 namespace Mise.Frontend
 open Mise.Syntax
 
+/-- The oldest Ninja release `mise` supports. `emit` writes it first in every
+manifest as the top-level binding `ninja_required_version`, which makes older
+releases refuse the manifest. -/
+def ninjaMinVersion : String := "1.12.1"
+
+/-- The top-level binding Ninja checks its own version against. -/
+def versionVar : String := "ninja_required_version"
+
 /-- Names a template or an edge may not use as a variable of its own. Edge
-bindings with these names would change what Ninja runs. -/
-def reserved : List String := ["in", "out", "in_newline"] ++ ruleKeys
+bindings with these names would change what Ninja runs, and a template
+reference to `versionVar` would read the emitted top-level binding. -/
+def reserved : List String := ["in", "out", "in_newline", versionVar] ++ ruleKeys
 
 /-- A rule. The command and description are Ninja values; `${in}` and
 `${out}` stand for the edge's explicit inputs and outputs, and any other
@@ -210,9 +219,12 @@ def emitEdge (e : GEdge) : Edge :=
     implicitIns := e.implicitIns, orderOnly := e.orderOnly,
     bindings := e.vars.map fun b => (b.1, litVal b.2) }
 
+/-- The first statement of every emitted manifest. -/
+def versionStmt : Stmt := .binding versionVar [.lit ninjaMinVersion]
+
 def emit (g : Graph) : Manifest :=
-  ⟨g.rules.map (Stmt.rule ∘ emitRule) ++ g.edges.map (Stmt.edge ∘ emitEdge) ++
-    (if g.defaults.isEmpty then [] else [.default g.defaults])⟩
+  ⟨versionStmt :: (g.rules.map (Stmt.rule ∘ emitRule) ++ g.edges.map (Stmt.edge ∘ emitEdge) ++
+    (if g.defaults.isEmpty then [] else [.default g.defaults]))⟩
 
 /-- The meaning of a manifest under the Ninja evaluation model: each output
 is computed by its edge's evaluated command, which is static or reads a

@@ -58,6 +58,14 @@ def rejects (b : Build Unit) : Bool := match b.graph with
   let _ ← edge1 r "a" (vars := [("command", "rm -rf /")])
 #guard rejects do
   let _ ← rule "r" "echo $command"
+-- The emitted version binding is in the file scope, so neither a template
+-- nor an edge may name it.
+#guard rejects do
+  let _ ← rule "r" "echo $ninja_required_version > $out"
+#guard rejects do
+  let r ← rule "r" "touch $out"
+  let _ ← edge1 r "a" (vars := [("ninja_required_version", "1.2")])
+#guard (emit hello).stmts.head? == some (.binding "ninja_required_version" [.lit "1.12.1"])
 #guard rejects do
   let _ ← source "./x"
 #guard rejects do

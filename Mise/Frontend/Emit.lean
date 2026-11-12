@@ -205,11 +205,18 @@ theorem GRule.ok_name {r : GRule} (h : r.ok = true) : validIdent r.name = true �
   simp only [GRule.ok, Bool.and_eq_true, bne_iff_ne, ne_eq] at h
   exact ⟨h.1.1.1.1.1, h.1.1.1.1.2⟩
 
+theorem versionStmt_ok (c : Ctx) : versionStmt.ok c = true := by
+  show (validIdent versionVar && !keywords.contains versionVar.toList && validEval [.lit ninjaMinVersion]) = true
+  decide
+
+theorem versionStmt_add (c : Ctx) : c.add versionStmt = c := rfl
+
 /-- A valid graph emits a well-formed manifest. -/
 theorem emit_wellFormed (g : Graph) (hg : g.Valid) : (emit g).WellFormed := by
   obtain ⟨hnd, hok, hedges, hdef⟩ := Graph.check_parts hg
   have hnames : ∀ n ∈ g.ruleNames, ∃ r ∈ g.rules, r.name = n := by simp [Graph.ruleNames]
   unfold Manifest.WellFormed emit
+  rw [stmtsOK, versionStmt_ok, Bool.true_and, versionStmt_add]
   simp only [stmtsOK_append, Bool.and_eq_true, List.foldl_append, rules_fold, edges_fold]
   refine ⟨⟨?_, ?_⟩, ?_⟩
   · refine rules_ok g.rules {} hnd (by simpa using hok) fun r hr => ?_
@@ -251,11 +258,19 @@ theorem elab_edgeStmts (st : Elab) (es : List GEdge) :
 /-- The rules Ninja knows after reading the emitted manifest. -/
 def emitRules (g : Graph) : List Rule := ⟨"phony", []⟩ :: g.rules.map emitRule
 
+/-- The file scope after the emitted version binding. -/
+def emitFile : Scope := [(versionVar, ninjaMinVersion)]
+
+theorem emitFile_get {v : String} (hv : v ≠ versionVar) : emitFile.get v = none := by
+  have : (versionVar == v) = false := by simpa using Ne.symm hv
+  simp [emitFile, Scope.get, this]
+
 theorem elab_emit (g : Graph) :
-    (emit g).elab.file = [] ∧ (emit g).elab.edges = g.edges.map (edgeInfo (emitRules g) [] ∘ emitEdge) := by
+    (emit g).elab.file = emitFile ∧
+      (emit g).elab.edges = g.edges.map (edgeInfo (emitRules g) emitFile ∘ emitEdge) := by
   unfold Manifest.elab emit
-  simp only [List.foldl_append, elab_ruleStmts, elab_edgeStmts]
-  split <;> simp [Elab.step, emitRules]
+  simp only [List.foldl_cons, List.foldl_append, elab_ruleStmts, elab_edgeStmts]
+  split <;> simp [Elab.step, emitRules, versionStmt, emitFile, evalWith]
 
 /-! ## Commands -/
 
@@ -299,15 +314,17 @@ theorem evalWith_litVal (f : String → String) (s : String) : evalWith f (litVa
   · rename_i h; simp only [evalWith]; simpa using h
   · simp [evalWith]
 
-/-- The scope Ninja gives an emitted edge holds exactly the edge's variables. -/
-theorem own_get (rules : List Rule) (e : GEdge) (v : String) (h : nodupB (e.vars.map (·.1)) = true) :
-    (((edgeInfo rules [] (emitEdge e)).own).getD []).get v = (e.vars.find? (·.1 == v)).map (·.2) := by
+/-- The scope Ninja gives an emitted edge holds exactly the edge's variables,
+apart from the version binding. -/
+theorem own_get (rules : List Rule) (e : GEdge) (v : String) (h : nodupB (e.vars.map (·.1)) = true)
+    (hv : v ≠ versionVar) :
+    (((edgeInfo rules emitFile (emitEdge e)).own).getD emitFile).get v = (e.vars.find? (·.1 == v)).map (·.2) := by
   simp only [edgeInfo, emitEdge]
   by_cases hb : e.vars = []
-  · simp [hb, Scope.get]
+  · simp [hb, emitFile_get hv]
   · simp only [List.isEmpty_iff, List.map_eq_nil_iff, hb, ite_false, Option.getD_some, foldl_cons_rev,
       List.append_nil, List.map_map]
-    have : (List.map ((fun b => (b.1, evalWith (fileLook []) b.2)) ∘ fun b => (b.1, litVal b.2)) e.vars) = e.vars := by
+    have : (List.map ((fun b => (b.1, evalWith (fileLook emitFile) b.2)) ∘ fun b => (b.1, litVal b.2)) e.vars) = e.vars := by
       conv => rhs; rw [← List.map_id e.vars]
       apply List.map_congr_left; intro b _; simp [evalWith_litVal]
     rw [this, get_reverse _ _ h]; rfl
@@ -335,22 +352,22 @@ theorem emitRule_get_none (r : GRule) (v : String) (hv : v ≠ "command") (hd : 
 
 theorem not_reserved {v : String} (h : reserved.contains v = false) :
     v ≠ "in" ∧ v ≠ "out" ∧ v ≠ "in_newline" ∧ v ≠ "command" ∧ v ≠ "description" ∧ v ≠ "depfile" ∧
-      v ≠ "deps" ∧ v ≠ "restat" := by
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;> (rintro rfl; revert h; decide)
+      v ≠ "deps" ∧ v ≠ "restat" ∧ v ≠ versionVar := by
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;> (rintro rfl; revert h; decide)
 
 theorem lookup_emit (rules : List Rule) (r : GRule) (e : GEdge) (n : Nat) (v : String)
-    (hrule : (edgeInfo rules [] (emitEdge e)).rule = emitRule r) (hvars : nodupB (e.vars.map (·.1)) = true)
+    (hrule : (edgeInfo rules emitFile (emitEdge e)).rule = emitRule r) (hvars : nodupB (e.vars.map (·.1)) = true)
     (hv : v = "in" ∨ v = "out" ∨ reserved.contains v = false) :
-    (edgeInfo rules [] (emitEdge e)).lookup [] n v = e.look v := by
+    (edgeInfo rules emitFile (emitEdge e)).lookup emitFile n v = e.look v := by
   rcases hv with rfl | rfl | hv
   · rw [EdgeInfo.lookup_in]; rfl
   · rw [EdgeInfo.lookup_out]; rfl
-  · obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8⟩ := not_reserved hv
-    have hown := own_get rules e v hvars
+  · obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9⟩ := not_reserved hv
+    have hown := own_get rules e v hvars h9
     have hget := emitRule_get_none r v h4 h5 h6 h7 h8
     rw [EdgeInfo.lookup_other _ _ _ _ h1 h3 h2, hown, hrule, hget]
     simp only [GEdge.look, h1, h2, ite_false]
-    cases e.vars.find? (·.1 == v) <;> cases n <;> simp [Scope.get]
+    cases e.vars.find? (·.1 == v) <;> cases n <;> simp [emitFile_get h9]
 
 theorem tmplVarsOK_mem {t : EvalString} (h : tmplVarsOK t = true) {n : String} (hn : Seg.var n ∈ t) :
     n = "in" ∨ n = "out" ∨ reserved.contains n = false := by
@@ -381,7 +398,7 @@ theorem vars_get_reserved {e : GEdge} (h7 : varsOK e.vars = true) {v : String} (
 
 /-- The rule Ninja finds for an emitted edge. -/
 theorem rule_emit (g : Graph) (hg : g.Valid) (e : GEdge) (he : e ∈ g.edges) :
-    ∃ r, g.ruleOf e = some r ∧ r.ok = true ∧ (edgeInfo (emitRules g) [] (emitEdge e)).rule = emitRule r := by
+    ∃ r, g.ruleOf e = some r ∧ r.ok = true ∧ (edgeInfo (emitRules g) emitFile (emitEdge e)).rule = emitRule r := by
   obtain ⟨_, hok, hedges, _⟩ := Graph.check_parts hg
   obtain ⟨q, hq⟩ := edgesOK_mem hedges he
   obtain ⟨h1, -, -, -, -, -, -⟩ := GEdge.ok_parts hq
@@ -408,7 +425,7 @@ theorem varsOK_of_mem {g : Graph} (hg : g.Valid) {e : GEdge} (he : e ∈ g.edges
 
 /-- Ninja evaluates every emitted edge's command to the command the DSL means. -/
 theorem command_emit (g : Graph) (hg : g.Valid) (e : GEdge) (he : e ∈ g.edges) :
-    (edgeInfo (emitRules g) [] (emitEdge e)).command [] = g.cmd e := by
+    (edgeInfo (emitRules g) emitFile (emitEdge e)).command emitFile = g.cmd e := by
   have h7 := varsOK_of_mem hg he
   have hvars : nodupB (e.vars.map (·.1)) = true := by
     simp only [varsOK, Bool.and_eq_true] at h7; exact h7.1
@@ -417,46 +434,46 @@ theorem command_emit (g : Graph) (hg : g.Valid) (e : GEdge) (he : e ∈ g.edges)
   rw [hcmd]
   simp only [EdgeInfo.command, EdgeInfo.binding]
   rw [EdgeInfo.lookup_other _ _ _ _ (by decide) (by decide) (by decide)]
-  have hc : ((edgeInfo (emitRules g) [] (emitEdge e)).own.getD []).get "command" = none := by
-    rw [own_get _ e _ hvars, vars_get_reserved h7 (by decide)]; rfl
+  have hc : ((edgeInfo (emitRules g) emitFile (emitEdge e)).own.getD emitFile).get "command" = none := by
+    rw [own_get _ e _ hvars (by decide), vars_get_reserved h7 (by decide)]; rfl
   simp only [hc, hrule, emitRule_get_command]
   exact evalWith_congr _ _ _ fun n hn =>
     lookup_emit _ r e _ n hrule hvars (tmplVarsOK_mem (GRule.ok_command hrok) hn)
 
 /-- Ninja reads the deps log for exactly the edges whose rule has a depfile. -/
 theorem isDyn_emit (g : Graph) (hg : g.Valid) (e : GEdge) (he : e ∈ g.edges) :
-    (edgeInfo (emitRules g) [] (emitEdge e)).isDyn [] = g.isDyn e := by
+    (edgeInfo (emitRules g) emitFile (emitEdge e)).isDyn emitFile = g.isDyn e := by
   have h7 := varsOK_of_mem hg he
   have hvars : nodupB (e.vars.map (·.1)) = true := by
     simp only [varsOK, Bool.and_eq_true] at h7; exact h7.1
   obtain ⟨r, hfind, -, hrule⟩ := rule_emit g hg e he
   simp only [EdgeInfo.isDyn, EdgeInfo.binding, Graph.isDyn, hfind]
   rw [EdgeInfo.lookup_other _ _ _ _ (by decide) (by decide) (by decide)]
-  have hc : ((edgeInfo (emitRules g) [] (emitEdge e)).own.getD []).get "deps" = none := by
-    rw [own_get _ e _ hvars, vars_get_reserved h7 (by decide)]; rfl
+  have hc : ((edgeInfo (emitRules g) emitFile (emitEdge e)).own.getD emitFile).get "deps" = none := by
+    rw [own_get _ e _ hvars (by decide), vars_get_reserved h7 (by decide)]; rfl
   simp only [hc, hrule, emitRule_get_deps]
   cases r.depfile
   · simp only [Bool.false_eq_true, ite_false]
-    split <;> simp [Scope.get]
+    split <;> simp [emitFile, Scope.get, versionVar]
   · simp only [ite_true]
     rw [show evalWith _ [Seg.lit "gcc"] = "gcc" from rfl]
     decide
 
 /-- Ninja re-reads output mtimes for exactly the edges whose rule has `restat`. -/
 theorem isRestat_emit (g : Graph) (hg : g.Valid) (e : GEdge) (he : e ∈ g.edges) :
-    (edgeInfo (emitRules g) [] (emitEdge e)).isRestat [] = g.isRestat e := by
+    (edgeInfo (emitRules g) emitFile (emitEdge e)).isRestat emitFile = g.isRestat e := by
   have h7 := varsOK_of_mem hg he
   have hvars : nodupB (e.vars.map (·.1)) = true := by
     simp only [varsOK, Bool.and_eq_true] at h7; exact h7.1
   obtain ⟨r, hfind, -, hrule⟩ := rule_emit g hg e he
   simp only [EdgeInfo.isRestat, EdgeInfo.binding, Graph.isRestat, hfind]
   rw [EdgeInfo.lookup_other _ _ _ _ (by decide) (by decide) (by decide)]
-  have hc : ((edgeInfo (emitRules g) [] (emitEdge e)).own.getD []).get "restat" = none := by
-    rw [own_get _ e _ hvars, vars_get_reserved h7 (by decide)]; rfl
+  have hc : ((edgeInfo (emitRules g) emitFile (emitEdge e)).own.getD emitFile).get "restat" = none := by
+    rw [own_get _ e _ hvars (by decide), vars_get_reserved h7 (by decide)]; rfl
   simp only [hc, hrule, emitRule_get_restat]
   cases r.restat
   · simp only [Bool.false_eq_true, ite_false]
-    split <;> simp [Scope.get]
+    split <;> simp [emitFile, Scope.get, versionVar]
   · simp only [ite_true]
     rw [show evalWith _ [Seg.lit "1"] = "1" from rfl]
     decide
@@ -464,7 +481,7 @@ theorem isRestat_emit (g : Graph) (hg : g.Valid) (e : GEdge) (he : e ∈ g.edges
 /-! ## Meaning -/
 
 theorem outs_emit (R : List Rule) :
-    ((fun c : EdgeInfo => c.edge.allOuts) ∘ edgeInfo R [] ∘ emitEdge) = GEdge.allOuts := by
+    ((fun c : EdgeInfo => c.edge.allOuts) ∘ edgeInfo R emitFile ∘ emitEdge) = GEdge.allOuts := by
   funext e; rfl
 
 variable {V : Type} [Inhabited V]

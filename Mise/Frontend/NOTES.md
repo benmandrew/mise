@@ -33,7 +33,11 @@ Ninja rejects cyclic rule variables; the model uses fuel of the binding count pl
 - default targets are edge outputs;
 - an edge whose rule has a depfile has one explicit output, since the emitted `depfile = ${out}.d` names one file only then (`depfileOutsOK`).
 
-`reserved` holds `in`, `out`, `in_newline` and the rule keys. `Handle` and `RuleRef` have private constructors, so a description names only what it declared.
+`reserved` holds `in`, `out`, `in_newline`, `ninja_required_version` (`versionVar`) and the rule keys. `Handle` and `RuleRef` have private constructors, so a description names only what it declared.
+
+## The version binding
+
+`emit` puts `versionStmt`, the top-level binding `ninja_required_version = 1.12.1`, before the rules. The version is `ninjaMinVersion`, the oldest supported release; Ninja 1.11.1 and older refuse the manifest with "incompatible with build file ninja_required_version". The binding is the whole file scope, `emitFile`. A template or edge reference to it would read `1.12.1` where `GEdge.look` gives the empty string, so the name is in `reserved`; with it reserved, every lookup the proofs make misses the file scope, as it did when the scope was empty (`emitFile_get`). The models read it as an ordinary binding and leave out Ninja's version check, which runs when Ninja reads the line and changes no edge.
 
 ## Theorems
 
@@ -58,7 +62,7 @@ Ninja rejects cyclic rule variables; the model uses fuel of the binding count pl
 ## Deviations from the plan
 
 - `emitAcyclic` is a definition because Stage 2 made `Acyclic` data.
-- The DSL emits no `phony` edges or top-level bindings; `denote` gives a phony edge the empty command, unlike Ninja.
+- The DSL emits no `phony` edges and no top-level bindings other than the version binding; `denote` gives a phony edge the empty command, unlike Ninja.
 - `GRule` carries a description that no meaning uses.
 - `Graph.spec` uses `GEdge.look`, with Ninja's shell quoting because the build log compares command strings.
 
