@@ -17,8 +17,8 @@
 
 #"The statements share these hypotheses:";
 
-- #raw("hg : g.Valid");#", the decidable well-formedness check on the graph;";
-- #raw("hd : g.DynOK sem");#", that every depfile command reads only sources and the edge's own inputs. It holds for any graph without depfile rules (";#raw("Mise.Model.dynOK_static");#").";
+- #raw("valid : g.Valid");#", the decidable well-formedness check on the graph;";
+- #raw("depfilesOK : g.DynOK sem");#", that every depfile command reads only sources and the edge's own inputs. It holds for any graph without depfile rules (";#raw("Mise.Model.dynOK_static");#").";
 
 #raw("sem : Sem V");#" says what each command computes. It is a parameter, so the theorems hold for every choice of command meanings.";
 
@@ -33,7 +33,7 @@
 #"The text ";#raw("mise");#" writes parses, under the parser model, to the manifest it emitted, and that manifest, read through the model of Ninja's variable evaluation, means the build the DSL describes.";
 
 #part[Statement]
-#raw(lang: "lean", block: true, "theorem meaning (g : Graph) (hg : g.Valid) :\n    parse (print (emit g)) = some (emit g) ∧ denote sem (emit g) = g.spec sem")
+#raw(lang: "lean", block: true, "theorem meaning (g : Graph) (valid : g.Valid) :\n    parse (print (emit g)) = some (emit g) ∧ denote sem (emit g) = g.spec sem")
 
 #part[In English]
 #english[
@@ -43,7 +43,7 @@
 - #raw("g");#" ranges over ";#"build graphs";#".";
 #part-sub[Assume]
 - #"the ";#"type";#" ";#raw("V");#" has a default element";#".";
-- #"(";#raw("hg");#") ";#"the ";#"build graph";#" ";#raw("g");#" is valid";#".";
+- #"(";#raw("valid");#") ";#"the ";#"build graph";#" ";#raw("g");#" is valid";#".";
 #part-sub[Then]
 - #"(";#"the result of parsing ";#"(";#"the text of ";#"(";#"the manifest ";#raw("mise");#" emits for ";#raw("g");#")";#")";#")";#" equals ";#"(";#raw("some");#" ";#"(";#"the manifest ";#raw("mise");#" emits for ";#raw("g");#")";#")";#".";
 - #"(";#"the meaning of ";#"(";#"the manifest ";#raw("mise");#" emits for ";#raw("g");#")";#" under the Ninja evaluation model";#")";#" equals ";#"(";#"the build specification ";#raw("g");#" describes";#")";#".";
@@ -56,7 +56,7 @@
 #"A build described by a valid graph has at most one correct result for any sources. ";#raw("Correct");#" is the correctness predicate of ";#emph[#"Build Systems à la Carte";];#": sources keep their values, and every target holds what its task computes from the result.";
 
 #part[Statement]
-#raw(lang: "lean", block: true, "theorem correct_unique (g : Graph) (hg : g.Valid) (hd : g.DynOK sem) {S R₁ R₂ : Path → V}\n    (h₁ : (g.spec sem).Correct S R₁) (h₂ : (g.spec sem).Correct S R₂) : R₁ = R₂")
+#raw(lang: "lean", block: true, "theorem correct_unique (g : Graph) (valid : g.Valid) (depfilesOK : g.DynOK sem)\n    {sources result₁ result₂ : Path → V} (correct₁ : (g.spec sem).Correct sources result₁)\n    (correct₂ : (g.spec sem).Correct sources result₂) : result₁ = result₂")
 
 #part[In English]
 #english[
@@ -64,25 +64,25 @@
 - #raw("V");#" ranges over ";#"types";#".";
 - #raw("sem");#" ranges over ";#"command meanings over ";#"elements of ";#raw("V");#".";
 - #raw("g");#" ranges over ";#"build graphs";#".";
-- #raw("S");#", ";#raw("R₁");#", and ";#raw("R₂");#" range over ";#"functions from ";#"paths";#" to ";#"elements of ";#raw("V");#".";
+- #raw("sources");#", ";#raw("result₁");#", and ";#raw("result₂");#" range over ";#"functions from ";#"paths";#" to ";#"elements of ";#raw("V");#".";
 #part-sub[Assume]
 - #"the ";#"type";#" ";#raw("V");#" has a default element";#".";
-- #"(";#raw("hg");#") ";#"the ";#"build graph";#" ";#raw("g");#" is valid";#".";
-- #"(";#raw("hd");#") ";#"every depfile command of ";#raw("g");#" reads only sources and its edge's inputs";#".";
-- #"(";#raw("h₁");#") ";#"the ";#"function";#" ";#raw("R₁");#" is a correct result of building ";#"(";#"the build specification ";#raw("g");#" describes";#")";#" with ";#"the ";#"function";#" ";#raw("S");#" as the sources";#".";
-- #"(";#raw("h₂");#") ";#"the ";#"function";#" ";#raw("R₂");#" is a correct result of building ";#"(";#"the build specification ";#raw("g");#" describes";#")";#" with ";#raw("S");#" as the sources";#".";
+- #"(";#raw("valid");#") ";#"the ";#"build graph";#" ";#raw("g");#" is valid";#".";
+- #"(";#raw("depfilesOK");#") ";#"every depfile command of ";#raw("g");#" reads only sources and its edge's inputs";#".";
+- #"(";#raw("correct₁");#") ";#"the ";#"function";#" ";#raw("result₁");#" is a correct result of building ";#"(";#"the build specification ";#raw("g");#" describes";#")";#" with ";#"the ";#"function";#" ";#raw("sources");#" as the sources";#".";
+- #"(";#raw("correct₂");#") ";#"the ";#"function";#" ";#raw("result₂");#" is a correct result of building ";#"(";#"the build specification ";#raw("g");#" describes";#")";#" with ";#raw("sources");#" as the sources";#".";
 #part-sub[Then]
-- #raw("R₁");#" equals ";#raw("R₂");#".";
+- #raw("result₁");#" equals ";#raw("result₂");#".";
 ]
 #part[Names in the statement]
 #link(label("def:Mise.BuildSpec.Correct"))[#raw("BuildSpec.Correct");];, #link(label("def:Mise.Frontend.Graph"))[#raw("Frontend.Graph");];, #link(label("def:Mise.Frontend.Graph.DynOK"))[#raw("Frontend.Graph.DynOK");];, #link(label("def:Mise.Frontend.Graph.Valid"))[#raw("Frontend.Graph.Valid");];, #link(label("def:Mise.Frontend.Graph.spec"))[#raw("Frontend.Graph.spec");];, #link(label("def:Mise.Frontend.Sem"))[#raw("Frontend.Sem");];, #link(label("def:Mise.Syntax.Path"))[#raw("Syntax.Path");];. The statement rests on 57 trusted declarations in all.
 
-#theorem-heading("build_correct", "Mise/Headline.lean", 101)
+#theorem-heading("build_correct", "Mise/Headline.lean", 102)
 
 #"After any history, one ";#raw("ninja");#" run leaves correct contents for the current sources.";
 
 #part[Statement]
-#raw(lang: "lean", block: true, "theorem build_correct (g : Graph) (hg : g.Valid) (hd : g.DynOK sem) {st : St V}\n    (h : Reachable sem g st) : (g.spec sem).Correct st.content (build sem g st).content")
+#raw(lang: "lean", block: true, "theorem build_correct (g : Graph) (valid : g.Valid) (depfilesOK : g.DynOK sem) {st : St V}\n    (reachable : Reachable sem g st) :\n    (g.spec sem).Correct st.content (build sem g st).content")
 
 #part[In English]
 #english[
@@ -93,21 +93,21 @@
 - #raw("st");#" ranges over ";#"model states over ";#"elements of ";#raw("V");#".";
 #part-sub[Assume]
 - #"the ";#"type";#" ";#raw("V");#" has a default element";#".";
-- #"(";#raw("hg");#") ";#"the ";#"build graph";#" ";#raw("g");#" is valid";#".";
-- #"(";#raw("hd");#") ";#"every depfile command of ";#raw("g");#" reads only sources and its edge's inputs";#".";
-- #"(";#raw("h");#") ";#"the ";#"model state";#" ";#raw("st");#" can arise for ";#raw("g");#" from empty logs by source edits and Ninja edge visits";#".";
+- #"(";#raw("valid");#") ";#"the ";#"build graph";#" ";#raw("g");#" is valid";#".";
+- #"(";#raw("depfilesOK");#") ";#"every depfile command of ";#raw("g");#" reads only sources and its edge's inputs";#".";
+- #"(";#raw("reachable");#") ";#"the ";#"model state";#" ";#raw("st");#" can arise for ";#raw("g");#" from empty logs by source edits and Ninja edge visits";#".";
 #part-sub[Then]
 - #"(";#"the file contents of ";#"(";#"the state after one ";#raw("ninja");#" run for ";#raw("g");#" from ";#raw("st");#")";#")";#" is a correct result of building ";#"(";#"the build specification ";#raw("g");#" describes";#")";#" with ";#"(";#"the file contents of ";#raw("st");#")";#" as the sources";#".";
 ]
 #part[Names in the statement]
 #link(label("def:Mise.BuildSpec.Correct"))[#raw("BuildSpec.Correct");];, #link(label("def:Mise.Frontend.Graph"))[#raw("Frontend.Graph");];, #link(label("def:Mise.Frontend.Graph.DynOK"))[#raw("Frontend.Graph.DynOK");];, #link(label("def:Mise.Frontend.Graph.Valid"))[#raw("Frontend.Graph.Valid");];, #link(label("def:Mise.Frontend.Graph.spec"))[#raw("Frontend.Graph.spec");];, #link(label("def:Mise.Frontend.Sem"))[#raw("Frontend.Sem");];, #link(label("def:Mise.Headline.Reachable"))[#raw("Headline.Reachable");];, #link(label("def:Mise.Headline.build"))[#raw("Headline.build");];, #link(label("def:Mise.Model.St"))[#raw("Model.St");];, #link(label("def:Mise.Model.St.content"))[#raw("Model.St.content");];, #link(label("def:Mise.Syntax.Path"))[#raw("Syntax.Path");];. The statement rests on 109 trusted declarations in all.
 
-#theorem-heading("rebuild_noop", "Mise/Headline.lean", 108)
+#theorem-heading("rebuild_noop", "Mise/Headline.lean", 110)
 
 #"After any history, a second ";#raw("ninja");#" run executes nothing and changes nothing.";
 
 #part[Statement]
-#raw(lang: "lean", block: true, "theorem rebuild_noop (g : Graph) (hg : g.Valid) (hd : g.DynOK sem) {st : St V}\n    (h : Reachable sem g st) :\n    ran sem g (build sem g st) = [] ∧ build sem g (build sem g st) = build sem g st")
+#raw(lang: "lean", block: true, "theorem rebuild_noop (g : Graph) (valid : g.Valid) (depfilesOK : g.DynOK sem) {st : St V}\n    (reachable : Reachable sem g st) :\n    ran sem g (build sem g st) = [] ∧ build sem g (build sem g st) = build sem g st")
 
 #part[In English]
 #english[
@@ -118,9 +118,9 @@
 - #raw("st");#" ranges over ";#"model states over ";#"elements of ";#raw("V");#".";
 #part-sub[Assume]
 - #"the ";#"type";#" ";#raw("V");#" has a default element";#".";
-- #"(";#raw("hg");#") ";#"the ";#"build graph";#" ";#raw("g");#" is valid";#".";
-- #"(";#raw("hd");#") ";#"every depfile command of ";#raw("g");#" reads only sources and its edge's inputs";#".";
-- #"(";#raw("h");#") ";#"the ";#"model state";#" ";#raw("st");#" can arise for ";#raw("g");#" from empty logs by source edits and Ninja edge visits";#".";
+- #"(";#raw("valid");#") ";#"the ";#"build graph";#" ";#raw("g");#" is valid";#".";
+- #"(";#raw("depfilesOK");#") ";#"every depfile command of ";#raw("g");#" reads only sources and its edge's inputs";#".";
+- #"(";#raw("reachable");#") ";#"the ";#"model state";#" ";#raw("st");#" can arise for ";#raw("g");#" from empty logs by source edits and Ninja edge visits";#".";
 #part-sub[Then]
 - #"(";#"the edges one ";#raw("ninja");#" run for ";#raw("g");#" executes from ";#"(";#"the state after one ";#raw("ninja");#" run for ";#raw("g");#" from ";#raw("st");#")";#")";#" equals ";#"(";#"the empty list";#")";#".";
 - #"(";#"the state after one ";#raw("ninja");#" run for ";#raw("g");#" from ";#"(";#"the state after one ";#raw("ninja");#" run for ";#raw("g");#" from ";#raw("st");#")";#")";#" equals ";#"(";#"the state after one ";#raw("ninja");#" run for ";#raw("g");#" from ";#raw("st");#")";#".";
@@ -128,12 +128,12 @@
 #part[Names in the statement]
 #link(label("def:Mise.Frontend.Graph"))[#raw("Frontend.Graph");];, #link(label("def:Mise.Frontend.Graph.DynOK"))[#raw("Frontend.Graph.DynOK");];, #link(label("def:Mise.Frontend.Graph.Valid"))[#raw("Frontend.Graph.Valid");];, #link(label("def:Mise.Frontend.Sem"))[#raw("Frontend.Sem");];, #link(label("def:Mise.Headline.Reachable"))[#raw("Headline.Reachable");];, #link(label("def:Mise.Headline.build"))[#raw("Headline.build");];, #link(label("def:Mise.Headline.ran"))[#raw("Headline.ran");];, #link(label("def:Mise.Model.MEdge"))[#raw("Model.MEdge");];, #link(label("def:Mise.Model.St"))[#raw("Model.St");];. The statement rests on 105 trusted declarations in all.
 
-#theorem-heading("ran_nodup", "Mise/Headline.lean", 118)
+#theorem-heading("ran_nodup", "Mise/Headline.lean", 120)
 
 #"One ";#raw("ninja");#" run executes each edge at most once.";
 
 #part[Statement]
-#raw(lang: "lean", block: true, "theorem ran_nodup (g : Graph) (hg : g.Valid) (st : St V) : (ran sem g st).Nodup")
+#raw(lang: "lean", block: true, "theorem ran_nodup (g : Graph) (valid : g.Valid) (st : St V) : (ran sem g st).Nodup")
 
 #part[In English]
 #english[
@@ -144,19 +144,19 @@
 - #raw("st");#" ranges over ";#"model states over ";#"elements of ";#raw("V");#".";
 #part-sub[Assume]
 - #"the ";#"type";#" ";#raw("V");#" has a default element";#".";
-- #"(";#raw("hg");#") ";#"the ";#"build graph";#" ";#raw("g");#" is valid";#".";
+- #"(";#raw("valid");#") ";#"the ";#"build graph";#" ";#raw("g");#" is valid";#".";
 #part-sub[Then]
 - #"no element occurs twice in ";#"(";#"the edges one ";#raw("ninja");#" run for ";#raw("g");#" executes from ";#"the ";#"model state";#" ";#raw("st");#")";#".";
 ]
 #part[Names in the statement]
 #link(label("def:Mise.Frontend.Graph"))[#raw("Frontend.Graph");];, #link(label("def:Mise.Frontend.Graph.Valid"))[#raw("Frontend.Graph.Valid");];, #link(label("def:Mise.Frontend.Sem"))[#raw("Frontend.Sem");];, #link(label("def:Mise.Headline.ran"))[#raw("Headline.ran");];, #link(label("def:Mise.Model.MEdge"))[#raw("Model.MEdge");];, #link(label("def:Mise.Model.St"))[#raw("Model.St");];. The statement rests on 92 trusted declarations in all.
 
-#theorem-heading("rebuild_minimal", "Mise/Headline.lean", 122)
+#theorem-heading("rebuild_minimal", "Mise/Headline.lean", 124)
 
-#"Build, edit some sources, build again. Every edge the second build runs has a reason: an input ";#raw("p");#" that Ninja checks for it, whose mtime is newer than anything the first build left, and that was either edited or written by an edge that ran earlier in the second build. An edge whose inputs were left untouched, including by a ";#raw("restat");#" edge that kept its output, does not run.";
+#"Build, edit some sources, build again. Every edge ";#raw("e");#" the second build runs has a reason: an input ";#raw("p");#" that Ninja checks for it, whose mtime is newer than anything the first build left, and that was either among the ";#raw("edits");#" or written by an edge that ran earlier in the second build. An edge whose inputs were left untouched, including by a ";#raw("restat");#" edge that kept its output, does not run.";
 
 #part[Statement]
-#raw(lang: "lean", block: true, "theorem rebuild_minimal (g : Graph) (hg : g.Valid) (hd : g.DynOK sem) {st₀ : St V}\n    (h : Reachable sem g st₀) (E : List (Path × V)) (hE : ∀ pv ∈ E, IsSource g pv.1) {e : MEdge}\n    (he : e ∈ ran sem g ((build sem g st₀).edits E)) :\n    ∃ pre post, edges g = pre ++ e :: post ∧ ∃ p, Checks (build sem g st₀) e p ∧\n      (build sem g st₀).clock < (buildTrace sem pre ((build sem g st₀).edits E)).1.mtime p ∧\n      (p ∈ E.map (·.1) ∨ ∃ e' ∈ (buildTrace sem pre ((build sem g st₀).edits E)).2, p ∈ e'.outs)")
+#raw(lang: "lean", block: true, "theorem rebuild_minimal (g : Graph) (valid : g.Valid) (depfilesOK : g.DynOK sem) {st₀ : St V}\n    (reachable : Reachable sem g st₀) (edits : List (Path × V))\n    (editsSources : ∀ edit ∈ edits, IsSource g edit.1) {e : MEdge}\n    (eRan : e ∈ ran sem g ((build sem g st₀).edits edits)) :\n    ∃ before after, edges g = before ++ e :: after ∧ ∃ p, Checks (build sem g st₀) e p ∧\n      (build sem g st₀).clock < (buildTrace sem before ((build sem g st₀).edits edits)).1.mtime p ∧\n      (p ∈ edits.map (·.1) ∨\n        ∃ e' ∈ (buildTrace sem before ((build sem g st₀).edits edits)).2, p ∈ e'.outs)")
 
 #part[In English]
 #english[
@@ -165,27 +165,27 @@
 - #raw("sem");#" ranges over ";#"command meanings over ";#"elements of ";#raw("V");#".";
 - #raw("g");#" ranges over ";#"build graphs";#".";
 - #raw("st₀");#" ranges over ";#"model states over ";#"elements of ";#raw("V");#".";
-- #raw("E");#" ranges over ";#"lists of ";#"pairs of ";#"paths";#" and ";#"elements of ";#raw("V");#".";
+- #raw("edits");#" ranges over ";#"lists of ";#"pairs of ";#"paths";#" and ";#"elements of ";#raw("V");#".";
 - #raw("e");#" ranges over ";#"model edges";#".";
 #part-sub[Assume]
 - #"the ";#"type";#" ";#raw("V");#" has a default element";#".";
-- #"(";#raw("hg");#") ";#"the ";#"build graph";#" ";#raw("g");#" is valid";#".";
-- #"(";#raw("hd");#") ";#"every depfile command of ";#raw("g");#" reads only sources and its edge's inputs";#".";
-- #"(";#raw("h");#") ";#"the ";#"model state";#" ";#raw("st₀");#" can arise for ";#raw("g");#" from empty logs by source edits and Ninja edge visits";#".";
-- #"(";#raw("hE");#") ";#"for every ";#"pair";#" ";#raw("pv");#" in ";#"the ";#"list";#" ";#raw("E");#", ";#"no edge of the manifest for ";#raw("g");#" writes ";#"(";#"the first component of ";#raw("pv");#")";#".";
-- #"(";#raw("he");#") ";#"the ";#"model edge";#" ";#raw("e");#" is in ";#"(";#"the edges one ";#raw("ninja");#" run for ";#raw("g");#" executes from ";#"(";#"(";#"the state after one ";#raw("ninja");#" run for ";#raw("g");#" from ";#raw("st₀");#")";#" after the edits ";#raw("E");#")";#")";#".";
+- #"(";#raw("valid");#") ";#"the ";#"build graph";#" ";#raw("g");#" is valid";#".";
+- #"(";#raw("depfilesOK");#") ";#"every depfile command of ";#raw("g");#" reads only sources and its edge's inputs";#".";
+- #"(";#raw("reachable");#") ";#"the ";#"model state";#" ";#raw("st₀");#" can arise for ";#raw("g");#" from empty logs by source edits and Ninja edge visits";#".";
+- #"(";#raw("editsSources");#") ";#"for every ";#"pair";#" ";#raw("edit");#" in ";#"the ";#"list";#" ";#raw("edits");#", ";#"no edge of the manifest for ";#raw("g");#" writes ";#"(";#"the first component of ";#raw("edit");#")";#".";
+- #"(";#raw("eRan");#") ";#"the ";#"model edge";#" ";#raw("e");#" is in ";#"(";#"the edges one ";#raw("ninja");#" run for ";#raw("g");#" executes from ";#"(";#"(";#"the state after one ";#raw("ninja");#" run for ";#raw("g");#" from ";#raw("st₀");#")";#" after the edits ";#raw("edits");#")";#")";#".";
 #part-sub[Then]
-- #"there are ";#raw("pre");#" and ";#raw("post");#" among ";#"lists of ";#"model edges";#" such that ";#"both ";#"(";#"the edges of the manifest for ";#raw("g");#")";#" equals ";#"(";#raw("pre");#" followed by ";#"(";#raw("e");#" followed by ";#raw("post");#")";#")";#" and ";#"there is ";#raw("p");#" among ";#"paths";#" such that ";#"all of: ";#raw("p");#" is an input Ninja checks for some output of ";#raw("e");#" in ";#"(";#"the state after one ";#raw("ninja");#" run for ";#raw("g");#" from ";#raw("st₀");#")";#", ";#"(";#"the clock of ";#"(";#"the state after one ";#raw("ninja");#" run for ";#raw("g");#" from ";#raw("st₀");#")";#")";#" is less than ";#"(";#"the mtime of ";#raw("p");#" in ";#"(";#"the state after Ninja visits ";#raw("pre");#" in order from ";#"(";#"(";#"the state after one ";#raw("ninja");#" run for ";#raw("g");#" from ";#raw("st₀");#")";#" after the edits ";#raw("E");#")";#")";#")";#", and ";#"either ";#raw("p");#" is in ";#"(";#"the list of ";#"(";#"the first component of ";#raw("x");#")";#" for each ";#"pair";#" ";#raw("x");#" in ";#raw("E");#")";#", or ";#"there is ";#"a ";#"model edge";#" ";#raw("e'");#" in ";#"(";#"the edges that run when Ninja visits ";#raw("pre");#" in order from ";#"(";#"(";#"the state after one ";#raw("ninja");#" run for ";#raw("g");#" from ";#raw("st₀");#")";#" after the edits ";#raw("E");#")";#")";#" such that ";#raw("p");#" is in ";#"(";#"the outputs of ";#raw("e'");#")";#".";
+- #"there are ";#raw("before");#" and ";#raw("after");#" among ";#"lists of ";#"model edges";#" such that ";#"both ";#"(";#"the edges of the manifest for ";#raw("g");#")";#" equals ";#"(";#raw("before");#" followed by ";#"(";#raw("e");#" followed by ";#raw("after");#")";#")";#" and ";#"there is ";#raw("p");#" among ";#"paths";#" such that ";#"all of: ";#raw("p");#" is an input Ninja checks for some output of ";#raw("e");#" in ";#"(";#"the state after one ";#raw("ninja");#" run for ";#raw("g");#" from ";#raw("st₀");#")";#", ";#"(";#"the clock of ";#"(";#"the state after one ";#raw("ninja");#" run for ";#raw("g");#" from ";#raw("st₀");#")";#")";#" is less than ";#"(";#"the mtime of ";#raw("p");#" in ";#"(";#"the state after Ninja visits ";#raw("before");#" in order from ";#"(";#"(";#"the state after one ";#raw("ninja");#" run for ";#raw("g");#" from ";#raw("st₀");#")";#" after the edits ";#raw("edits");#")";#")";#")";#", and ";#"either ";#raw("p");#" is in ";#"(";#"the list of ";#"(";#"the first component of ";#raw("x");#")";#" for each ";#"pair";#" ";#raw("x");#" in ";#raw("edits");#")";#", or ";#"there is ";#"a ";#"model edge";#" ";#raw("e'");#" in ";#"(";#"the edges that run when Ninja visits ";#raw("before");#" in order from ";#"(";#"(";#"the state after one ";#raw("ninja");#" run for ";#raw("g");#" from ";#raw("st₀");#")";#" after the edits ";#raw("edits");#")";#")";#" such that ";#raw("p");#" is in ";#"(";#"the outputs of ";#raw("e'");#")";#".";
 ]
 #part[Names in the statement]
 #link(label("def:Mise.Frontend.Graph"))[#raw("Frontend.Graph");];, #link(label("def:Mise.Frontend.Graph.DynOK"))[#raw("Frontend.Graph.DynOK");];, #link(label("def:Mise.Frontend.Graph.Valid"))[#raw("Frontend.Graph.Valid");];, #link(label("def:Mise.Frontend.Sem"))[#raw("Frontend.Sem");];, #link(label("def:Mise.Headline.Checks"))[#raw("Headline.Checks");];, #link(label("def:Mise.Headline.IsSource"))[#raw("Headline.IsSource");];, #link(label("def:Mise.Headline.Reachable"))[#raw("Headline.Reachable");];, #link(label("def:Mise.Headline.build"))[#raw("Headline.build");];, #link(label("def:Mise.Headline.edges"))[#raw("Headline.edges");];, #link(label("def:Mise.Headline.ran"))[#raw("Headline.ran");];, #link(label("def:Mise.Model.MEdge"))[#raw("Model.MEdge");];, #link(label("def:Mise.Model.MEdge"))[#raw("Model.MEdge.outs");];, #link(label("def:Mise.Model.St"))[#raw("Model.St");];, #link(label("def:Mise.Model.St"))[#raw("Model.St.clock");];, #link(label("def:Mise.Model.St.edits"))[#raw("Model.St.edits");];, #link(label("def:Mise.Model.St.mtime"))[#raw("Model.St.mtime");];, #link(label("def:Mise.Model.buildTrace"))[#raw("Model.buildTrace");];, #link(label("def:Mise.Syntax.Path"))[#raw("Syntax.Path");];. The statement rests on 108 trusted declarations in all.
 
-#theorem-heading("restat_cutoff", "Mise/Headline.lean", 139)
+#theorem-heading("restat_cutoff", "Mise/Headline.lean", 144)
 
 #strong[#"Early cutoff.";];#" A ";#raw("restat");#" edge that keeps every output changes no other edge's dirtiness, so nothing is rebuilt on its account.";
 
 #part[Statement]
-#raw(lang: "lean", block: true, "theorem restat_cutoff {st : St V} {e e' : MEdge} (hdis : Disjoint e'.outs e.outs)\n    (hk : ∀ o ∈ e.outs, st.kept sem e o = true) : (st.run sem e).dirty e' = st.dirty e'")
+#raw(lang: "lean", block: true, "theorem restat_cutoff {st : St V} {e e' : MEdge} (disjoint : Disjoint e'.outs e.outs)\n    (allKept : ∀ o ∈ e.outs, st.kept sem e o = true) : (st.run sem e).dirty e' = st.dirty e'")
 
 #part[In English]
 #english[
@@ -196,20 +196,20 @@
 - #raw("e");#" and ";#raw("e'");#" range over ";#"model edges";#".";
 #part-sub[Assume]
 - #"the ";#"type";#" ";#raw("V");#" has a default element";#".";
-- #"(";#raw("hdis");#") ";#"no path is in both ";#"(";#"the outputs of ";#"the ";#"model edge";#" ";#raw("e'");#")";#" and ";#"(";#"the outputs of ";#"the ";#"model edge";#" ";#raw("e");#")";#".";
-- #"(";#raw("hk");#") ";#"for every ";#"path";#" ";#raw("o");#" in ";#"(";#"the outputs of ";#raw("e");#")";#", ";#"(";#"whether running ";#raw("e");#" in ";#"the ";#"model state";#" ";#raw("st");#" leaves its output ";#raw("o");#" untouched";#")";#" is ";#raw("true");#".";
+- #"(";#raw("disjoint");#") ";#"no path is in both ";#"(";#"the outputs of ";#"the ";#"model edge";#" ";#raw("e'");#")";#" and ";#"(";#"the outputs of ";#"the ";#"model edge";#" ";#raw("e");#")";#".";
+- #"(";#raw("allKept");#") ";#"for every ";#"path";#" ";#raw("o");#" in ";#"(";#"the outputs of ";#raw("e");#")";#", ";#"(";#"whether running ";#raw("e");#" in ";#"the ";#"model state";#" ";#raw("st");#" leaves its output ";#raw("o");#" untouched";#")";#" is ";#raw("true");#".";
 #part-sub[Then]
 - #"(";#"whether ";#raw("e'");#" is dirty in ";#"(";#"the state after running ";#raw("e");#" in ";#raw("st");#")";#")";#" equals ";#"(";#"whether ";#raw("e'");#" is dirty in ";#raw("st");#")";#".";
 ]
 #part[Names in the statement]
 #link(label("def:Mise.Frontend.Sem"))[#raw("Frontend.Sem");];, #link(label("def:Mise.Model.Disjoint"))[#raw("Model.Disjoint");];, #link(label("def:Mise.Model.MEdge"))[#raw("Model.MEdge");];, #link(label("def:Mise.Model.MEdge"))[#raw("Model.MEdge.outs");];, #link(label("def:Mise.Model.St"))[#raw("Model.St");];, #link(label("def:Mise.Model.St.dirty"))[#raw("Model.St.dirty");];, #link(label("def:Mise.Model.St.kept"))[#raw("Model.St.kept");];, #link(label("def:Mise.Model.St.run"))[#raw("Model.St.run");];, #link(label("def:Mise.Syntax.Path"))[#raw("Syntax.Path");];. The statement rests on 24 trusted declarations in all.
 
-#theorem-heading("any_order", "Mise/Headline.lean", 147)
+#theorem-heading("any_order", "Mise/Headline.lean", 152)
 
-#"After any history, running the edges in any valid order leaves the same correct contents and runs the same edges, each at most once, as manifest order.";
+#"After any history, running the edges in any valid ";#raw("order");#" leaves the same correct contents and runs the same edges, each at most once, as manifest order.";
 
 #part[Statement]
-#raw(lang: "lean", block: true, "theorem any_order (g : Graph) (hg : g.Valid) (hd : g.DynOK sem) {es : List MEdge}\n    (ho : ValidOrder g es) {st : St V} (h : Reachable sem g st) :\n    (g.spec sem).Correct st.content (buildTrace sem es st).1.content ∧\n      (buildTrace sem es st).2.Perm (ran sem g st)")
+#raw(lang: "lean", block: true, "theorem any_order (g : Graph) (valid : g.Valid) (depfilesOK : g.DynOK sem) {order : List MEdge}\n    (validOrder : ValidOrder g order) {st : St V} (reachable : Reachable sem g st) :\n    (g.spec sem).Correct st.content (buildTrace sem order st).1.content ∧\n      (buildTrace sem order st).2.Perm (ran sem g st)")
 
 #part[In English]
 #english[
@@ -217,27 +217,27 @@
 - #raw("V");#" ranges over ";#"types";#".";
 - #raw("sem");#" ranges over ";#"command meanings over ";#"elements of ";#raw("V");#".";
 - #raw("g");#" ranges over ";#"build graphs";#".";
-- #raw("es");#" ranges over ";#"lists of ";#"model edges";#".";
+- #raw("order");#" ranges over ";#"lists of ";#"model edges";#".";
 - #raw("st");#" ranges over ";#"model states over ";#"elements of ";#raw("V");#".";
 #part-sub[Assume]
 - #"the ";#"type";#" ";#raw("V");#" has a default element";#".";
-- #"(";#raw("hg");#") ";#"the ";#"build graph";#" ";#raw("g");#" is valid";#".";
-- #"(";#raw("hd");#") ";#"every depfile command of ";#raw("g");#" reads only sources and its edge's inputs";#".";
-- #"(";#raw("ho");#") ";#"the ";#"list";#" ";#raw("es");#" is an order in which a parallel Ninja could run the edges for ";#raw("g");#".";
-- #"(";#raw("h");#") ";#"the ";#"model state";#" ";#raw("st");#" can arise for ";#raw("g");#" from empty logs by source edits and Ninja edge visits";#".";
+- #"(";#raw("valid");#") ";#"the ";#"build graph";#" ";#raw("g");#" is valid";#".";
+- #"(";#raw("depfilesOK");#") ";#"every depfile command of ";#raw("g");#" reads only sources and its edge's inputs";#".";
+- #"(";#raw("validOrder");#") ";#"the ";#"list";#" ";#raw("order");#" is an order in which a parallel Ninja could run the edges for ";#raw("g");#".";
+- #"(";#raw("reachable");#") ";#"the ";#"model state";#" ";#raw("st");#" can arise for ";#raw("g");#" from empty logs by source edits and Ninja edge visits";#".";
 #part-sub[Then]
-- #"(";#"the file contents of ";#"(";#"the state after Ninja visits ";#raw("es");#" in order from ";#raw("st");#")";#")";#" is a correct result of building ";#"(";#"the build specification ";#raw("g");#" describes";#")";#" with ";#"(";#"the file contents of ";#raw("st");#")";#" as the sources";#".";
-- #"(";#"the edges that run when Ninja visits ";#raw("es");#" in order from ";#raw("st");#")";#" is a reordering of ";#"(";#"the edges one ";#raw("ninja");#" run for ";#raw("g");#" executes from ";#raw("st");#")";#".";
+- #"(";#"the file contents of ";#"(";#"the state after Ninja visits ";#raw("order");#" in order from ";#raw("st");#")";#")";#" is a correct result of building ";#"(";#"the build specification ";#raw("g");#" describes";#")";#" with ";#"(";#"the file contents of ";#raw("st");#")";#" as the sources";#".";
+- #"(";#"the edges that run when Ninja visits ";#raw("order");#" in order from ";#raw("st");#")";#" is a reordering of ";#"(";#"the edges one ";#raw("ninja");#" run for ";#raw("g");#" executes from ";#raw("st");#")";#".";
 ]
 #part[Names in the statement]
 #link(label("def:Mise.BuildSpec.Correct"))[#raw("BuildSpec.Correct");];, #link(label("def:Mise.Frontend.Graph"))[#raw("Frontend.Graph");];, #link(label("def:Mise.Frontend.Graph.DynOK"))[#raw("Frontend.Graph.DynOK");];, #link(label("def:Mise.Frontend.Graph.Valid"))[#raw("Frontend.Graph.Valid");];, #link(label("def:Mise.Frontend.Graph.spec"))[#raw("Frontend.Graph.spec");];, #link(label("def:Mise.Frontend.Sem"))[#raw("Frontend.Sem");];, #link(label("def:Mise.Headline.Reachable"))[#raw("Headline.Reachable");];, #link(label("def:Mise.Headline.ValidOrder"))[#raw("Headline.ValidOrder");];, #link(label("def:Mise.Headline.ran"))[#raw("Headline.ran");];, #link(label("def:Mise.Model.MEdge"))[#raw("Model.MEdge");];, #link(label("def:Mise.Model.St"))[#raw("Model.St");];, #link(label("def:Mise.Model.St.content"))[#raw("Model.St.content");];, #link(label("def:Mise.Model.buildTrace"))[#raw("Model.buildTrace");];, #link(label("def:Mise.Syntax.Path"))[#raw("Syntax.Path");];. The statement rests on 112 trusted declarations in all.
 
-#theorem-heading("wrapped_run", "Mise/Headline.lean", 160)
+#theorem-heading("wrapped_run", "Mise/Headline.lean", 165)
 
-#strong[#"Failed commands.";];#" The DSL wraps every command, unless its rule opts out, in a script that ";#raw("Mise.Model.script");#" models. The command leaves ";#raw("w");#" at the outputs, writing what ";#raw("sem");#" says (";#raw("hw");#"), and exits 0 when ";#raw("ok");#". If it fails or leaves an output missing, the state after the run is the state before it; otherwise the run is the model's run. In both cases the state after the run is reachable under ";#raw("Sem.withCmp");#", which keeps a ";#raw("restat");#" output exactly when ";#raw("cmp");#" finds it unchanged, so the theorems above apply to it. The script needs that no output is another output's ";#raw(".mise-old");#" file (";#raw("ha");#") and that no ";#raw(".mise-old");#" file of an output exists (";#raw("hold");#").";
+#strong[#"Failed commands.";];#" The DSL wraps every command, unless its rule opts out, in a script that ";#raw("Mise.Model.script");#" models. The command leaves ";#raw("written");#" at the outputs, writing what ";#raw("sem");#" says (";#raw("writesSem");#"), and exits 0 when ";#raw("exitedZero");#". If it fails or leaves an output missing, the state after the run is the state before it; otherwise the run is the model's run. In both cases the state after the run is reachable under ";#raw("Sem.withCmp");#", which keeps a ";#raw("restat");#" output exactly when ";#raw("cmp");#" finds it unchanged, so the theorems above apply to it. The script needs that no output is another output's ";#raw(".mise-old");#" file (";#raw("asideNotOutput");#") and that no ";#raw(".mise-old");#" file of an output exists (";#raw("asideMissing");#").";
 
 #part[Statement]
-#raw(lang: "lean", block: true, "theorem wrapped_run [DecidableEq V] (g : Graph) (hg : g.Valid) {st : St V}\n    (h : Reachable sem.withCmp g st) {e : MEdge} (he : e ∈ edges g) (hdirty : st.dirty e = true)\n    (w : Path → Option V) (ok : Bool) (hw : ∀ o ∈ e.outs, ∀ v, w o = some v → v = st.outVal sem e o)\n    (ha : ∀ o ∈ e.outs, aside o ∉ e.outs) (hold : ∀ o ∈ e.outs, st.fs (aside o) = none) :\n    ((ok = false ∨ ∃ o ∈ e.outs, w o = none) → st.runWrapped sem e w ok = st) ∧\n      Reachable sem.withCmp g (st.runWrapped sem e w ok)")
+#raw(lang: "lean", block: true, "theorem wrapped_run [DecidableEq V] (g : Graph) (valid : g.Valid) {st : St V}\n    (reachable : Reachable sem.withCmp g st) {e : MEdge} (inManifest : e ∈ edges g)\n    (isDirty : st.dirty e = true) (written : Path → Option V) (exitedZero : Bool)\n    (writesSem : ∀ o ∈ e.outs, ∀ v, written o = some v → v = st.outVal sem e o)\n    (asideNotOutput : ∀ o ∈ e.outs, aside o ∉ e.outs)\n    (asideMissing : ∀ o ∈ e.outs, st.fs (aside o) = none) :\n    ((exitedZero = false ∨ ∃ o ∈ e.outs, written o = none) →\n        st.runWrapped sem e written exitedZero = st) ∧\n      Reachable sem.withCmp g (st.runWrapped sem e written exitedZero)")
 
 #part[In English]
 #english[
@@ -247,21 +247,21 @@
 - #raw("g");#" ranges over ";#"build graphs";#".";
 - #raw("st");#" ranges over ";#"model states over ";#"elements of ";#raw("V");#".";
 - #raw("e");#" ranges over ";#"model edges";#".";
-- #raw("w");#" ranges over ";#"functions from ";#"paths";#" to ";#"optional ";#"elements of ";#raw("V");#".";
-- #raw("ok");#" ranges over ";#"Booleans";#".";
+- #raw("written");#" ranges over ";#"functions from ";#"paths";#" to ";#"optional ";#"elements of ";#raw("V");#".";
+- #raw("exitedZero");#" ranges over ";#"Booleans";#".";
 #part-sub[Assume]
 - #"the ";#"type";#" ";#raw("V");#" has a default element";#".";
 - #"equality on ";#raw("V");#" is decidable";#".";
-- #"(";#raw("hg");#") ";#"the ";#"build graph";#" ";#raw("g");#" is valid";#".";
-- #"(";#raw("h");#") ";#"the ";#"model state";#" ";#raw("st");#" can arise for ";#raw("g");#" from empty logs by source edits and Ninja edge visits";#" (taking ";#raw("sem");#" to be ";#"(";#"the ";#"command meaning";#" ";#raw("sem");#" with each ";#raw("restat");#" output kept exactly when its contents are unchanged";#")";#")";#".";
-- #"(";#raw("he");#") ";#"the ";#"model edge";#" ";#raw("e");#" is in ";#"(";#"the edges of the manifest for ";#raw("g");#")";#".";
-- #"(";#raw("hdirty");#") ";#"(";#"whether ";#raw("e");#" is dirty in ";#raw("st");#")";#" is ";#raw("true");#".";
-- #"(";#raw("hw");#") ";#"for every ";#"path";#" ";#raw("o");#" in ";#"(";#"the outputs of ";#raw("e");#")";#", ";#"for every ";#raw("v");#" among ";#"elements of ";#raw("V");#", ";#"if ";#"(";#"the value of ";#"the ";#"function";#" ";#raw("w");#" at ";#raw("o");#")";#" equals ";#"(";#raw("some");#" ";#raw("v");#")";#", then ";#raw("v");#" equals ";#"(";#"the contents that running ";#raw("e");#" in ";#raw("st");#" writes to ";#raw("o");#")";#".";
-- #"(";#raw("ha");#") ";#"for every ";#"path";#" ";#raw("o");#" in ";#"(";#"the outputs of ";#raw("e");#")";#", ";#"(";#"the ";#raw(".mise-old");#" file of ";#raw("o");#")";#" is not in ";#"(";#"the outputs of ";#raw("e");#")";#".";
-- #"(";#raw("hold");#") ";#"for every ";#"path";#" ";#raw("o");#" in ";#"(";#"the outputs of ";#raw("e");#")";#", ";#"(";#"the file at ";#"(";#"the ";#raw(".mise-old");#" file of ";#raw("o");#")";#" in ";#raw("st");#")";#" equals ";#raw("none");#".";
+- #"(";#raw("valid");#") ";#"the ";#"build graph";#" ";#raw("g");#" is valid";#".";
+- #"(";#raw("reachable");#") ";#"the ";#"model state";#" ";#raw("st");#" can arise for ";#raw("g");#" from empty logs by source edits and Ninja edge visits";#" (taking ";#raw("sem");#" to be ";#"(";#"the ";#"command meaning";#" ";#raw("sem");#" with each ";#raw("restat");#" output kept exactly when its contents are unchanged";#")";#")";#".";
+- #"(";#raw("inManifest");#") ";#"the ";#"model edge";#" ";#raw("e");#" is in ";#"(";#"the edges of the manifest for ";#raw("g");#")";#".";
+- #"(";#raw("isDirty");#") ";#"(";#"whether ";#raw("e");#" is dirty in ";#raw("st");#")";#" is ";#raw("true");#".";
+- #"(";#raw("writesSem");#") ";#"for every ";#"path";#" ";#raw("o");#" in ";#"(";#"the outputs of ";#raw("e");#")";#", ";#"for every ";#raw("v");#" among ";#"elements of ";#raw("V");#", ";#"if ";#"(";#"the value of ";#"the ";#"function";#" ";#raw("written");#" at ";#raw("o");#")";#" equals ";#"(";#raw("some");#" ";#raw("v");#")";#", then ";#raw("v");#" equals ";#"(";#"the contents that running ";#raw("e");#" in ";#raw("st");#" writes to ";#raw("o");#")";#".";
+- #"(";#raw("asideNotOutput");#") ";#"for every ";#"path";#" ";#raw("o");#" in ";#"(";#"the outputs of ";#raw("e");#")";#", ";#"(";#"the ";#raw(".mise-old");#" file of ";#raw("o");#")";#" is not in ";#"(";#"the outputs of ";#raw("e");#")";#".";
+- #"(";#raw("asideMissing");#") ";#"for every ";#"path";#" ";#raw("o");#" in ";#"(";#"the outputs of ";#raw("e");#")";#", ";#"(";#"the file at ";#"(";#"the ";#raw(".mise-old");#" file of ";#raw("o");#")";#" in ";#raw("st");#")";#" equals ";#raw("none");#".";
 #part-sub[Then]
-- #"if ";#"either ";#"the ";#"Boolean";#" ";#raw("ok");#" equals ";#raw("false");#", or ";#"there is ";#"a ";#"path";#" ";#raw("o");#" in ";#"(";#"the outputs of ";#raw("e");#")";#" such that ";#"(";#"the value of ";#raw("w");#" at ";#raw("o");#")";#" equals ";#raw("none");#", then ";#"(";#"the state after Ninja runs ";#raw("e");#" from ";#raw("st");#" through the wrapper, where the command leaves ";#raw("w");#" at the outputs and exits 0 when ";#raw("ok");#")";#" equals ";#raw("st");#".";
-- #"(";#"the state after Ninja runs ";#raw("e");#" from ";#raw("st");#" through the wrapper, where the command leaves ";#raw("w");#" at the outputs and exits 0 when ";#raw("ok");#")";#" can arise for ";#raw("g");#" from empty logs by source edits and Ninja edge visits";#" (taking ";#raw("sem");#" to be ";#"(";#raw("sem");#" with each ";#raw("restat");#" output kept exactly when its contents are unchanged";#")";#")";#".";
+- #"if ";#"either ";#"the ";#"Boolean";#" ";#raw("exitedZero");#" equals ";#raw("false");#", or ";#"there is ";#"a ";#"path";#" ";#raw("o");#" in ";#"(";#"the outputs of ";#raw("e");#")";#" such that ";#"(";#"the value of ";#raw("written");#" at ";#raw("o");#")";#" equals ";#raw("none");#", then ";#"(";#"the state after Ninja runs ";#raw("e");#" from ";#raw("st");#" through the wrapper, where the command leaves ";#raw("written");#" at the outputs and exits 0 when ";#raw("exitedZero");#")";#" equals ";#raw("st");#".";
+- #"(";#"the state after Ninja runs ";#raw("e");#" from ";#raw("st");#" through the wrapper, where the command leaves ";#raw("written");#" at the outputs and exits 0 when ";#raw("exitedZero");#")";#" can arise for ";#raw("g");#" from empty logs by source edits and Ninja edge visits";#" (taking ";#raw("sem");#" to be ";#"(";#raw("sem");#" with each ";#raw("restat");#" output kept exactly when its contents are unchanged";#")";#")";#".";
 ]
 #part[Names in the statement]
 #link(label("def:Mise.Frontend.Graph"))[#raw("Frontend.Graph");];, #link(label("def:Mise.Frontend.Graph.Valid"))[#raw("Frontend.Graph.Valid");];, #link(label("def:Mise.Frontend.Sem"))[#raw("Frontend.Sem");];, #link(label("def:Mise.Frontend.Sem.withCmp"))[#raw("Frontend.Sem.withCmp");];, #link(label("def:Mise.Headline.Reachable"))[#raw("Headline.Reachable");];, #link(label("def:Mise.Headline.edges"))[#raw("Headline.edges");];, #link(label("def:Mise.Model.MEdge"))[#raw("Model.MEdge");];, #link(label("def:Mise.Model.MEdge"))[#raw("Model.MEdge.outs");];, #link(label("def:Mise.Model.St"))[#raw("Model.St");];, #link(label("def:Mise.Model.St.dirty"))[#raw("Model.St.dirty");];, #link(label("def:Mise.Model.St"))[#raw("Model.St.fs");];, #link(label("def:Mise.Model.St.outVal"))[#raw("Model.St.outVal");];, #link(label("def:Mise.Model.St.runWrapped"))[#raw("Model.St.runWrapped");];, #link(label("def:Mise.Model.aside"))[#raw("Model.aside");];, #link(label("def:Mise.Syntax.Path"))[#raw("Syntax.Path");];. The statement rests on 104 trusted declarations in all.

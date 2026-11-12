@@ -22,10 +22,10 @@ definition. `scripts/check.sh` fails if either is out of date.
 
 The statements share these hypotheses:
 
-* `hg : g.Valid`, the decidable well-formedness check on the graph;
-* `hd : g.DynOK sem`, that every depfile command reads only sources and the
-  edge's own inputs. It holds for any graph without depfile rules
-  (`Mise.Model.dynOK_static`).
+* `valid : g.Valid`, the decidable well-formedness check on the graph;
+* `depfilesOK : g.DynOK sem`, that every depfile command reads only
+  sources and the edge's own inputs. It holds for any graph without depfile
+  rules (`Mise.Model.dynOK_static`).
 
 `sem : Sem V` says what each command computes. It is a parameter, so the
 theorems hold for every choice of command meanings.
@@ -84,95 +84,106 @@ abbrev Checks (st : St V) (e : MEdge) (p : Path) : Prop :=
 /-- The text `mise` writes parses, under the parser model, to the manifest it
 emitted, and that manifest, read through the model of Ninja's variable
 evaluation, means the build the DSL describes. -/
-theorem meaning (g : Graph) (hg : g.Valid) :
+theorem meaning (g : Graph) (valid : g.Valid) :
     parse (print (emit g)) = some (emit g) ∧ denote sem (emit g) = g.spec sem :=
-  ⟨parse_print _ (emit_wellFormed g hg), denote_emit sem g hg⟩
+  ⟨parse_print _ (emit_wellFormed g valid), denote_emit sem g valid⟩
 
 /-- A build described by a valid graph has at most one correct result for
 any sources. `Correct` is the correctness predicate of *Build Systems à la
 Carte*: sources keep their values, and every target holds what its task
 computes from the result. -/
-theorem correct_unique (g : Graph) (hg : g.Valid) (hd : g.DynOK sem) {S R₁ R₂ : Path → V}
-    (h₁ : (g.spec sem).Correct S R₁) (h₂ : (g.spec sem).Correct S R₂) : R₁ = R₂ :=
-  BuildSpec.correct_unique (g.acyclic sem hg hd) h₁ h₂
+theorem correct_unique (g : Graph) (valid : g.Valid) (depfilesOK : g.DynOK sem)
+    {sources result₁ result₂ : Path → V} (correct₁ : (g.spec sem).Correct sources result₁)
+    (correct₂ : (g.spec sem).Correct sources result₂) : result₁ = result₂ :=
+  BuildSpec.correct_unique (g.acyclic sem valid depfilesOK) correct₁ correct₂
 
 /-! ## Incremental builds -/
 
 /-- After any history, one `ninja` run leaves correct contents for the
 current sources. -/
-theorem build_correct (g : Graph) (hg : g.Valid) (hd : g.DynOK sem) {st : St V}
-    (h : Reachable sem g st) : (g.spec sem).Correct st.content (build sem g st).content := by
-  have hc := (reach_sound sem (sched_emit g hg) (reads_emit sem g hg hd) h).1
-  rwa [denote_emit sem g hg] at hc
+theorem build_correct (g : Graph) (valid : g.Valid) (depfilesOK : g.DynOK sem) {st : St V}
+    (reachable : Reachable sem g st) :
+    (g.spec sem).Correct st.content (build sem g st).content := by
+  have hc := (reach_sound sem (sched_emit g valid) (reads_emit sem g valid depfilesOK) reachable).1
+  rwa [denote_emit sem g valid] at hc
 
 /-- After any history, a second `ninja` run executes nothing and changes
 nothing. -/
-theorem rebuild_noop (g : Graph) (hg : g.Valid) (hd : g.DynOK sem) {st : St V}
-    (h : Reachable sem g st) :
+theorem rebuild_noop (g : Graph) (valid : g.Valid) (depfilesOK : g.DynOK sem) {st : St V}
+    (reachable : Reachable sem g st) :
     ran sem g (build sem g st) = [] ∧ build sem g (build sem g st) = build sem g st := by
-  have hi := (dsl_sound sem g hg hd h).2
+  have hi := (dsl_sound sem g valid depfilesOK reachable).2
   have h1 := congrArg Prod.snd hi
   have h2 := congrArg Prod.fst hi
   exact ⟨h1, h2⟩
 
 /-- One `ninja` run executes each edge at most once. -/
-theorem ran_nodup (g : Graph) (hg : g.Valid) (st : St V) : (ran sem g st).Nodup :=
-  trace_nodup_sched sem _ st (sched_emit g hg)
+theorem ran_nodup (g : Graph) (valid : g.Valid) (st : St V) : (ran sem g st).Nodup :=
+  trace_nodup_sched sem _ st (sched_emit g valid)
 
-/-- Build, edit some sources, build again. Every edge the second build runs
-has a reason: an input `p` that Ninja checks for it, whose mtime is newer
-than anything the first build left, and that was either edited or written by
-an edge that ran earlier in the second build. An edge whose inputs were left
-untouched, including by a `restat` edge that kept its output, does not
-run. -/
-theorem rebuild_minimal (g : Graph) (hg : g.Valid) (hd : g.DynOK sem) {st₀ : St V}
-    (h : Reachable sem g st₀) (E : List (Path × V)) (hE : ∀ pv ∈ E, IsSource g pv.1) {e : MEdge}
-    (he : e ∈ ran sem g ((build sem g st₀).edits E)) :
-    ∃ pre post, edges g = pre ++ e :: post ∧ ∃ p, Checks (build sem g st₀) e p ∧
-      (build sem g st₀).clock < (buildTrace sem pre ((build sem g st₀).edits E)).1.mtime p ∧
-      (p ∈ E.map (·.1) ∨ ∃ e' ∈ (buildTrace sem pre ((build sem g st₀).edits E)).2, p ∈ e'.outs) := by
-  have hclean := (dsl_parallel sem g hg hd (List.Perm.refl _) (sched_emit g hg) h).2
+/-- Build, edit some sources, build again. Every edge `e` the second build
+runs has a reason: an input `p` that Ninja checks for it, whose mtime is
+newer than anything the first build left, and that was either among the
+`edits` or written by an edge that ran earlier in the second build. An edge
+whose inputs were left untouched, including by a `restat` edge that kept its
+output, does not run. -/
+theorem rebuild_minimal (g : Graph) (valid : g.Valid) (depfilesOK : g.DynOK sem) {st₀ : St V}
+    (reachable : Reachable sem g st₀) (edits : List (Path × V))
+    (editsSources : ∀ edit ∈ edits, IsSource g edit.1) {e : MEdge}
+    (eRan : e ∈ ran sem g ((build sem g st₀).edits edits)) :
+    ∃ before after, edges g = before ++ e :: after ∧ ∃ p, Checks (build sem g st₀) e p ∧
+      (build sem g st₀).clock < (buildTrace sem before ((build sem g st₀).edits edits)).1.mtime p ∧
+      (p ∈ edits.map (·.1) ∨
+        ∃ e' ∈ (buildTrace sem before ((build sem g st₀).edits edits)).2, p ∈ e'.outs) := by
+  have hclean := (dsl_parallel sem g valid depfilesOK (List.Perm.refl _) (sched_emit g valid)
+    reachable).2
   obtain ⟨pre, post, hsplit, o, ho, D, hD, p, hp, hnew, hwhy⟩ :=
-    build_minimal_clean sem (sched_emit g hg) hclean E hE he
+    build_minimal_clean sem (sched_emit g valid) hclean edits editsSources eRan
   exact ⟨pre, post, hsplit, p, ⟨o, ho, D, hD, hp⟩, hnew, hwhy⟩
 
 /-- **Early cutoff.** A `restat` edge that keeps every output changes no
 other edge's dirtiness, so nothing is rebuilt on its account. -/
-theorem restat_cutoff {st : St V} {e e' : MEdge} (hdis : Disjoint e'.outs e.outs)
-    (hk : ∀ o ∈ e.outs, st.kept sem e o = true) : (st.run sem e).dirty e' = st.dirty e' :=
-  Mise.Model.restat_cutoff sem hdis hk
+theorem restat_cutoff {st : St V} {e e' : MEdge} (disjoint : Disjoint e'.outs e.outs)
+    (allKept : ∀ o ∈ e.outs, st.kept sem e o = true) : (st.run sem e).dirty e' = st.dirty e' :=
+  Mise.Model.restat_cutoff sem disjoint allKept
 
 /-! ## Parallel builds -/
 
-/-- After any history, running the edges in any valid order leaves the same
+/-- After any history, running the edges in any valid `order` leaves the same
 correct contents and runs the same edges, each at most once, as manifest
 order. -/
-theorem any_order (g : Graph) (hg : g.Valid) (hd : g.DynOK sem) {es : List MEdge}
-    (ho : ValidOrder g es) {st : St V} (h : Reachable sem g st) :
-    (g.spec sem).Correct st.content (buildTrace sem es st).1.content ∧
-      (buildTrace sem es st).2.Perm (ran sem g st) := by
-  refine ⟨?_, dsl_same_edges sem g hg hd ho.1 ho.2 h⟩
-  rw [(dsl_parallel sem g hg hd ho.1 ho.2 h).1]
+theorem any_order (g : Graph) (valid : g.Valid) (depfilesOK : g.DynOK sem) {order : List MEdge}
+    (validOrder : ValidOrder g order) {st : St V} (reachable : Reachable sem g st) :
+    (g.spec sem).Correct st.content (buildTrace sem order st).1.content ∧
+      (buildTrace sem order st).2.Perm (ran sem g st) := by
+  refine ⟨?_, dsl_same_edges sem g valid depfilesOK validOrder.1 validOrder.2 reachable⟩
+  rw [(dsl_parallel sem g valid depfilesOK validOrder.1 validOrder.2 reachable).1]
   exact BuildSpec.cleanBuild_correct _ _
 
 /-! ## Failed commands -/
 
 /-- **Failed commands.** The DSL wraps every command, unless its rule opts
-out, in a script that `Mise.Model.script` models. The command leaves `w` at
-the outputs, writing what `sem` says (`hw`), and exits 0 when `ok`. If it
-fails or leaves an output missing, the state after the run is the state
-before it; otherwise the run is the model's run. In both cases the state
-after the run is reachable under `Sem.withCmp`, which keeps a `restat`
-output exactly when `cmp` finds it unchanged, so the theorems above apply
-to it. The script needs that no output is another output's `.mise-old` file
-(`ha`) and that no `.mise-old` file of an output exists (`hold`). -/
-theorem wrapped_run [DecidableEq V] (g : Graph) (hg : g.Valid) {st : St V}
-    (h : Reachable sem.withCmp g st) {e : MEdge} (he : e ∈ edges g) (hdirty : st.dirty e = true)
-    (w : Path → Option V) (ok : Bool) (hw : ∀ o ∈ e.outs, ∀ v, w o = some v → v = st.outVal sem e o)
-    (ha : ∀ o ∈ e.outs, aside o ∉ e.outs) (hold : ∀ o ∈ e.outs, st.fs (aside o) = none) :
-    ((ok = false ∨ ∃ o ∈ e.outs, w o = none) → st.runWrapped sem e w ok = st) ∧
-      Reachable sem.withCmp g (st.runWrapped sem e w ok) :=
-  ⟨runWrapped_fail sem st e w ok (outs_nodup_emit hg he) ha hold,
-   reach_runWrapped sem st e w ok h he hdirty (outs_nodup_emit hg he) ha hold hw⟩
+out, in a script that `Mise.Model.script` models. The command leaves
+`written` at the outputs, writing what `sem` says (`writesSem`), and exits 0
+when `exitedZero`. If it fails or leaves an output missing, the state after
+the run is the state before it; otherwise the run is the model's run. In both
+cases the state after the run is reachable under `Sem.withCmp`, which keeps a
+`restat` output exactly when `cmp` finds it unchanged, so the theorems above
+apply to it. The script needs that no output is another output's `.mise-old`
+file (`asideNotOutput`) and that no `.mise-old` file of an output exists
+(`asideMissing`). -/
+theorem wrapped_run [DecidableEq V] (g : Graph) (valid : g.Valid) {st : St V}
+    (reachable : Reachable sem.withCmp g st) {e : MEdge} (inManifest : e ∈ edges g)
+    (isDirty : st.dirty e = true) (written : Path → Option V) (exitedZero : Bool)
+    (writesSem : ∀ o ∈ e.outs, ∀ v, written o = some v → v = st.outVal sem e o)
+    (asideNotOutput : ∀ o ∈ e.outs, aside o ∉ e.outs)
+    (asideMissing : ∀ o ∈ e.outs, st.fs (aside o) = none) :
+    ((exitedZero = false ∨ ∃ o ∈ e.outs, written o = none) →
+        st.runWrapped sem e written exitedZero = st) ∧
+      Reachable sem.withCmp g (st.runWrapped sem e written exitedZero) :=
+  ⟨runWrapped_fail sem st e written exitedZero (outs_nodup_emit valid inManifest) asideNotOutput
+     asideMissing,
+   reach_runWrapped sem st e written exitedZero reachable inManifest isDirty
+     (outs_nodup_emit valid inManifest) asideNotOutput asideMissing writesSem⟩
 
 end Mise.Headline
