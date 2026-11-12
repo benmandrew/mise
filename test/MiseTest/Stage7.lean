@@ -50,6 +50,9 @@ def swapped : List MEdge :=
   | es => es
 
 #guard swapped != m.medges
+-- Early cutoff stops the same edges in both orders (`parallel_same_edges`).
+#guard ran sem swapped c1 == ["build/config.h"]
+#guard ran sem swapped (b1.edit "config.in" "config@2") == ["build/config.h", "build/util.o", "build/main.o", "build/app"]
 #guard ran sem swapped (b1.edit "util.h" "util.h@2") == ["build/util.o", "build/main.o", "build/app"]
 #guard products.all fun k =>
   (buildTrace sem swapped (b1.edit "util.h" "util.h@2")).1.content k ==

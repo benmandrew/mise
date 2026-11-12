@@ -55,4 +55,8 @@ fails if any theorem depends on an axiom outside the standard three. -/
 #print axioms Mise.Model.parallel_equiv
 #print axioms Mise.Model.parallel_equiv_reach
 #print axioms Mise.Model.dsl_parallel
+#print axioms Mise.Model.parallel_same_edges
+#print axioms Mise.Model.parallel_same_edges_reach
+#print axioms Mise.Model.dsl_same_edges
+#print axioms Mise.Model.trace_nodup_sched
 #print axioms Mise.Frontend.isRestat_emit

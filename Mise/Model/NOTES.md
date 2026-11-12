@@ -40,6 +40,7 @@ Stages 6 and 7 generalised the Stage 5 model in place. Without depfile or `resta
 - (Stage 7) `build_minimal`: an edge that runs was dirty beforehand or has a checked input written after `st.clock` by an edit or an earlier run. `St.outDirty_cause` lists the dirty cases, `build_minimal_clean` drops the first for clean states, and `run_cause` is the one-edge form.
 - (Stage 7) `restat_cutoff`: a run that keeps every output changes no other edge's dirtiness, and `St.kept_not_newer` keeps a kept output out of `build_minimal`.
 - (Stage 7) `parallel_equiv`: under `Inv`, any permutation of the manifest that is a `Sched` gives the same contents and leaves every edge clean. `parallel_equiv_reach` covers any history from empty logs, `dsl_parallel` covers emitted manifests, and `schedAcyclic` builds a schedule's acyclicity witness.
+- (Stage 7) `parallel_same_edges`: under the same hypotheses, the edges run in the two orders are permutations of each other, so each order runs the same edges, each at most once (`trace_nodup_sched`, which needs no hypothesis on outputs). `parallel_same_edges_reach` and `dsl_same_edges` are the forms for any history and for emitted manifests. The proof uses `trace_mem_iff`: an edge runs when it was dirty before the build or an input it checks ends the build newer than the old clock. It also uses `written_iff`: an output is written when its edge ran and did not keep it, which `St.keptWith` decides from the final contents. Both orders end with the same contents, so induction along the manifest order gives the same edges. Early cutoff cannot make the orders differ: an edge that reads a `restat` output comes after its producer in every schedule, and whether that producer keeps the output depends only on its inputs' contents.
 
 ## Assumptions
 
@@ -58,7 +59,7 @@ Stages 6 and 7 generalised the Stage 5 model in place. Without depfile or `resta
 - Phony edges have an empty command; the DSL does not emit them. `generator` is ignored.
 - (Stage 6) The model records deps for every output of every edge, where Ninja keys the deps log by the first output of edges with `deps`.
 - (Stage 7) A parallel run is the sequence of its commands by start time, assuming each reads at the start and writes at the end. Ninja's ordering makes that sequence a `Sched`.
-- (Stage 7) Two orders agree on contents and dirtiness, but not mtimes or log times, and the theorems do not show they run the same edges.
+- (Stage 7) Two orders agree on contents, dirtiness and the edges they run, but not on mtimes or log times.
 - (Stage 7) A `restat` command always produces every output, where Ninja treats a missing one as unchanged.
 
 ## The no-hazard condition (Stage 7)

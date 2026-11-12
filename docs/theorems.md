@@ -10,4 +10,4 @@ The library has one directory per stage, each with a `NOTES.md` giving its defin
 | 4 | `Mise/Frontend` | `denote_emit`: the emitted manifest, read through a model of Ninja's evaluation, means what the DSL means. |
 | 5 | `Mise/Model` | `ninjaBuild_sound_static`, `ninjaBuild_idem`: an incremental build is correct, and a second build runs nothing. |
 | 6 | `Mise/Model` | `reach_sound`, `dsl_sound`: the same after any history of edits and partial builds, with depfiles. |
-| 7 | `Mise/Model` | `build_minimal`, `trace_nodup`, `restat_cutoff`, `parallel_equiv`: only edges with a changed input run, each at most once; a `restat` run that keeps its outputs rebuilds nothing downstream; any order consistent with the dependencies gives the same contents. |
+| 7 | `Mise/Model` | `build_minimal`, `trace_nodup`, `restat_cutoff`, `parallel_equiv`, `parallel_same_edges`: only edges with a changed input run, each at most once; a `restat` run that keeps its outputs rebuilds nothing downstream; any order consistent with the dependencies gives the same contents and runs the same edges. |
