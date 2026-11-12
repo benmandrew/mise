@@ -32,11 +32,20 @@ that every command runs under a prefix, and returns the edges it read.
   the tracer logs each refused open, to name what a sandbox kill was for.
 
 The modes need simple commands (one program and its arguments, no shell
-operators), since the prefix applies to the first command only. A
-`restat` command in the DSL's `cmp` wrapper (`Mise.Frontend.cmpWrap`) is
-the exception: the prefix goes on the command inside the wrapper, so the
-command is confined or traced, but the wrapper's own `sh`, `mv`, `cmp` and
-`rm`, which move its outputs to and from `OUT.mise-old`, are not.
+operators), since the prefix applies to the first command only. A command
+in the DSL's wrapper (`Mise.Frontend.wrapCommand`) is the exception: the
+prefix goes on the command inside the wrapper, so the command is confined
+or traced exactly as it would be on its own. A sandboxed process cannot
+start a second sandbox, so the wrapper's `sh` runs outside one, but in
+`sandbox` mode every program it starts is confined: the command by its
+profile, and each `mv`, `rm` and `cmp` by a profile of its own
+(`wrapper_profile`), which lets it read the toolchain and read and write
+only the edge's outputs and their `OUT.mise-old` copies. That profile
+refuses without killing, so a refusal shows as "Operation not permitted"
+in Ninja's output, which `wrapper_refusals` finds. The `sh` itself runs
+only builtins (`set`, `for`, `[`, `echo`, `exit`), which test whether files
+exist and write to standard error. In `trace` mode the wrapper's programs
+are not traced.
 
 `python3 test/confine.py sandbox|trace|determinism` runs the examples; see
 `test/conf-sandbox.sh`, `test/conf-depfiles.sh` and `test/conf-determinism.sh`.
@@ -64,6 +73,7 @@ TOOLCHAIN = ["/nix/store", "/usr/lib", "/usr/share", "/dev/null", "/dev/tty", "/
     else ["/etc", "/lib", "/lib64", "/proc/self", "/sys/devices/system/cpu"])
 NINJA_FILES = ["build.ninja", ".ninja_log", ".ninja_deps"]
 VAR = "mise_confine"
+WVAR = "mise_wconfine"
 
 
 # ---------------------------------------------------------------- manifests
@@ -215,23 +225,55 @@ def profile(e, edges, d, tmp, extra_reads, extra_writes):
     return "\n".join(lines) + "\n"
 
 
+def wrapper_profile(e, d):
+    """A sandbox profile for the wrapper's `mv`, `rm` and `cmp` on edge `e`:
+    they may read the toolchain and the programs themselves, and read and
+    write the edge's outputs and their `OUT.mise-old` copies. It refuses
+    without killing, so that the refusal message reaches Ninja's output."""
+    progs = [real(shutil.which(p)) for p in ["mv", "rm", "cmp"]]
+    reads = [f"(subpath {sb_str(real(t))})" for t in TOOLCHAIN if os.path.exists(t)]
+    reads += [f"(literal {sb_str(p)}) (literal {sb_str(p.parent)})" for p in progs]
+    files = [f"(literal {sb_str(d / q)})" for o in e.all_outs for q in (o, o + ASIDE)]
+    devs = [f"(literal {sb_str(p)})" for p in ["/dev/null", "/dev/tty", "/dev/dtracehelper"]]
+    return "\n".join(["(version 1)", "(allow default)", "(deny file-read-data)", "(deny file-write*)",
+                      "(allow file-read-data " + " ".join(reads + ['(literal "/")'] + files) + ")",
+                      "(allow file-write* " + " ".join(devs + files) + ")"]) + "\n"
+
+
+def wrapper_refusals(stdout):
+    """The lines of Ninja's output in which the sandbox refused a step of the
+    wrapper."""
+    return [l for l in stdout.splitlines() if "Operation not permitted" in l]
+
+
 # ---------------------------------------------------------------- wrapping
 
 SHELL_OPS = re.compile(r"[;&|<>`\n]|\$\$")
 
-# The parts of the `cmp` wrapper around the command it runs (see
-# `inner` in test/MiseTest/Fuzz.lean).
+# The parts of the DSL's wrapper around the command it runs (see `inner`
+# in test/MiseTest/Fuzz.lean), the suffix of the copies it moves old
+# outputs to, and the programs it runs.
 WRAP_OPEN, WRAP_CLOSE = "; if ( ", " ); then "
+ASIDE = ".mise-old"
+WRAP_PROGS = ["mv -f ", "rm -f ", "cmp -s "]
 
 
 def split_wrapped(cmd):
-    """(head, command, tail) for a command in the `cmp` wrapper, so that
+    """(head, command, tail) for a command in the DSL's wrapper, so that
     head + command + tail == cmd, or None for any other command."""
     parts = cmd.split(WRAP_OPEN)
     if len(parts) != 2 or not parts[0].startswith("set -- ") or WRAP_CLOSE not in parts[1]:
         return None
     inner, tail = parts[1].split(WRAP_CLOSE, 1)
     return parts[0] + WRAP_OPEN, inner, WRAP_CLOSE + tail
+
+
+def confine_wrapper(part):
+    """`part` of the wrapper with each `mv`, `rm` and `cmp` under the
+    wrapper's prefix."""
+    for p in WRAP_PROGS:
+        part = part.replace(p, "${" + WVAR + "} " + p)
+    return part
 
 
 def tracer(work):
@@ -258,7 +300,7 @@ def wrap(d, mode, work, extra_reads=(), extra_writes=()):
             raise RuntimeError(f"confine: rule {name} is not a simple command: {cmd}")
     for sub in ["sb", "tmp", "trace"]:
         (work / sub).mkdir(parents=True, exist_ok=True)
-    prefix = {}
+    prefix, wprefix = {}, {}
     for e in edges:
         tmp = work / "tmp" / e.key
         tmp.mkdir(exist_ok=True)
@@ -279,6 +321,9 @@ def wrap(d, mode, work, extra_reads=(), extra_writes=()):
                 pre += f" {shutil.which('env')} {trace}"
             prof.write_text(text_sb)
             prefix[e.key] = pre
+            wprof = work / "sb" / f"{e.key}.wrapper.sb"
+            wprof.write_text(wrapper_profile(e, d))
+            wprefix[e.key] = f"sandbox-exec -f {real(wprof)}"
         else:
             prefix[e.key] = f"TMPDIR={real(tmp)} {trace}"
     out, i = [], 0
@@ -286,10 +331,14 @@ def wrap(d, mode, work, extra_reads=(), extra_writes=()):
         if line.startswith("  command = ") and out and not out[-1].startswith("build "):
             cmd = line[len("  command = "):]
             w = split_wrapped(cmd)
+            if w and wprefix:
+                w = (confine_wrapper(w[0]), w[1], confine_wrapper(w[2]))
             line = "  command = " + (w[0] + "${" + VAR + "} " + w[1] + w[2] if w else "${" + VAR + "} " + cmd)
         out.append(line)
         if line.startswith("build "):
             out.append(f"  {VAR} = {ninja_escape(prefix[edges[i].key])}")
+            if wprefix:
+                out.append(f"  {WVAR} = {ninja_escape(wprefix[edges[i].key])}")
             i += 1
     (d / "build.ninja").write_text("\n".join(out) + "\n")
     return edges
@@ -341,6 +390,10 @@ def check_trace(d, edges, work, stdout, extra_reads=(), extra_writes=()):
     toolchain = [str(real(t)) for t in TOOLCHAIN if os.path.exists(t)]
     extra = {str(real(p)) for p in extra_reads}
     logs = ran(stdout)
+    # Ninja records no deps for a command that failed, so its reads are
+    # compared with the sandbox's rules only.
+    failed = {t for l in stdout.splitlines() if l.startswith("FAILED: ")
+              for t in l[len("FAILED: "):].split() if not t.startswith("[code=")}
     problems, st = [], Stats()
     for e in edges:
         log = real(work / "trace") / f"{e.key}.log"
@@ -384,7 +437,7 @@ def check_trace(d, edges, work, stdout, extra_reads=(), extra_writes=()):
                 or any(r.match(str(d / rel)) for r in tmp_res)
             if not ok:
                 problems.append(f"{e.outs[0]}: wrote {rel}, which is not its output")
-        if e.dyn and not refused:  # a refused command leaves no useful depfile
+        if e.dyn and not refused and e.outs[0] not in failed:  # a refused or failed command leaves no deps
             listed = set(recorded_deps(d, e.outs[0])) | set(e.ins + e.iins)
             for rel in sorted(reads - listed - set(e.all_outs)):
                 problems.append(f"{e.outs[0]}: read {rel}, which its depfile does not list")
@@ -442,6 +495,8 @@ def build_steps(name, mode):
         r = run(["ninja", "-v", "-j8"], d, check=False)
         if r.returncode != 0:
             raise RuntimeError(f"{name} step {i}: confined build failed:\n{r.stdout}{r.stderr}")
+        if mode == "sandbox" and (refused := wrapper_refusals(r.stdout)):
+            raise RuntimeError(f"{name} step {i}: the sandbox refused a step of the wrapper:\n" + "\n".join(refused))
         runs += len(re.findall(r"^\[\d+/\d+\]", r.stdout, re.M))
         if "no work to do" not in run(["ninja", "-n"], d).stdout:
             raise RuntimeError(f"{name} step {i}: ninja -n has work to do")

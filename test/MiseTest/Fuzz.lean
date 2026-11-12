@@ -8,7 +8,7 @@ import MiseTest.Rng
 
 `lake exe fuzzgen DIR N SEED [OPTS]` writes `N` random cases to
 `DIR/<i>.json`, and `test/fuzz.py` replays them against real Ninja. `OPTS`
-is a comma-separated list of `Opts` flags; the only one is `absent`.
+is a comma-separated list of `Opts` flags: `absent`, and `nowrap` with it.
 `lake exe fuzzgen expect IN OUT` reads a case description from `IN` and
 writes its case to `OUT`.
 
@@ -115,11 +115,16 @@ to do. Rules without `restat` go through the DSL's wrapper. A `restat` rule
 either has the helper keep unchanged outputs itself (mode `r`, emitted with
 `wrap = false`) or goes through the wrapper, which compares with `cmp`, with
 a helper that always writes. The `x` rules leave out some outputs, are never
-wrapped, and only `Opts.absent` uses them. -/
+wrapped, and only `Opts.absent` uses them: `stx` and `dyx` are unwrapped
+`restat` rules whose helper also keeps unchanged outputs (for `nowrap`), and
+`sx`, `sxr`, `dx` and `dxr` are wrapped, so that a run that leaves out an
+output fails (see `natFail`). -/
 def ruleSpecs : List (String × String × Bool × Bool × Bool) :=
   [("st", "s", false, false, true), ("str", "sr", false, true, false), ("stw", "s", false, true, true),
    ("dy", "d", true, false, true), ("dyr", "dr", true, true, false), ("dyw", "d", true, true, true),
-   ("stx", "srx", false, true, false), ("dyx", "drx", true, true, false)]
+   ("stx", "srx", false, true, false), ("dyx", "drx", true, true, false),
+   ("sx", "sx", false, false, true), ("sxr", "sx", false, true, true),
+   ("dx", "dx", true, false, true), ("dxr", "dx", true, true, true)]
 
 def ruleCmd (mode : String) : String := "./fz " ++ mode ++ " ${tag} $out ${iout} -- $in ${imp}"
 
@@ -204,13 +209,19 @@ def genStatic (name : String) (rule : String) (pool gens : List Path) : GenM GEd
   pure { rule, outs, implicitOuts := iouts, ins, implicitIns := imp, orderOnly := oo,
          vars := edgeVars "t0" iouts imp }
 
-/-- Generator options. `absent` gives half the `restat` edges a command that
-leaves out some outputs (`test/fz.c`, mode `x`), which the model cannot
-express; see "Where the model differs from Ninja" in `Mise/Model/NOTES.md`. -/
+/-- Generator options. `absent` gives a quarter of the edges a command that
+leaves out some outputs (`test/fz.c`, mode `x`) in the DSL's wrapper, which
+turns such a run into a failure that changes no file (`natFail`). With
+`nowrap` as well, half the `restat` edges get such a command outside the
+wrapper instead, so outputs go missing, which the model cannot express; see
+"Where the model differs from Ninja" in `Mise/Model/NOTES.md`. -/
 structure Opts where
   absent : Bool := false
+  nowrap : Bool := false
 
-def Opts.parse (s : String) : Opts := { absent := (s.splitOn ",").contains "absent" }
+def Opts.parse (s : String) : Opts :=
+  let fs := s.splitOn ","
+  { absent := fs.contains "absent", nowrap := fs.contains "nowrap" }
 
 def genCase (o : Opts) : GenM Case := do
   let nh := 1 + (← rand 3)
@@ -227,7 +238,8 @@ def genCase (o : Opts) : GenM Case := do
   let mut gens : List Path := []
   for i in [0:ne] do
     let restat ← chance 1 2
-    let skip ← if o.absent && restat then chance 1 2 else pure false
+    let skip ← if !o.absent then pure false else if o.nowrap then (if restat then chance 1 2 else pure false)
+      else chance 1 4
     if ← chance 2 5 then
       let main := s!"src/m{i}.c"
       let extra ← sample (← rand 2) gens
@@ -238,13 +250,13 @@ def genCase (o : Opts) : GenM Case := do
       -- One explicit output, as `Graph.check` demands of depfile edges.
       let outs := [s!"out/e{i}.o"]
       let iouts := (List.range (← rand 3)).map fun k => s!"out/e{i}_i{k}"
-      edges := edges ++ [{ rule := if skip then "dyx" else if restat then (if i % 2 == 0 then "dyw" else "dyr")
+      edges := edges ++ [{ rule := if skip then (if o.nowrap then "dyx" else if restat then "dxr" else "dx") else if restat then (if i % 2 == 0 then "dyw" else "dyr")
                                    else "dy",
                            outs, implicitOuts := iouts, ins := main :: extra, implicitIns := imp, orderOnly := oo,
                            vars := edgeVars "t0" iouts imp }]
       gens := gens ++ outs ++ iouts
     else
-      let rule := if skip then "stx" else if restat then (if i % 2 == 0 then "stw" else "str") else "st"
+      let rule := if skip then (if o.nowrap then "stx" else if restat then "sxr" else "sx") else if restat then (if i % 2 == 0 then "stw" else "str") else "st"
       let e ← genStatic s!"e{i}" rule (plains.map (·.path) ++ hs ++ gens) gens
       edges := edges ++ [e]
       gens := gens ++ e.allOuts
@@ -392,18 +404,35 @@ def closure (es : List MEdge) (ts : List Path) : List MEdge :=
   (es.foldr (fun e (acc, need) => if e.outs.any need.contains then (e :: acc, need ++ e.reads) else (acc, need))
     ([], ts)).1
 
-/-- A build in which the edge with first output `f` fails before it reads or
-writes anything, under `ninja -k 0`: Ninja runs every edge that does not
-depend on the failed one, and none that does. The edges that finish are a
-sublist of the manifest, so this too is a sequence of `Reach` steps. Also
-returns the edges run and whether `f` was tried. -/
-def failTrace (f : Path) : List MEdge → List Path → St String → St String × List MEdge × Bool
-  | [], _, st => (st, [], false)
+/-- Whether a run of `e` from `st` fails on its own: a wrapped command in
+mode `x` that leaves out an output, which the wrapper turns into a failure
+that changes no file (`Mise.Model.St.runWrapped`). The helper still runs and
+logs the run. A written output is never empty, so an empty value is one the
+helper left out. -/
+def natFailRule (e : MEdge) : Bool :=
+  (e.cmd.splitOn "; if ( ").length == 2 && ((args e.cmd).headD "").contains 'x'
+
+def natFail (st : St String) (e : MEdge) : Bool :=
+  natFailRule e && e.outs.any fun o => st.outVal sem e o == ""
+
+/-- A build under `ninja -k 0` in which the edge with first output `f`, if
+any, fails before it reads or writes anything, and each edge for which
+`natFail` holds fails after its helper ran. Ninja runs every edge that does
+not depend on a failed one, and none that does. The edges that finish are a
+sublist of the manifest, and a failed run leaves the state as it was
+(`Mise.Headline.wrapped_run`), so this too is a sequence of `Reach` steps.
+Returns the state, the edges whose helper ran (failed ones included),
+whether `f` was tried, and whether any edge failed. -/
+def failTrace (f : Option Path) : List MEdge → List Path → St String → St String × List MEdge × Bool × Bool
+  | [], _, st => (st, [], false, false)
   | e :: es, bad, st =>
     if e.reads.any bad.contains then failTrace f es (bad ++ e.outs) st
-    else if e.outs.headD "" == f && st.dirty e then
+    else if some (e.outs.headD "") == f && st.dirty e then
       let r := failTrace f es (bad ++ e.outs) st
-      (r.1, r.2.1, true)
+      (r.1, r.2.1, true, true)
+    else if st.dirty e && natFail st e then
+      let r := failTrace f es (bad ++ e.outs) st
+      (r.1, e :: r.2.1, r.2.2.1, true)
     else
       let r := failTrace f es bad (st.step sem e)
       (r.1, if st.dirty e then e :: r.2.1 else r.2.1, r.2.2)
@@ -411,25 +440,32 @@ def failTrace (f : Path) : List MEdge → List Path → St String → St String 
 /-- A build that Ninja stopped when the edge with first output `f` failed,
 under the default `-k 1`: Ninja starts no new edge after the failure, and
 which edges finished first depends on its scheduling, which the model does
-not fix. So the driver tells the model which edges finished (`fin`) and
-whether `f` was tried, and the model runs exactly those edges in manifest
-order, a sequence of `Reach` steps. It checks that each one was dirty on its
-turn and read no output that an unfinished dirty edge, or `f`, had yet to
-write, and, when `f` was not tried, that Ninja left no dirty edge behind. -/
+not fix. Ninja also stops at the first edge for which `natFail` holds. So
+the driver tells the model which edges ran (`fin`) and whether `f` was
+tried, and the model runs exactly those edges in manifest order, a sequence
+of `Reach` steps in which a run for which `natFail` holds changes nothing.
+It checks that each one was dirty on its turn and read no output that an
+unfinished or failed dirty edge, or `f`, had yet to write. Also returns
+whether an edge failed and the first dirty edge Ninja left unstarted, which
+the caller accepts only when an edge failed. -/
 def stopTrace (f : Path) (fin : List Path) (tried : Bool) :
-    List MEdge → List Path → St String → Except String (St String × List MEdge)
-  | [], _, st => pure (st, [])
+    List MEdge → List Path → St String → Except String (St String × List MEdge × Bool × Option Path)
+  | [], _, st => pure (st, [], tried, none)
   | e :: es, bad, st => do
     let o := e.outs.headD ""
     if fin.contains o then
       unless st.dirty e do throw s!"Ninja ran {o}, which the model says is clean"
       if let some p := e.reads.find? bad.contains then throw s!"Ninja ran {o} before {p} was up to date"
-      let (st', ran) ← stopTrace f fin tried es bad (st.run sem e)
-      pure (st', e :: ran)
+      if natFail st e then
+        let (st', ran, _, left) ← stopTrace f fin tried es (bad ++ e.outs) st
+        pure (st', e :: ran, true, left)
+      else
+        let (st', ran, failed, left) ← stopTrace f fin tried es bad (st.run sem e)
+        pure (st', e :: ran, failed, left)
     else if st.dirty e then
-      if !tried then throw s!"Ninja stopped without running {o}, which the model says is dirty"
-      if o == f && e.reads.any bad.contains then throw s!"Ninja tried {o} before its inputs were up to date"
-      stopTrace f fin tried es (bad ++ e.outs) st
+      if o == f && tried && e.reads.any bad.contains then throw s!"Ninja tried {o} before its inputs were up to date"
+      let (st', ran, failed, _) ← stopTrace f fin tried es (bad ++ e.outs) st
+      pure (st', ran, failed, some o)
     else
       if o == f && tried then throw s!"Ninja tried {o}, which the model says is clean"
       stopTrace f fin tried es bad st
@@ -489,15 +525,22 @@ def step (strict : Bool) (sd : StepD) (old : Option Case) (c : Case) (known : Li
   let es := (emit g).medges
   let fail := sd.fail.filter fun f => es.any (·.outs.headD "" == f)
   let targets := sd.targets.filter (products g).contains
-  let (st', ran, tried) ← match fail, sd.stop, sd.finished with
+  let visit := if targets.isEmpty then es else closure es targets
+  let (st', ran, tried, failed) ← match fail, sd.stop, sd.finished with
     | some f, true, some fin => do
-      let (st', ran) ← stopTrace f fin sd.tried es [] st
-      pure (st', ran, sd.tried)
-    | some f, _, _ => pure (failTrace f es [] st)
-    | none, _, _ => let r := buildTrace sem (if targets.isEmpty then es else closure es targets) st; pure (r.1, r.2, false)
+      let (st', ran, failed, left) ← stopTrace f fin sd.tried es [] st
+      if let some o := left then
+        unless failed do throw s!"Ninja stopped without running {o}, which the model says is dirty"
+      pure (st', ran, sd.tried, failed)
+    | some f, _, _ => pure (failTrace (some f) es [] st)
+    | none, _, _ =>
+      -- `failTrace none` is `buildTrace` when no edge fails; keep the
+      -- model's own trace where none can.
+      if es.any natFailRule then pure (failTrace none visit [] st)
+      else let r := buildTrace sem visit st; pure (r.1, r.2, false, false)
   let st' := flatten known st'
   if strict then
-    if fail.isNone then
+    if !failed then
       unless (buildTrace sem (if targets.isEmpty then es else closure es targets) st').2.isEmpty do
         throw "the model is not idempotent"
     for e in es do
@@ -509,7 +552,7 @@ def step (strict : Bool) (sd : StepD) (old : Option Case) (c : Case) (known : Li
   let delete := dels ++ (if delLog then [".ninja_log"] else []) ++ (if delDeps then [".ninja_deps"] else [])
   let j := Json.mkObj [("edits", toJson (sd.edits.map (·.describe))), ("write", jsonMap write),
     ("delete", toJson delete), ("age", toJson ages), ("ninja", Json.str ninja), ("targets", toJson targets),
-    ("fail", toJson fail), ("stop", toJson (fail.isSome && sd.stop)), ("tried", toJson tried),
+    ("fail", toJson fail), ("stop", toJson (fail.isSome && sd.stop)), ("tried", toJson tried), ("failed", toJson failed),
     ("edges", toJson (c.edges.map EdgeD.ofEdge)), ("ran", toJson (sortStrs (ran.map (·.outs.headD "")))),
     ("products", Json.mkObj (outs.map fun p => (p, match st'.fs p with
       | some (v, _) => Json.str v
@@ -520,7 +563,7 @@ def empty : St String := { fs := fun _ => none, log := fun _ => none, clock := 0
 
 /-- `n` steps of edits. All but the last build may build some targets only
 (one in five), have an edge fail under `-k 0` (one in ten), or stop at a
-failing edge (one in ten). Under `Opts.absent` no build fails. -/
+failing edge (one in ten). Under `Opts.nowrap` no edge is made to fail. -/
 def genSteps (o : Opts) (c0 : Case) (n : Nat) : GenM (List StepD) := do
   let mut c := c0
   let mut out := []
@@ -533,10 +576,10 @@ def genSteps (o : Opts) (c0 : Case) (n : Nat) : GenM (List StepD) := do
       es := es ++ [e]
     let r ← rand 10
     let mut sd : StepD := { edits := es }
-    -- Under `absent`, Ninja reruns every edge with a missing output, so it
+    -- Under `nowrap`, Ninja reruns every edge with a missing output, so it
     -- tries a failing edge, and finishes edges before a stop, that the model
     -- finds clean; those cases build fully instead.
-    if i + 1 == n || r ≥ 4 || c.edges.isEmpty || (o.absent && r ≥ 2) then pure ()
+    if i + 1 == n || r ≥ 4 || c.edges.isEmpty || (o.nowrap && r ≥ 2) then pure ()
     else if r < 2 then sd := { sd with targets := ← sample (1 + (← rand 2)) (products c.graph) }
     else
       -- Ninja schedules an edge with readers early, so a stop there leaves
@@ -611,5 +654,7 @@ def main (args : List String) : IO UInt32 := do
     let (c, steps) := genOne o seed i
     match runCase strict c steps with
     | .error e => IO.eprintln s!"case {i}: {e}"; return 1
-    | .ok j => IO.FS.writeFile s!"{dir}/{i}.json" j.compress
+    -- Under `nowrap` an output can go missing, which `fuzz.py` then allows
+    -- as `--missing-ok` describes.
+    | .ok j => IO.FS.writeFile s!"{dir}/{i}.json" (j.setObjVal! "missingOk" (toJson (o.absent && o.nowrap))).compress
   return 0

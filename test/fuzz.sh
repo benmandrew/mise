@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Random-graph harness: generate N cases with SEED (see test/MiseTest/Fuzz.lean)
 # and replay them against real Ninja (see test/fuzz.py). OPTS are generator
-# flags, comma-separated; the only one is `absent` (see `Opts` in Fuzz.lean).
+# flags, comma-separated: `absent`, and `nowrap` with it (see `Opts` in Fuzz.lean).
 # Usage: test/fuzz.sh [--opts OPTS] [N] [SEED] [-- FUZZ_PY_ARGS...]
 set -euo pipefail
 cd "$(dirname "$0")/.."

@@ -8,20 +8,22 @@ and `.ninja_deps`), sets the mtime of the step's aged products to one
 second after the epoch, runs `mise gen` and compares `build.ninja` with the
 expected text, then runs `ninja` with a random `-j` level. A step builds
 every edge, or only some targets (`ninja TARGET...`), or has one edge fail:
-the helper fails when `FZ_FAIL` names its first output. Ninja then runs
-with `-k 0`, so it builds everything that does not depend on the failure,
-or, for a step marked `stop`, with the default `-k 1`, so it stops. Which
-edges finish before a stop depends on Ninja's scheduling, so the driver
-gives the edges that finished to `fuzzgen expect`, which checks them
-against the model and recomputes the later steps. After each build the
-driver checks:
+the helper fails when `FZ_FAIL` names its first output. Ninja runs with
+`-k 0`, so it builds everything that does not depend on a failure, or, for
+a step marked `stop`, with the default `-k 1`, so it stops. Which edges
+finish before a stop depends on Ninja's scheduling, so the driver gives the
+edges that finished to `fuzzgen expect`, which checks them against the
+model and recomputes the later steps. In cases from `fuzzgen ... absent`,
+an edge can also fail on its own: its helper leaves out an output, and the
+DSL's wrapper fails the command and puts the old outputs back (`natFail` in
+`Fuzz.lean`). After each build the driver checks:
 
 1. the edges that ran (the helper `fz` logs each run's first output to
    `fz.log`) are exactly the ones the model runs, each once;
 2. the runs form a schedule, as `parallel_equiv` assumes (see
    `check_schedule`);
-3. the failing edge was tried, and Ninja failed, exactly when the model
-   says so;
+3. the failing edge was tried exactly when the model says so, and Ninja
+   failed exactly when the model says an edge failed;
 4. every output the case has had, removed edges' included, holds the
    contents the model computes, or is missing when the model says so;
 5. `ninja -n` reports no work (with the targets, for a partial build;
@@ -30,8 +32,9 @@ driver checks:
 After the last step it checks that `ninja -t missingdeps` finds nothing
 (skipped before Ninja 1.11, which added the tool).
 
-`--missing-ok` is for cases generated with `fuzzgen ... absent`, whose
-commands leave out some outputs. Ninja then reruns an edge with a missing
+`--missing-ok` is for cases generated with `fuzzgen ... absent,nowrap`,
+whose unwrapped commands leave out some outputs; such case files say
+`"missingOk": true`, which turns it on. Ninja then reruns an edge with a missing
 output in every build, which the model does not (see `Mise/Model/NOTES.md`).
 The option lets such edges run in addition to the model's, and replaces
 check 5: a second build may run only such edges, must pass check 2 and
@@ -54,8 +57,9 @@ writes the result to `test/out/fuzz/shrunk/<i>.json`, which
 it on a read or write the edge does not allow, and `--confine trace` logs
 the files each command opens and checks them against the edge's inputs and
 its depfile (see test/confine.py). Both rewrite `build.ninja` after the
-manifest check. A `restat` command in the `cmp` wrapper is confined or
-traced inside the wrapper; the wrapper's own `mv`, `cmp` and `rm` are not.
+manifest check. The command inside the DSL's wrapper is confined or traced
+as before; under `sandbox` the wrapper's `mv`, `rm` and `cmp` run under a
+profile of their own, and under `trace` they are not traced.
 
 usage: fuzz.py [--workers W] [--seed S] [--keep] [--no-shrink]
                [--shrink-max K] [--fz PATH] [--delay US] [--missing-ok]
@@ -275,6 +279,8 @@ def replay_steps(d, steps, jobs, fz, desc, stats=None, missing_ok=False, mode=No
         if mode:
             confine.clear_traces(work)
         ran, runs, r = ran_edges(d, jobs[i], targets, env, fail=fail, k0=k0)
+        if mode == "sandbox" and (refused := confine.wrapper_refusals(r.stdout)):
+            raise Fail("sandbox", "the sandbox refused a step of the wrapper:\n  " + "\n  ".join(refused))
         if mode == "trace":
             problems, _ = confine.check_trace(d, edges, work, r.stdout, **harness)
             if problems:
@@ -306,8 +312,9 @@ def replay_steps(d, steps, jobs, fz, desc, stats=None, missing_ok=False, mode=No
             env.pop("FZ_FAIL", None)
             if s["fail"]:
                 env["FZ_FAIL"] = s["fail"]
-            fail = bool(s["fail"])
-            ran, runs, r = build(s["targets"], env, fail=fail, k0=fail and not s["stop"])
+            # Any build may fail, since an edge in an `absent` case can fail
+            # on its own; check 3 compares the exit status with the model.
+            ran, runs, r = build(s["targets"], env, fail=True, k0=not s["stop"])
             tried = lines(fails)
             if s["stop"]:
                 st = desc["steps"][i - 1]
@@ -318,7 +325,7 @@ def replay_steps(d, steps, jobs, fz, desc, stats=None, missing_ok=False, mode=No
                 s = steps[i]
             if tried != ([s["fail"]] if s["tried"] else []):
                 raise Fail("tried", f"the failing edge ran {len(tried)} times, the model says {int(s['tried'])}")
-            if (r.returncode != 0) != s["tried"]:
+            if (r.returncode != 0) != s["failed"]:
                 raise Fail("exit", f"ninja exited {r.returncode}:\n{r.stdout}{r.stderr}")
             extra = sorted(set(ran) - set(s["ran"]) - ok)
             missing = sorted(set(s["ran"]) - set(ran))
@@ -327,7 +334,7 @@ def replay_steps(d, steps, jobs, fz, desc, stats=None, missing_ok=False, mode=No
             stats["multi"] += jobs[i] != "-j1" and len(ran) > 1
             check_schedule(s["edges"], ran, runs, stats)
             check_products(d, s)
-            if s["tried"]:
+            if s["failed"]:
                 continue  # a failed build leaves work to do
             if not missing_ok:
                 if "no work to do" not in run(["ninja", "-n"] + s["targets"], d).stdout:
@@ -498,7 +505,8 @@ def shrink(name, desc, jobs, kind, fz, missing_ok, mode):
     r = replay_steps(OUT / "shrunk-run" / name, steps, jobs, fz, desc, missing_ok=missing_ok, mode=mode)
     shrunk = OUT / "shrunk"
     shrunk.mkdir(parents=True, exist_ok=True)
-    (shrunk / f"{name}.json").write_text(json.dumps({"desc": desc, "jobs": jobs, "steps": steps}))
+    (shrunk / f"{name}.json").write_text(json.dumps({"desc": desc, "jobs": jobs, "steps": steps,
+                                                     "missingOk": missing_ok}))
     shutil.rmtree(tmp, ignore_errors=True)
     return desc, trials, r
 
@@ -507,6 +515,7 @@ def replay(case, seed, keep, fz, do_shrink, missing_ok, mode=None):
     name = case.stem
     data = json.loads(case.read_text())
     steps = data["steps"]
+    missing_ok = missing_ok or data.get("missingOk", False)
     rng = random.Random(f"{seed}/{name}")
     # A stopped build with many jobs in flight usually finishes every edge
     # that does not depend on the failure, so stopped builds use few jobs.
@@ -532,17 +541,20 @@ def replay(case, seed, keep, fz, do_shrink, missing_ok, mode=None):
 
 def summary(cases):
     """Counts of steps by kind and of edits by kind, for the summary line."""
-    steps, modes, kinds = 0, Counter(), Counter()
+    steps, modes, kinds, own = 0, Counter(), Counter(), 0
     for c in cases:
         data = json.loads(c.read_text())
         steps += len(data["steps"])
         for s in data["steps"][1:]:
             modes["stop" if s["stop"] else ("failed" if s["tried"] else "fail-skipped")
                   if s["fail"] else "partial" if s["targets"] else "full"] += 1
+            own += s["failed"] and not s["tried"]
         for st in data["desc"]["steps"]:
             kinds.update(e if isinstance(e, str) else next(iter(e)) for e in st["edits"])
     fmt = lambda cnt: ", ".join(f"{k} {v}" for k, v in sorted(cnt.items()))
-    return f"{steps} steps\n  builds after the first: {fmt(modes)}\n  edits: {fmt(kinds)}"
+    return (f"{steps} steps\n  builds after the first: {fmt(modes)}"
+            + (f"; {own} failed on an edge that left out an output" if own else "")
+            + f"\n  edits: {fmt(kinds)}")
 
 
 def main():
@@ -559,7 +571,7 @@ def main():
                     help="each command sleeps up to this many microseconds twice, so that runs overlap (0: off)")
     ap.add_argument("--confine", choices=["sandbox", "trace"], help="run every command confined or traced")
     ap.add_argument("--missing-ok", action="store_true",
-                    help="allow reruns of edges with a missing output (for `absent` cases)")
+                    help="allow reruns of edges with a missing output (for `absent,nowrap` cases, which turn it on)")
     a = ap.parse_args()
     cases = sorted(Path(a.cases).glob("*.json"), key=lambda p: int(p.stem))
     if a.only:
