@@ -160,6 +160,32 @@ jobs:
       - name: test/toml-diff.sh
         run: nix develop -c test/toml-diff.sh
 
+  # The parser fuzzer, five minutes in each mode, with AddressSanitizer
+  # (on by default off macOS). It has run only on macOS so far, so whether
+  # the fuzz shell's clang links Lean's runtime on Linux is unverified until
+  # the first run.
+  parser-fuzz:
+    needs: changed
+    if: needs.changed.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - name: test/parser-fuzz.sh text 300
+        run: nix develop .#fuzz -c test/parser-fuzz.sh text 300
+      - name: test/parser-fuzz.sh gen 300
+        run: nix develop .#fuzz -c test/parser-fuzz.sh gen 300
+      - name: Upload the failing inputs
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: parser-fuzz-crash
+          path: test/out/parser-fuzz/crash/
+          if-no-files-found: ignore
+
   # About 15 minutes locally on 2 workers; the runner has 3.
   mutants:
     needs: changed

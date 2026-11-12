@@ -8,7 +8,9 @@
 # Usage: test/parser-fuzz.sh [text|gen] [SECONDS] [-- LIBFUZZER_ARGS...]
 #        test/parser-fuzz.sh repro text|gen FILE...
 # NINJA_RELEASE picks the Ninja release (default 1.13.2; any key of
-# ninjaReleases in flake.nix from 1.12.1 on).
+# ninjaReleases in flake.nix from 1.12.1 on). It needs clang with libFuzzer
+# (CC and CXX override clang and clang++): on Linux run it in
+# `nix develop .#fuzz`, whose clang has it; macOS's default shell does too.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 root=$PWD
@@ -58,15 +60,15 @@ mkdir -p "$out"
   # compiler's own `main`, which would take the place of libFuzzer's.
   echo "ldflags = $(leanc --print-ldflags | sed -E 's/ -l(leancpp|Lean|Lake|LeanExport|Std)( |$)/ /g; s/ -l(leancpp|Lean|Lake|LeanExport|Std)( |$)/ /g')"
   echo "rule cxx"
-  echo "  command = c++ \$cxxflags -MMD -MF \$out.d -c \$in -o \$out"
+  echo "  command = ${CXX:-clang++} \$cxxflags -MMD -MF \$out.d -c \$in -o \$out"
   echo "  depfile = \$out.d"
   echo "  deps = gcc"
   echo "  description = CXX \$out"
   echo "rule cc"
-  echo "  command = cc \$cflags -c \$in -o \$out"
+  echo "  command = ${CC:-clang} \$cflags -c \$in -o \$out"
   echo "  description = CC \$out"
   echo "rule link"
-  echo "  command = c++ $link_san \$in -o \$out \$ldflags"
+  echo "  command = ${CXX:-clang++} $link_san \$in -o \$out \$ldflags"
   echo "  description = LINK \$out"
   objs=()
   for f in "$ninja_src"/src/*.cc; do
