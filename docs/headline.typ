@@ -13,7 +13,7 @@
 
 #"For a valid graph, the parser model reads the text that ";#raw("mise");#" writes as the manifest that ";#raw("mise");#" emitted. Read through the model of Ninja's variable evaluation, that manifest means the build the DSL describes (";#raw("Graph.spec");#").";
 
-#raw(lang: "lean", block: true, "theorem meaning (g : Graph) (valid : g.Valid) :\n    parse (print (emit g)) = some (emit g) ∧ denote sem (emit g) = g.spec sem")
+#lean-linked(("theorem meaning (g : ", none), ("Graph", "def:Mise.Frontend.Graph"), (") (valid : g.", none), ("Valid", "def:Mise.Frontend.Graph.Valid"), (") :\n    ", none), ("parse", "def:Mise.Syntax.parse"), (" (", none), ("print", "def:Mise.Syntax.print"), (" (", none), ("emit", "def:Mise.Frontend.emit"), (" g)) = some (", none), ("emit", "def:Mise.Frontend.emit"), (" g) ∧ ", none), ("denote", "def:Mise.Frontend.denote"), (" sem (", none), ("emit", "def:Mise.Frontend.emit"), (" g) = g.", none), ("spec", "def:Mise.Frontend.Graph.spec"), (" sem", none))
 
 #english[
 #line-par[#"For all ";#raw("V");#", ";#raw("sem");#" and ";#raw("g");#", where ";#raw("V");#" has ";#"a default element";#".";]
@@ -28,7 +28,7 @@
 
 #"Take a valid graph whose ";#emph[#"depfile";];#" commands read only allowed inputs. From any reachable state, one ";#raw("ninja");#" run leaves contents that are correct for the current sources.";
 
-#raw(lang: "lean", block: true, "theorem build_correct (g : Graph) (valid : g.Valid) (depfilesOK : g.DynOK sem) {st : St V}\n    (reachable : Reachable sem g st) :\n    (g.spec sem).Correct st.content (build sem g st).content")
+#lean-linked(("theorem build_correct (g : ", none), ("Graph", "def:Mise.Frontend.Graph"), (") (valid : g.", none), ("Valid", "def:Mise.Frontend.Graph.Valid"), (") (depfilesOK : g.", none), ("DynOK", "def:Mise.Frontend.Graph.DynOK"), (" sem) {st : ", none), ("St", "def:Mise.Model.St"), (" V}\n    (reachable : ", none), ("Reachable", "def:Mise.Headline.Reachable"), (" sem g st) :\n    (g.", none), ("spec", "def:Mise.Frontend.Graph.spec"), (" sem).", none), ("Correct", "def:Mise.BuildSpec.Correct"), (" st.", none), ("content", "def:Mise.Model.St.content"), (" (", none), ("build", "def:Mise.Headline.build"), (" sem g st).", none), ("content", "def:Mise.Model.St.content"))
 
 #english[
 #line-par[#"For all ";#raw("V");#", ";#raw("sem");#", ";#raw("g");#" and ";#raw("st");#", where ";#raw("V");#" has ";#"a default element";#".";]
@@ -44,7 +44,7 @@
 
 #"Take a valid graph whose depfile commands read only allowed inputs. After one ";#raw("ninja");#" run from any reachable state, a second run executes no edge and leaves the state unchanged.";
 
-#raw(lang: "lean", block: true, "theorem rebuild_noop (g : Graph) (valid : g.Valid) (depfilesOK : g.DynOK sem) {st : St V}\n    (reachable : Reachable sem g st) :\n    ran sem g (build sem g st) = [] ∧ build sem g (build sem g st) = build sem g st")
+#lean-linked(("theorem rebuild_noop (g : ", none), ("Graph", "def:Mise.Frontend.Graph"), (") (valid : g.", none), ("Valid", "def:Mise.Frontend.Graph.Valid"), (") (depfilesOK : g.", none), ("DynOK", "def:Mise.Frontend.Graph.DynOK"), (" sem) {st : ", none), ("St", "def:Mise.Model.St"), (" V}\n    (reachable : ", none), ("Reachable", "def:Mise.Headline.Reachable"), (" sem g st) :\n    ", none), ("ran", "def:Mise.Headline.ran"), (" sem g (", none), ("build", "def:Mise.Headline.build"), (" sem g st) = [] ∧ ", none), ("build", "def:Mise.Headline.build"), (" sem g (", none), ("build", "def:Mise.Headline.build"), (" sem g st) = ", none), ("build", "def:Mise.Headline.build"), (" sem g st", none))
 
 #english[
 #line-par[#"For all ";#raw("V");#", ";#raw("sem");#", ";#raw("g");#" and ";#raw("st");#", where ";#raw("V");#" has ";#"a default element";#".";]
@@ -62,7 +62,7 @@
 
 #"Take a valid graph whose depfile commands read only allowed inputs and a reachable state. Build, apply ";#raw("edits");#" to sources, and build again. Every edge ";#raw("e");#" that the second build runs has a reason: an input ";#raw("p");#" that Ninja checks for ";#raw("e");#" in the state the first build left. When the second build reaches ";#raw("e");#", the modification time (mtime) of ";#raw("p");#" is later than the clock at the end of the first build. And ";#raw("p");#" is either a path in ";#raw("edits");#" or an output of an edge that ran earlier in the second build. So an edge does not run when no edit and no earlier edge touched its checked inputs. A ";#raw("restat");#" edge that kept its output did not touch that output.";
 
-#raw(lang: "lean", block: true, "theorem rebuild_minimal (g : Graph) (valid : g.Valid) (depfilesOK : g.DynOK sem) {st₀ : St V}\n    (reachable : Reachable sem g st₀) (edits : List (Path × V))\n    (editsSources : ∀ edit ∈ edits, IsSource g edit.1) {e : MEdge}\n    (eRan : e ∈ ran sem g ((build sem g st₀).edits edits)) :\n    ∃ before after, edges g = before ++ e :: after ∧ ∃ p, Checks (build sem g st₀) e p ∧\n      (build sem g st₀).clock < (buildTrace sem before ((build sem g st₀).edits edits)).1.mtime p ∧\n      (p ∈ edits.map (·.1) ∨\n        ∃ e' ∈ (buildTrace sem before ((build sem g st₀).edits edits)).2, p ∈ e'.outs)")
+#lean-linked(("theorem rebuild_minimal (g : ", none), ("Graph", "def:Mise.Frontend.Graph"), (") (valid : g.", none), ("Valid", "def:Mise.Frontend.Graph.Valid"), (") (depfilesOK : g.", none), ("DynOK", "def:Mise.Frontend.Graph.DynOK"), (" sem) {st₀ : ", none), ("St", "def:Mise.Model.St"), (" V}\n    (reachable : ", none), ("Reachable", "def:Mise.Headline.Reachable"), (" sem g st₀) (edits : List (", none), ("Path", "def:Mise.Syntax.Path"), (" × V))\n    (editsSources : ∀ edit ∈ edits, ", none), ("IsSource", "def:Mise.Headline.IsSource"), (" g edit.1) {e : ", none), ("MEdge", "def:Mise.Model.MEdge"), ("}\n    (eRan : e ∈ ", none), ("ran", "def:Mise.Headline.ran"), (" sem g ((", none), ("build", "def:Mise.Headline.build"), (" sem g st₀).", none), ("edits", "def:Mise.Model.St.edits"), (" edits)) :\n    ∃ before after, ", none), ("edges", "def:Mise.Headline.edges"), (" g = before ++ e :: after ∧ ∃ p, ", none), ("Checks", "def:Mise.Headline.Checks"), (" (", none), ("build", "def:Mise.Headline.build"), (" sem g st₀) e p ∧\n      (", none), ("build", "def:Mise.Headline.build"), (" sem g st₀).", none), ("clock", "def:Mise.Model.St"), (" < (", none), ("buildTrace", "def:Mise.Model.buildTrace"), (" sem before ((", none), ("build", "def:Mise.Headline.build"), (" sem g st₀).", none), ("edits", "def:Mise.Model.St.edits"), (" edits)).1.", none), ("mtime", "def:Mise.Model.St.mtime"), (" p ∧\n      (p ∈ edits.map (·.1) ∨\n        ∃ e' ∈ (", none), ("buildTrace", "def:Mise.Model.buildTrace"), (" sem before ((", none), ("build", "def:Mise.Headline.build"), (" sem g st₀).", none), ("edits", "def:Mise.Model.St.edits"), (" edits)).2, p ∈ e'.", none), ("outs", "def:Mise.Model.MEdge"), (")", none))
 
 #english[
 #line-par[#"For all ";#raw("V");#", ";#raw("sem");#", ";#raw("g");#", ";#raw("st₀");#", ";#raw("edits");#" and ";#raw("e");#", where ";#raw("V");#" has ";#"a default element";#".";]
@@ -81,7 +81,7 @@
 
 #"Take a valid graph whose depfile commands read only allowed inputs and a reachable state. Running the edges in any valid ";#raw("order");#" leaves contents that are correct for the current sources. It runs the same edges as a run in manifest order, up to order, so each at most once (";#raw("ran_nodup");#").";
 
-#raw(lang: "lean", block: true, "theorem any_order (g : Graph) (valid : g.Valid) (depfilesOK : g.DynOK sem) {order : List MEdge}\n    (validOrder : ValidOrder g order) {st : St V} (reachable : Reachable sem g st) :\n    (g.spec sem).Correct st.content (buildTrace sem order st).1.content ∧\n      (buildTrace sem order st).2.Perm (ran sem g st)")
+#lean-linked(("theorem any_order (g : ", none), ("Graph", "def:Mise.Frontend.Graph"), (") (valid : g.", none), ("Valid", "def:Mise.Frontend.Graph.Valid"), (") (depfilesOK : g.", none), ("DynOK", "def:Mise.Frontend.Graph.DynOK"), (" sem) {order : List ", none), ("MEdge", "def:Mise.Model.MEdge"), ("}\n    (validOrder : ", none), ("ValidOrder", "def:Mise.Headline.ValidOrder"), (" g order) {st : ", none), ("St", "def:Mise.Model.St"), (" V} (reachable : ", none), ("Reachable", "def:Mise.Headline.Reachable"), (" sem g st) :\n    (g.", none), ("spec", "def:Mise.Frontend.Graph.spec"), (" sem).", none), ("Correct", "def:Mise.BuildSpec.Correct"), (" st.", none), ("content", "def:Mise.Model.St.content"), (" (", none), ("buildTrace", "def:Mise.Model.buildTrace"), (" sem order st).1.", none), ("content", "def:Mise.Model.St.content"), (" ∧\n      (", none), ("buildTrace", "def:Mise.Model.buildTrace"), (" sem order st).2.Perm (", none), ("ran", "def:Mise.Headline.ran"), (" sem g st)", none))
 
 #english[
 #line-par[#"For all ";#raw("V");#", ";#raw("sem");#", ";#raw("g");#", ";#raw("order");#" and ";#raw("st");#", where ";#raw("V");#" has ";#"a default element";#".";]

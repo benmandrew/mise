@@ -11,7 +11,8 @@ environment variable `TRUSTED_OUT` (default `docs`):
 * `trusted.md`, the list with sizes and locations;
 * `headline.typ`, a Typst document for review. Each core theorem (its
   docstring has the line `Review: core`) appears with its docstring, its
-  statement as written in the source, and an English translation made by
+  statement as written in the source with each name linked to its
+  definition, and an English translation made by
   `Gloss.statement`. Then come, in reading order, the definitions the core
   statements name and the ones those name in turn, except that the printer
   and parser are not expanded.
@@ -261,6 +262,59 @@ def sourceBase : String := "https://github.com/benmandrew/mise/blob/main/"
 def sourceUrl (file : String) (a b : Nat) : String :=
   tq (sourceBase ++ file ++ (if a == b then s!"#L{a}" else s!"#L{a}-L{b}"))
 
+/-- Where the source of `decl` names a constant. Lean's reference index (the
+`.ilean` file `lake build` writes next to each module) records every
+identifier the elaborator resolved: the constant, its position, and the
+declaration it occurs in. Each result is the constant, the line (from 0), and
+the first and last column, for usages on one line. -/
+def usagesIn (ilean : Json) (decl : Name) : Except String (Array (Name × Nat × Nat × Nat)) := do
+  let v ← (← ilean.getObjVal? "version").getNat?
+  if v != 5 then throw s!"unknown .ilean version {v}"
+  let refs ← (← ilean.getObjVal? "references").getObj?
+  let mut out := #[]
+  for (k, info) in refs.toList do
+    let some c := ((← Json.parse k).getObjVal? "c").toOption | continue
+    let n ← (← c.getObjVal? "n").getStr?
+    let some us := (info.getObjVal? "usages").toOption | continue
+    for u in ← us.getArr? do
+      let u ← u.getArr?
+      if h : u.size < 5 then continue else
+      if (← u[4].getStr?) != decl.toString then continue
+      let sl ← u[0].getNat?
+      if (← u[2].getNat?) != sl then continue
+      out := out.push (n.toName, sl, ← u[1].getNat?, ← u[3].getNat?)
+  return out
+
+/-- A statement as Typst arguments for `lean-linked`: the pieces of its
+source, each with the label of the definition it names or `none`. `start` is
+the statement's offset in the file, `offset l c` the offset of line `l`,
+column `c`, `us` the usages in the theorem, and `target` the shown
+definition a constant belongs to, if any. -/
+def linkedParts (stmt : String) (start : Nat) (offset : Nat → Nat → Nat)
+    (us : Array (Name × Nat × Nat × Nat)) (target : Name → Option Name) :
+    Except String String := do
+  let cs := stmt.toList.toArray
+  let mut spans : Array (Nat × Nat × Name) := #[]
+  for (n, l, a, b) in us do
+    let (s, e) := (offset l a, offset l b)
+    if s < start || e > start + cs.size then continue
+    let some d := target n | continue
+    let text := String.ofList (cs.extract (s - start) (e - start)).toList
+    -- The index and the source must agree: the text at the position is the
+    -- last part of the constant's name.
+    if text != n.getString! then throw s!"{n} at {l + 1}:{a + 1} reads `{text}`"
+    spans := spans.push (s - start, e - start, d)
+  spans := spans.qsort (·.1 < ·.1)
+  let mut parts : Array String := #[]
+  let mut i := 0
+  for (s, e, d) in spans do
+    if s < i then continue
+    if s > i then parts := parts.push s!"({tq (String.ofList (cs.extract i s).toList)}, none)"
+    parts := parts.push s!"({tq (String.ofList (cs.extract s e).toList)}, {defLabel d})"
+    i := e
+  if i < cs.size then parts := parts.push s!"({tq (String.ofList (cs.extract i cs.size).toList)}, none)"
+  return ", ".intercalate parts.toList
+
 end Trusted
 
 open Trusted in
@@ -363,12 +417,32 @@ open Trusted in
   let mut omits : NameSet := {}
   let mut noSingular : NameSet := {}
   let mut used : Std.HashSet (Name × Gloss.Which) := {}
+  let ileanPath : System.FilePath := ".lake/build/lib/lean/Mise/Headline.ilean"
+  let ilean ← match Json.parse (← IO.FS.readFile ileanPath) with
+    | .ok j => pure j
+    | .error e => throwError s!"{ileanPath}: {e}"
   typ := typ ++ "= Core theorems\n\n"
   for t in core do
     let (m, _, a, b) ← location t
     let (ls, files') ← readLines m files
     files := files'
-    let src := statementText (dropDoc (slice ls a b))
+    let whole := slice ls a b
+    let body := dropDoc whole
+    let src := statementText body
+    -- Offsets count characters; the index counts UTF-16 units, which agree
+    -- while the file has no character outside the Basic Multilingual Plane.
+    if ls.any (·.toList.any (·.toNat > 0xFFFF)) then
+      throwError s!"{m}: a character outside the BMP breaks the link positions"
+    let lineStart := ls.foldl (fun acc l => acc.push (acc.back! + l.length + 1)) #[0]
+    let offset (l c : Nat) := lineStart[l]! + c
+    let start := offset (a.line - 1) a.column + (whole.length - body.length)
+    let us ← match usagesIn ilean t with
+      | .ok us => pure us
+      | .error e => throwError s!"{ileanPath}: {e}"
+    let target (n : Name) := let o := owner env n; if shown.contains o then some o else none
+    let parts ← match linkedParts src start offset us target with
+      | .ok p => pure p
+      | .error e => throwError s!"{t}: {e}"
     let doc := reviewDoc ((← liftCoreM (findDocString? env t)).getD "")
     let ty := (env.find? t).get!.type
     let (st, s) ← liftTermElabM (Gloss.statement ty |>.run {})
@@ -378,8 +452,7 @@ open Trusted in
     used := s.used.fold (·.insert ·) used
     let ph := tPhrase (fun n => let o := owner env n; if shown.contains o then some o else none)
     typ := typ ++ s!"#theorem-heading({tq (shortThm t)}, {tq (modPath m)}, {a.line}, {sourceUrl (modPath m) a.line b.line})\n\n"
-    typ := typ ++ mdBlocks doc ++
-      s!"\n#raw(lang: \"lean\", block: true, {tq src})\n\n#english[\n"
+    typ := typ ++ mdBlocks doc ++ s!"\n#lean-linked({parts})\n\n#english[\n"
     -- The variables on one line; their types come at their first mention.
     let has := st.has.toList.map fun (v, ps) =>
       Gloss.code v ++ Gloss.txt " has " ++ Gloss.joinWith ", " " and " (ps.toList.map Gloss.txt)

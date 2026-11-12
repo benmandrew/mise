@@ -5,15 +5,29 @@
 // lean4.sublime-syntax. scripts/trusted.sh --check compiles a probe through
 // this function and fails if the code comes out in one colour. Inline code
 // has the size of the text around it; code blocks have a fixed size.
+#let code-box = block.with(
+  fill: luma(247), inset: (x: 5pt, y: 4pt), radius: 2pt, width: 100%, breakable: true,
+  above: 0.8em, below: 0.8em)
+
 #let lean-code(body) = {
   set raw(syntaxes: "lean4.sublime-syntax")
   show raw: set text(font: "DejaVu Sans Mono", size: 1em)
   show raw.where(block: true): set text(size: 8pt)
-  show raw.where(block: true): block.with(
-    fill: luma(247), inset: (x: 5pt, y: 4pt), radius: 2pt, width: 100%, breakable: true,
-    above: 0.8em, below: 0.8em)
+  show raw.where(block: true): code-box
   body
 }
+
+// A theorem statement whose names link to their definitions. Each part is a
+// piece of the source and the label of the definition it names, or `none`.
+// Each piece is highlighted on its own; the pieces split only at names.
+#let lean-linked(..parts) = code-box({
+  set text(size: 8pt)
+  show link: underline.with(stroke: 0.4pt + luma(150), offset: 1.6pt)
+  for (piece, target) in parts.pos() {
+    let code = raw(piece, lang: "lean")
+    if target == none { code } else { link(label(target), code) }
+  }
+})
 
 #let body-size = 9.5pt
 
