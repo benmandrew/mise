@@ -1,0 +1,207 @@
+# Every test harness, and the CI jobs that run them. test/run reads this
+# file to run a harness (`test/run NAME`), to list them (`test/run list`)
+# and to decide which CI jobs a commit needs (`test/run affected`); the
+# workflows call test/run and keep only the runner, matrix and upload
+# settings. See "Running the harnesses" in docs/testing.md.
+#
+# [harness.NAME]
+#   cmd       the command, relative to the repository root.
+#   quick     arguments for a short run (`test/run NAME:quick`), if the
+#             harness has one; a plain run passes none.
+#   shell     the flake dev shell it needs: "default" or "fuzz".
+#   wrap      a command prefix inside that shell.
+#   os        the platforms it runs on: "linux", "macos" (default both).
+#   time      the local time of a plain run on an 8-core M1.
+#   paths     files it depends on besides its command (fnmatch patterns,
+#             where `*` also matches `/`).
+#   exes      Lake executables it runs; it depends on their import closure.
+#   lean      other Lean modules whose import closure it depends on.
+#   uses      harnesses it runs, whose dependencies it also has.
+#   informational
+#             true when it records behaviour without passing or failing.
+#
+# [job.WORKFLOW.KEY], one per job in .github/workflows/WORKFLOW.yml:
+#   run       the harnesses the job runs, in order; NAME:quick for a short
+#             run. Arguments after `--` on test/run go to each of them.
+#   names     a regular expression for the job's run names, for a matrix
+#             job whose names carry the matrix values (default: KEY).
+#
+# Every job and harness also depends on test/run, this file, the flake,
+# the toolchain, the Lake files, .github/actions/ and its own workflow.
+
+# --- Proofs ------------------------------------------------------------
+
+[harness.check]
+cmd = ["scripts/check.sh"]
+time = "7 to 13 s from an empty .lake"
+# It builds every default target and regenerates the trusted-base docs.
+paths = ["*.lean", "scripts/*", "docs/trusted.md", "docs/headline.typ"]
+
+# --- Against real Ninja ------------------------------------------------
+
+[harness.stage3-diff]
+cmd = ["test/stage3-diff.sh"]
+exes = ["difftest"]
+
+[harness.stage4-hello]
+cmd = ["test/stage4-hello.sh"]
+time = "1 s"
+paths = ["examples/hello-c/*"]
+exes = ["mise"]
+
+[harness.stage6-props]
+cmd = ["test/stage6-props.sh"]
+quick = ["--order", "2"]
+time = "80 s; 30 s quick"
+paths = ["test/props.py", "examples/*"]
+exes = ["mise"]
+
+[harness.graph-fuzz]
+cmd = ["test/fuzz.sh", "500"]
+quick = ["150"]
+time = "59 s"
+paths = ["test/fuzz.py", "test/confine.py", "test/fz.c"]
+exes = ["mise", "fuzzgen"]
+
+[harness.ninja-matrix]
+cmd = ["test/ninja-matrix.sh"]
+quick = ["--fuzz", "150"]
+time = "about 50 s per release quick"
+paths = ["examples/*"]
+exes = ["mise"]
+uses = ["stage3-diff", "stage4-hello", "stage6-props", "graph-fuzz"]
+
+[harness.restat-cmp]
+cmd = ["test/restat-cmp.sh"]
+time = "2 s"
+exes = ["mise"]
+
+[harness.wrap-outputs]
+cmd = ["test/wrap-outputs.sh"]
+time = "2 s"
+exes = ["mise"]
+
+[harness.sugar]
+cmd = ["test/sugar.sh"]
+exes = ["mise"]
+
+[harness.mutants]
+cmd = ["test/mutants.sh"]
+time = "about 15 min on 2 workers"
+paths = ["test/mutants.py"]
+exes = ["mise", "fuzzgen"]
+uses = ["graph-fuzz"]
+
+# --- Against other references ------------------------------------------
+
+[harness.toml-diff]
+cmd = ["test/toml-diff.sh"]
+quick = ["250"]
+time = "16 s; 5 s quick"
+paths = ["test/toml_diff.py"]
+exes = ["tomljson"]
+
+# The coverage-guided fuzzers link Ninja's own code in-process (fuzz/).
+[harness.parser-fuzz-text]
+cmd = ["fuzz/fuzz.sh", "parser", "--mode", "text", "--time", "300"]
+quick = ["parser", "--mode", "text", "--time", "30"]
+shell = "fuzz"
+time = "5 min; 30 s quick"
+paths = ["fuzz/parser/*", "fuzz/*.h", "fuzz/*.cc", "fuzz/build.sh"]
+exes = ["difftest"]
+lean = ["MiseFuzz.Parser"]
+
+[harness.parser-fuzz-gen]
+cmd = ["fuzz/fuzz.sh", "parser", "--mode", "gen", "--time", "300"]
+quick = ["parser", "--mode", "gen", "--time", "30"]
+shell = "fuzz"
+time = "5 min; 30 s quick"
+paths = ["fuzz/parser/*", "fuzz/*.h", "fuzz/*.cc", "fuzz/build.sh"]
+lean = ["MiseFuzz.Parser"]
+
+[harness.build-fuzz]
+cmd = ["fuzz/fuzz.sh", "build", "--time", "300"]
+quick = ["build", "--engine", "standalone", "--cases", "500"]
+shell = "fuzz"
+time = "5 min; 9 s quick"
+paths = ["fuzz/build/*", "fuzz/*.h", "fuzz/*.cc", "fuzz/build.sh", "test/fuzz.py"]
+lean = ["MiseFuzz.Build"]
+
+[harness.mutants-inproc]
+cmd = ["test/mutants.sh", "--via", "inproc"]
+shell = "fuzz"
+paths = ["test/mutants.py"]
+uses = ["build-fuzz"]
+
+# --- Confinement and faults, macOS only --------------------------------
+
+[harness.conf-sandbox]
+cmd = ["test/conf-sandbox.sh"]
+os = ["macos"]
+paths = ["test/confine.py", "examples/*"]
+uses = ["graph-fuzz"]
+
+[harness.conf-depfiles]
+cmd = ["test/conf-depfiles.sh"]
+os = ["macos"]
+paths = ["test/confine.py", "test/trace.c", "examples/*"]
+uses = ["graph-fuzz"]
+
+[harness.conf-determinism]
+cmd = ["test/conf-determinism.sh"]
+os = ["macos"]
+paths = ["test/confine.py", "examples/*"]
+exes = ["mise"]
+
+[harness.mtime-faults]
+cmd = ["test/mtime-faults.sh"]
+os = ["macos"]
+wrap = ["nix", "shell", "--inputs-from", ".", "nixpkgs#libfaketime", "-c"]
+exes = ["mise"]
+informational = true
+
+# --- CI jobs -----------------------------------------------------------
+
+[job.ci.proofs]
+run = ["check"]
+
+[job.ci.ninja]
+run = ["ninja-matrix:quick"]
+names = 'ninja \S+ \(.*\)'
+
+[job.ci.extras]
+# stage4-hello runs in the ninja job, through ninja-matrix.
+run = ["restat-cmp", "wrap-outputs", "sugar", "toml-diff:quick"]
+names = 'command wrapper and TOML front end|restat-cmp, .*'
+
+[job.nightly.fuzz]
+run = ["graph-fuzz"]
+names = 'fuzz \(.*\)'
+
+[job.nightly.props]
+run = ["stage6-props"]
+
+[job.nightly.conf-sandbox]
+run = ["conf-sandbox"]
+
+[job.nightly.conf-depfiles]
+run = ["conf-depfiles"]
+
+[job.nightly.conf-determinism]
+run = ["conf-determinism"]
+
+[job.nightly.toml-diff]
+run = ["toml-diff"]
+
+[job.nightly.parser-fuzz]
+run = ["parser-fuzz-text", "parser-fuzz-gen"]
+
+[job.nightly.mutants]
+run = ["mutants"]
+
+[job.nightly.ninja]
+run = ["ninja-matrix"]
+names = 'ninja \S+ \(.*\)'
+
+[job.nightly.mtime-faults]
+run = ["mtime-faults"]

@@ -1,0 +1,419 @@
+#!/usr/bin/env python3
+"""Run the test harnesses listed in test/harnesses.toml.
+
+    test/run list                      every harness and CI job
+    test/run TARGET... [-- ARGS]       run harnesses, in their dev shells
+    test/run deps TARGET               the files a target depends on
+    test/run affected [--all] WORKFLOW the CI gate: which jobs need to run
+    test/run lint                      check the registry against the tree
+
+A TARGET is a harness (`fuzz`), a harness's short run (`fuzz:quick`) or a
+CI job (`ci.extras`), which runs that job's harnesses as CI does. ARGS go
+to every harness run. A harness for another platform is skipped. Each runs
+in the flake shell it names unless that shell is already active, and the
+run ends with one line per harness and a non-zero exit if any failed.
+
+`affected` decides which jobs of .github/workflows/WORKFLOW.yml run: a job
+runs only when a file it depends on differs between the commit under test
+and the last commit on which the job succeeded. The history searched,
+newest first, is earlier runs of the same workflow on the same branch,
+then, for a pull request, runs on the base branch. A job with no earlier
+success, or whose earlier commit cannot be fetched, runs. A skipped or
+failed run does not count, except that an informational job counts
+whenever it finished; a matrix job counts only when every entry
+succeeded. It writes `run=<JSON object of job: bool>` to $GITHUB_OUTPUT
+(stdout without it) and a table to $GITHUB_STEP_SUMMARY and stderr. It
+needs `gh` with `actions: read`, a full clone, and GH_REPO, SHA, EVENT,
+BRANCH and, for a pull request, BASE_BRANCH in the environment.
+"""
+
+import fnmatch
+import json
+import os
+import platform
+import re
+import subprocess
+import sys
+import time
+import tomllib
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+REGISTRY = "test/harnesses.toml"
+
+# Every harness and job depends on these, and on its own workflow file.
+COMMON = [
+    "test/run",
+    REGISTRY,
+    "flake.nix",
+    "flake.lock",
+    "lean-toolchain",
+    "lakefile.toml",
+    "lake-manifest.json",
+    ".github/actions/*",
+]
+
+
+
+def lake():
+    """The Lake executables' root modules, and each library's source
+    directory by top-level module, from lakefile.toml."""
+    with open(ROOT / "lakefile.toml", "rb") as f:
+        cfg = tomllib.load(f)
+    exe = {e["name"]: e["root"] for e in cfg.get("lean_exe", [])}
+    src = {l["name"]: l.get("srcDir", "") for l in cfg.get("lean_lib", [])}
+    for e in cfg.get("lean_exe", []):
+        src.setdefault(e["root"].split(".")[0], e.get("srcDir", ""))
+    return exe, src
+
+
+EXE, SRC = lake()
+
+
+def load():
+    with open(ROOT / REGISTRY, "rb") as f:
+        reg = tomllib.load(f)
+    return reg["harness"], reg["job"]
+
+
+HARNESS, JOB = load()
+
+
+def sh(*args, check=True):
+    r = subprocess.run(args, capture_output=True, text=True, cwd=ROOT)
+    if check and r.returncode != 0:
+        sys.exit(f"{' '.join(args)}: {r.stderr.strip()}")
+    return r
+
+
+# --- Targets --------------------------------------------------------------
+
+
+def job_of(target):
+    """(workflow, key) when the target names a CI job, else None."""
+    wf, _, key = target.partition(".")
+    if key and wf in JOB and key in JOB[wf]:
+        return wf, key
+    return None
+
+
+def expand(target):
+    """The (harness, quick) pairs a target runs."""
+    j = job_of(target)
+    if j:
+        return [p for t in JOB[j[0]][j[1]]["run"] for p in expand(t)]
+    name, _, mode = target.partition(":")
+    if name not in HARNESS or mode not in ("", "quick"):
+        sys.exit(f"test/run: unknown target {target} (see test/run list)")
+    if mode and "quick" not in HARNESS[name]:
+        sys.exit(f"test/run: {name} has no quick run")
+    return [(name, bool(mode))]
+
+
+# --- Dependencies ---------------------------------------------------------
+
+
+def module_path(m):
+    """The source file of a module of this package, or None."""
+    top = m.split(".")[0]
+    if top not in SRC:
+        return None
+    return Path(SRC[top]) / (m.replace(".", "/") + ".lean")
+
+
+IMPORT = re.compile(r"^\s*(?:public\s+|private\s+|meta\s+)*import\s+(?:all\s+)?(\S+)", re.M)
+
+
+def closure(roots):
+    """The source files of `roots` and everything they import, transitively,
+    within this package, read from the working tree."""
+    todo, seen = list(roots), set()
+    while todo:
+        p = module_path(todo.pop())
+        if p is None or str(p) in seen or not (ROOT / p).exists():
+            continue
+        seen.add(str(p))
+        todo += IMPORT.findall((ROOT / p).read_text())
+    return seen
+
+
+def harness_deps(name, seen=None):
+    """(patterns, files) a harness depends on, without COMMON."""
+    seen = set() if seen is None else seen
+    if name in seen:
+        return [], set()
+    seen.add(name)
+    h = HARNESS[name]
+    pats = [h["cmd"][0]] + h.get("paths", [])
+    files = closure([EXE[e] for e in h.get("exes", [])] + h.get("lean", []))
+    for u in h.get("uses", []):
+        p, f = harness_deps(u, seen)
+        pats += p
+        files |= f
+    return pats, files
+
+
+def deps(target):
+    pats, files = list(COMMON), set()
+    j = job_of(target)
+    if j:
+        pats.append(f".github/workflows/{j[0]}.yml")
+    for name, _ in expand(target):
+        p, f = harness_deps(name)
+        pats += p
+        files |= f
+    return sorted(set(pats)), files
+
+
+def matches(target, changed):
+    """The changed paths a target depends on."""
+    pats, files = deps(target)
+    return [f for f in changed if f in files or any(fnmatch.fnmatchcase(f, p) for p in pats)]
+
+
+# --- Running --------------------------------------------------------------
+
+
+def this_os():
+    return "macos" if platform.system() == "Darwin" else "linux"
+
+
+def in_shell(shell):
+    """Whether the flake shell `shell` is already active."""
+    if not os.environ.get("IN_NIX_SHELL"):
+        return False
+    return shell == "default" or bool(os.environ.get("NINJA_SRC"))
+
+
+def command(name, quick, extra):
+    h = HARNESS[name]
+    argv = h.get("wrap", []) + h["cmd"][:1] + (h["quick"] if quick else h["cmd"][1:]) + extra
+    shell = h.get("shell", "default")
+    if not in_shell(shell):
+        argv = ["nix", "develop", ".#" + shell if shell != "default" else ".", "-c"] + argv
+    return argv
+
+
+def run(targets, extra):
+    plan = [p for t in targets for p in expand(t)]
+    results = []
+    for name, quick in plan:
+        label = name + (":quick" if quick else "")
+        if this_os() not in HARNESS[name].get("os", ["linux", "macos"]):
+            results.append((label, "skipped", f"not on {this_os()}"))
+            continue
+        argv = command(name, quick, extra)
+        print(f"test/run: {label}: {' '.join(argv)}", file=sys.stderr, flush=True)
+        t = time.monotonic()
+        code = subprocess.run(argv, cwd=ROOT).returncode
+        took = f"{time.monotonic() - t:.0f} s"
+        if code == 0 or HARNESS[name].get("informational"):
+            results.append((label, "pass" if code == 0 else "recorded", took))
+        else:
+            results.append((label, "FAIL", f"exit {code} after {took}"))
+    width = max(len(r[0]) for r in results)
+    for label, status, note in results:
+        print(f"test/run: {label:<{width}}  {status}  {note}", file=sys.stderr)
+    return 1 if any(s == "FAIL" for _, s, _ in results) else 0
+
+
+def list_all():
+    rows = [("harness", "os", "time", "command")]
+    for name, h in HARNESS.items():
+        cmd = " ".join(h["cmd"]) + (f"  (quick: {' '.join(h['quick'])})" if "quick" in h else "")
+        rows.append((name, ",".join(h.get("os", ["any"])), h.get("time", ""), cmd))
+    w = [max(len(r[i]) for r in rows) for i in range(3)]
+    for r in rows:
+        print(f"{r[0]:<{w[0]}}  {r[1]:<{w[1]}}  {r[2]:<{w[2]}}  {r[3]}")
+    print()
+    for wf, jobs in JOB.items():
+        for key, j in jobs.items():
+            print(f"{wf}.{key}: {' '.join(j['run'])}")
+
+
+# --- CI gate --------------------------------------------------------------
+
+
+def gh_runs(workflow, branch):
+    out = sh("gh", "run", "list", "--workflow", f"{workflow}.yml", "--branch", branch,
+             "--limit", "40", "--json", "databaseId,headSha,status").stdout
+    return [r for r in json.loads(out) if r["status"] == "completed"]
+
+
+def gh_jobs(run_id):
+    out = sh("gh", "api", f"repos/{os.environ['GH_REPO']}/actions/runs/{run_id}/jobs?per_page=100",
+             "--jq", "[.jobs[] | {name, conclusion}]").stdout
+    return json.loads(out)
+
+
+def counts(workflow, key, run_jobs):
+    """Whether a run counts as a run of the job on its commit."""
+    j = JOB[workflow][key]
+    pat = re.compile(j.get("names", re.escape(key)) + r"\Z")
+    mine = [x["conclusion"] for x in run_jobs if pat.match(x["name"])]
+    info = all(HARNESS[n].get("informational") for n, _ in expand(f"{workflow}.{key}"))
+    ok = ("success", "failure") if info else ("success",)
+    return bool(mine) and all(c in ok for c in mine)
+
+
+def have(sha):
+    if sh("git", "cat-file", "-e", f"{sha}^{{commit}}", check=False).returncode == 0:
+        return True
+    return sh("git", "fetch", "--quiet", "origin", sha, check=False).returncode == 0
+
+
+def affected(args):
+    run_all = args[:1] == ["--all"]
+    if run_all:
+        args = args[1:]
+    if len(args) != 1 or args[0] not in JOB:
+        sys.exit("usage: test/run affected [--all] WORKFLOW")
+    wf = args[0]
+    result = {}
+    if run_all:
+        result = {k: (True, "run by hand", []) for k in JOB[wf]}
+    else:
+        sha = os.environ["SHA"]
+        branches = [os.environ["BRANCH"]]
+        if os.environ.get("EVENT") == "pull_request":
+            branches.append(os.environ["BASE_BRANCH"])
+        history = [r for b in branches for r in gh_runs(wf, b)]
+        cache = {}
+        for key in JOB[wf]:
+            base = None
+            for r in history:
+                if r["databaseId"] not in cache:
+                    cache[r["databaseId"]] = gh_jobs(r["databaseId"])
+                if counts(wf, key, cache[r["databaseId"]]) and have(r["headSha"]):
+                    base = r["headSha"]
+                    break
+            if base is None:
+                result[key] = (True, "no earlier success", [])
+                continue
+            changed = sh("git", "diff", "--name-only", base, sha).stdout.split()
+            hit = matches(f"{wf}.{key}", changed)
+            why = f"since {base[:7]}: " + (f"{len(hit)} relevant files changed" if hit
+                                            else "nothing relevant changed")
+            result[key] = (bool(hit), why, hit)
+
+    line = "run=" + json.dumps({k: r for k, (r, _, _) in result.items()})
+    out = os.environ.get("GITHUB_OUTPUT")
+    if out:
+        with open(out, "a") as f:
+            f.write(line + "\n")
+    else:
+        print(line)
+    table = ["| job | runs | why |", "| --- | --- | --- |"]
+    for k, (r, why, hit) in result.items():
+        shown = ", ".join(hit[:5]) + (" ..." if len(hit) > 5 else "")
+        table.append(f"| {k} | {'yes' if r else 'no'} | {why}{': ' + shown if hit else ''} |")
+    print("\n".join(table), file=sys.stderr)
+    summary = os.environ.get("GITHUB_STEP_SUMMARY")
+    if summary:
+        with open(summary, "a") as f:
+            f.write("\n".join(table) + "\n")
+
+
+# --- Lint -----------------------------------------------------------------
+
+# Files under test/ that no harness needs to list: the Lean test library,
+# whose files are found through imports, and generated output.
+UNLISTED = ["test/MiseTest/*", "test/MiseTest.lean", "test/out/*", "test/__pycache__/*",
+            "test/run", REGISTRY]
+
+
+def workflow_jobs(wf):
+    """The job ids in .github/workflows/WF.yml, and the test/run targets each
+    job's steps call."""
+    text = (ROOT / f".github/workflows/{wf}.yml").read_text()
+    body = text[text.index("\njobs:\n"):]
+    ids = re.findall(r"^  ([A-Za-z0-9_-]+):\s*$", body, re.M)
+    calls = {}
+    for i, key in enumerate(ids):
+        start = body.index(f"\n  {key}:")
+        end = body.index(f"\n  {ids[i + 1]}:") if i + 1 < len(ids) else len(body)
+        calls[key] = re.findall(r"test/run (\S+)", body[start:end])
+    return calls
+
+
+def lint():
+    errors = []
+    for wf in JOB:
+        calls = workflow_jobs(wf)
+        for key in calls:
+            if key == "changed":
+                continue
+            if key not in JOB[wf]:
+                errors.append(f"{wf}.yml: job {key} is not in {REGISTRY}")
+            elif f"{wf}.{key}" not in calls[key]:
+                errors.append(f"{wf}.yml: job {key} does not call test/run {wf}.{key}")
+        for key in JOB[wf]:
+            if key not in calls:
+                errors.append(f"{REGISTRY}: job.{wf}.{key} is not a job in {wf}.yml")
+            for t in JOB[wf][key]["run"]:
+                n, _, m = t.partition(":")
+                if n not in HARNESS or (m and "quick" not in HARNESS[n]):
+                    errors.append(f"{REGISTRY}: job.{wf}.{key} runs unknown {t}")
+    for name, h in HARNESS.items():
+        for u in h.get("uses", []):
+            if u not in HARNESS:
+                errors.append(f"{REGISTRY}: {name} uses unknown harness {u}")
+        for e in h.get("exes", []):
+            if e not in EXE:
+                errors.append(f"{REGISTRY}: {name} runs unknown executable {e}")
+        if not (ROOT / h["cmd"][0]).exists():
+            errors.append(f"{REGISTRY}: {name}: no file {h['cmd'][0]}")
+        for p in h.get("paths", []):
+            if not any(fnmatch.fnmatchcase(f, p) for f in tracked()):
+                errors.append(f"{REGISTRY}: {name}: no tracked file matches {p}")
+    listed = [p for n in HARNESS for p in harness_deps(n)[0]] + UNLISTED
+    for f in tracked():
+        if f.startswith(("test/", "fuzz/")) and not any(fnmatch.fnmatchcase(f, p) for p in listed):
+            errors.append(f"{f}: no harness in {REGISTRY} depends on it")
+    for e in errors:
+        print(e, file=sys.stderr)
+    if errors:
+        sys.exit(f"test/run lint: {len(errors)} problems")
+    print(f"test/run lint: ok ({len(HARNESS)} harnesses, "
+          f"{sum(len(j) for j in JOB.values())} CI jobs)")
+
+
+_tracked = None
+
+
+def tracked():
+    global _tracked
+    if _tracked is None:
+        _tracked = sh("git", "ls-files").stdout.split()
+    return _tracked
+
+
+# --- Main -----------------------------------------------------------------
+
+
+def main():
+    args = sys.argv[1:]
+    if not args or args[0] in ("-h", "--help"):
+        print(__doc__.strip())
+        return 0
+    cmd = args[0]
+    if cmd == "list":
+        list_all()
+    elif cmd == "deps":
+        pats, files = deps(args[1])
+        print("\n".join(pats + sorted(files)))
+    elif cmd == "affected":
+        affected(args[1:])
+    elif cmd == "lint":
+        lint()
+    else:
+        extra = []
+        if "--" in args:
+            i = args.index("--")
+            args, extra = args[:i], args[i + 1:]
+        return run(args, extra)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

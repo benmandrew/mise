@@ -30,10 +30,11 @@ defaults:
 
 jobs:
   # Decide which jobs run: each runs only when a file it depends on changed
-  # since the last commit on main on which it succeeded (see
-  # .github/scripts/affected.py for each job's dependencies). A job with no
-  # earlier success runs, and a failed job does not count, so the next
-  # night tries it again. A run started by hand runs every job.
+  # since the last commit on main on which it succeeded (`test/run
+  # affected`; each job's harnesses and dependencies are in
+  # test/harnesses.toml). A job with no earlier success runs, and a failed
+  # job does not count, so the next night tries it again. A run started by
+  # hand runs every job.
   changed:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -41,16 +42,7 @@ jobs:
       actions: read
       contents: read
     outputs:
-      fuzz: ${{ steps.check.outputs.fuzz }}
-      props: ${{ steps.check.outputs.props }}
-      conf-sandbox: ${{ steps.check.outputs.conf-sandbox }}
-      conf-depfiles: ${{ steps.check.outputs.conf-depfiles }}
-      conf-determinism: ${{ steps.check.outputs.conf-determinism }}
-      toml-diff: ${{ steps.check.outputs.toml-diff }}
-      parser-fuzz: ${{ steps.check.outputs.parser-fuzz }}
-      mutants: ${{ steps.check.outputs.mutants }}
-      ninja: ${{ steps.check.outputs.ninja }}
-      mtime-faults: ${{ steps.check.outputs.mtime-faults }}
+      run: ${{ steps.check.outputs.run }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -66,12 +58,12 @@ jobs:
         run: |
           all=()
           [ "$EVENT" = workflow_dispatch ] && all=(--all)
-          python3 .github/scripts/affected.py "${all[@]}" nightly.yml fuzz props conf-sandbox conf-depfiles conf-determinism toml-diff parser-fuzz mutants ninja mtime-faults
+          python3 test/run affected "${all[@]}" nightly
 
   # 500 random graphs (59 seconds on 8 cores, per docs/testing.md).
   fuzz:
     needs: changed
-    if: needs.changed.outputs.fuzz == 'true'
+    if: fromJSON(needs.changed.outputs.run)['fuzz']
     name: fuzz (${{ matrix.os }})
     strategy:
       fail-fast: false
@@ -84,8 +76,7 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup
-      - name: test/fuzz.sh 500
-        run: nix develop -c test/fuzz.sh 500
+      - run: nix develop -c test/run nightly.fuzz
       - name: Upload the shrunk cases
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -97,7 +88,7 @@ jobs:
   # Every ordered triple of edit kinds (80 seconds on 8 cores).
   props:
     needs: changed
-    if: needs.changed.outputs.props == 'true'
+    if: fromJSON(needs.changed.outputs.run)['props']
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -105,15 +96,14 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup
-      - name: test/stage6-props.sh --order 3
-        run: nix develop -c test/stage6-props.sh --order 3
+      - run: nix develop -c test/run nightly.props
 
   # sandbox-exec and DYLD_INSERT_LIBRARIES are macOS only. Whether the
   # hosted runner allows sandbox-exec profiles, and keeps DYLD_* for the Nix
   # store's programs, is unverified until the first run.
   conf-sandbox:
     needs: changed
-    if: needs.changed.outputs.conf-sandbox == 'true'
+    if: fromJSON(needs.changed.outputs.run)['conf-sandbox']
     runs-on: macos-latest
     timeout-minutes: 30
     steps:
@@ -121,12 +111,11 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup
-      - name: test/conf-sandbox.sh
-        run: nix develop -c test/conf-sandbox.sh
+      - run: nix develop -c test/run nightly.conf-sandbox
 
   conf-depfiles:
     needs: changed
-    if: needs.changed.outputs.conf-depfiles == 'true'
+    if: fromJSON(needs.changed.outputs.run)['conf-depfiles']
     runs-on: macos-latest
     timeout-minutes: 30
     steps:
@@ -134,12 +123,11 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup
-      - name: test/conf-depfiles.sh
-        run: nix develop -c test/conf-depfiles.sh
+      - run: nix develop -c test/run nightly.conf-depfiles
 
   conf-determinism:
     needs: changed
-    if: needs.changed.outputs.conf-determinism == 'true'
+    if: fromJSON(needs.changed.outputs.run)['conf-determinism']
     runs-on: macos-latest
     timeout-minutes: 20
     steps:
@@ -147,13 +135,12 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup
-      - name: test/conf-determinism.sh
-        run: nix develop -c test/conf-determinism.sh
+      - run: nix develop -c test/run nightly.conf-determinism
 
   # 2,500 documents of each kind (16 seconds on 8 cores).
   toml-diff:
     needs: changed
-    if: needs.changed.outputs.toml-diff == 'true'
+    if: fromJSON(needs.changed.outputs.run)['toml-diff']
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -161,8 +148,7 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup
-      - name: test/toml-diff.sh
-        run: nix develop -c test/toml-diff.sh
+      - run: nix develop -c test/run nightly.toml-diff
 
   # The parser fuzzer, five minutes in each mode, with AddressSanitizer
   # (on by default off macOS). It has run only on macOS so far, so whether
@@ -170,7 +156,7 @@ jobs:
   # the first run.
   parser-fuzz:
     needs: changed
-    if: needs.changed.outputs.parser-fuzz == 'true'
+    if: fromJSON(needs.changed.outputs.run)['parser-fuzz']
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -178,22 +164,21 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup
-      - name: test/parser-fuzz.sh text 300
-        run: nix develop .#fuzz -c test/parser-fuzz.sh text 300
-      - name: test/parser-fuzz.sh gen 300
-        run: nix develop .#fuzz -c test/parser-fuzz.sh gen 300
+      - run: nix develop .#fuzz -c test/run nightly.parser-fuzz
       - name: Upload the failing inputs
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: parser-fuzz-crash
-          path: test/out/parser-fuzz/crash/
+          path: |
+            test/out/fuzz-parser-text/crash/
+            test/out/fuzz-parser-gen/crash/
           if-no-files-found: ignore
 
   # About 15 minutes locally on 2 workers; the runner has 3.
   mutants:
     needs: changed
-    if: needs.changed.outputs.mutants == 'true'
+    if: fromJSON(needs.changed.outputs.run)['mutants']
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -201,8 +186,7 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup
-      - name: test/mutants.sh
-        run: nix develop -c test/mutants.sh
+      - run: nix develop -c test/run nightly.mutants
       - name: Upload the results
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -215,7 +199,7 @@ jobs:
   ninja:
     name: ninja ${{ matrix.release }} (${{ matrix.os }})
     needs: changed
-    if: needs.changed.outputs.ninja == 'true'
+    if: fromJSON(needs.changed.outputs.run)['ninja']
     strategy:
       fail-fast: false
       matrix:
@@ -230,10 +214,9 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup
-      - name: test/ninja-matrix.sh
-        env:
+      - env:
           RELEASE: ${{ matrix.release }}
-        run: nix develop -c test/ninja-matrix.sh "$RELEASE"
+        run: nix develop -c test/run nightly.ninja -- "$RELEASE"
       - name: Upload the harness logs
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -249,7 +232,7 @@ jobs:
   # image is unverified. libfaketime adds the clock-skew fault.
   mtime-faults:
     needs: changed
-    if: needs.changed.outputs.mtime-faults == 'true'
+    if: fromJSON(needs.changed.outputs.run)['mtime-faults']
     runs-on: macos-latest
     continue-on-error: true
     timeout-minutes: 20
@@ -258,8 +241,7 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup
-      - name: test/mtime-faults.sh
-        run: nix develop -c nix shell --inputs-from . nixpkgs#libfaketime -c test/mtime-faults.sh
+      - run: nix develop -c test/run nightly.mtime-faults
       - name: Upload the report
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

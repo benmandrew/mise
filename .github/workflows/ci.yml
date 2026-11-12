@@ -33,9 +33,9 @@ defaults:
 jobs:
   # Decide which jobs run: each runs only when a file it depends on changed
   # since the last commit on which it succeeded, in this branch's history
-  # or, for a pull request, the base branch's. .github/scripts/affected.py
-  # lists each job's dependencies. A skipped job counts as passed for a
-  # required check.
+  # or, for a pull request, the base branch's (`test/run affected`; each
+  # job's harnesses and dependencies are in test/harnesses.toml). A skipped
+  # job counts as passed for a required check.
   changed:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -43,9 +43,7 @@ jobs:
       actions: read
       contents: read
     outputs:
-      proofs: ${{ steps.check.outputs.proofs }}
-      ninja: ${{ steps.check.outputs.ninja }}
-      extras: ${{ steps.check.outputs.extras }}
+      run: ${{ steps.check.outputs.run }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -59,7 +57,7 @@ jobs:
           SHA: ${{ github.sha }}
           BRANCH: ${{ github.head_ref || github.ref_name }}
           BASE_BRANCH: ${{ github.base_ref }}
-        run: python3 .github/scripts/affected.py ci.yml proofs ninja extras
+        run: python3 test/run affected ci
 
   # Build, no sorry/admit, axioms of the headline theorems, docs/trusted.md
   # up to date. The proofs do not depend on the Ninja release, so they run
@@ -67,7 +65,7 @@ jobs:
   # every target. Local time: 7 to 13 s, from an empty .lake.
   proofs:
     needs: changed
-    if: needs.changed.outputs.proofs == 'true'
+    if: fromJSON(needs.changed.outputs.run)['proofs']
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -77,8 +75,7 @@ jobs:
       - uses: ./.github/actions/setup
         with:
           save-lake: "true"
-      - name: scripts/check.sh
-        run: nix develop -c scripts/check.sh
+      - run: nix develop -c test/run ci.proofs
 
   # The four shell harnesses (stage3-diff, stage4-hello, stage6-props
   # --order 2, fuzz) against each supported Ninja release, 1.12.1 (the
@@ -87,7 +84,7 @@ jobs:
   ninja:
     name: ninja ${{ matrix.release }} (${{ matrix.os }})
     needs: changed
-    if: needs.changed.outputs.ninja == 'true'
+    if: fromJSON(needs.changed.outputs.run)['ninja']
     strategy:
       fail-fast: false
       matrix:
@@ -107,10 +104,9 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup
-      - name: test/ninja-matrix.sh --fuzz 150
-        env:
+      - env:
           RELEASE: ${{ matrix.release }}
-        run: nix develop -c test/ninja-matrix.sh --fuzz 150 "$RELEASE"
+        run: nix develop -c test/run ci.ninja -- "$RELEASE"
       - name: Upload the harness logs
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -129,7 +125,7 @@ jobs:
   extras:
     name: command wrapper and TOML front end
     needs: changed
-    if: needs.changed.outputs.extras == 'true'
+    if: fromJSON(needs.changed.outputs.run)['extras']
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -137,11 +133,4 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup
-      - name: test/restat-cmp.sh
-        run: nix develop -c test/restat-cmp.sh
-      - name: test/wrap-outputs.sh
-        run: nix develop -c test/wrap-outputs.sh
-      - name: test/sugar.sh
-        run: nix develop -c test/sugar.sh
-      - name: test/toml-diff.sh 250
-        run: nix develop -c test/toml-diff.sh 250
+      - run: nix develop -c test/run ci.extras

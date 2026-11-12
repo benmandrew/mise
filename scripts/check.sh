@@ -5,7 +5,9 @@
 #   3. headline theorems use only propext, Classical.choice and Quot.sound;
 #   4. docs/trusted.md and docs/headline.typ match the definitions the
 #      headline theorems use, and docs/headline.typ compiles with Typst;
-#   5. every one of those definitions has a docstring.
+#   5. every one of those definitions has a docstring;
+#   6. test/harnesses.toml lists every harness file and matches the CI
+#      workflows (test/run lint).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -28,4 +30,5 @@ fi
 n=$(echo "$out" | grep -c 'axiom' || true)
 # Checks 4 and 5.
 scripts/trusted.sh --check
+test/run lint
 echo "check: ok ($n theorems checked)"
