@@ -19,15 +19,26 @@
       "additionalProperties": { "type": "string" }
     },
     "rule": {
+      "description": "The rules. Each gives a command that build steps run.",
       "type": "array",
       "items": {
+        "description": "A rule, emitted as a Ninja `rule`.",
         "type": "object",
         "additionalProperties": false,
         "required": ["name", "command"],
         "properties": {
-          "name": { "type": "string" },
-          "command": { "type": "string" },
-          "description": { "type": "string" },
+          "name": {
+            "description": "The name a build step gives in `rule`. Rule names must be unique.",
+            "type": "string"
+          },
+          "command": {
+            "description": "The shell command. It can use `$in`, `$out` and the build step's `vars` and `params`.",
+            "type": "string"
+          },
+          "description": {
+            "description": "The line Ninja prints when the command runs, such as `CC $out`.",
+            "type": "string"
+          },
           "depfile": {
             "description": "The command writes a depfile at `$out.d`.",
             "type": "boolean",
@@ -47,21 +58,38 @@
       }
     },
     "build": {
+      "description": "Build steps, in order. A step's inputs can name only sources and outputs of earlier steps.",
       "type": "array",
       "items": {
+        "description": "A build step, emitted as a Ninja `build` edge.",
         "type": "object",
         "additionalProperties": false,
         "required": ["rule"],
         "properties": {
-          "rule": { "type": "string" },
-          "outs": { "$ref": "#/definitions/paths" },
-          "implicit-outs": { "$ref": "#/definitions/paths" },
-          "ins": {
-            "description": "Each names a source or an output of an earlier build.",
+          "rule": {
+            "description": "The name of a rule in [[rule]].",
+            "type": "string"
+          },
+          "outs": {
+            "description": "The files the command writes, passed as `$out`.",
             "$ref": "#/definitions/paths"
           },
-          "implicit-ins": { "$ref": "#/definitions/paths" },
-          "order-only": { "$ref": "#/definitions/paths" },
+          "implicit-outs": {
+            "description": "Further files the command writes, not passed as `$out`.",
+            "$ref": "#/definitions/paths"
+          },
+          "ins": {
+            "description": "The inputs, passed as `$in`. Each names a source or an output of an earlier build.",
+            "$ref": "#/definitions/paths"
+          },
+          "implicit-ins": {
+            "description": "Further inputs, not passed as `$in`. A change to one rebuilds the step. Each names a source or an output of an earlier build.",
+            "$ref": "#/definitions/paths"
+          },
+          "order-only": {
+            "description": "Files built before this step. A change to one does not rebuild the step. For a depfile rule, the generated files the command may read.",
+            "$ref": "#/definitions/paths"
+          },
           "vars": {
             "description": "Edge variables with literal values.",
             "type": "object",
@@ -78,6 +106,7 @@
   },
   "definitions": {
     "paths": {
+      "description": "File paths, relative to the directory that holds mise.toml.",
       "type": "array",
       "items": { "type": "string" }
     }
