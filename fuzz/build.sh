@@ -14,9 +14,10 @@
 # Ninja's sources come from NINJA_SRC, or else from the flake's release
 # NINJA_RELEASE (default 1.13.2). MISE_FUZZ_ASAN=1 or 0 turns
 # AddressSanitizer on or off; it is on by default except on macOS, where
-# clang 21's ASan deadlocks while it starts. CC and CXX override the
-# compilers: clang and clang++, or afl-clang-fast and afl-clang-fast++ for
-# afl. libFuzzer and AFL++ need clang from `nix develop .#fuzz` on Linux;
+# clang 21's ASan deadlocks while it starts. MISE_FUZZ_CC and
+# MISE_FUZZ_CXX override the compilers: clang and clang++, or afl-clang-fast
+# and afl-clang-fast++ for afl. Plain CC and CXX are ignored, since the
+# Linux dev shells set them to gcc, which has no libFuzzer. libFuzzer and AFL++ need clang from `nix develop .#fuzz` on Linux;
 # macOS's default shell has libFuzzer too.
 #
 # The build goes to .lake/build/fuzz/TARGET-ENGINE[-asan], through a
@@ -34,9 +35,9 @@ case "$target" in
   *) usage ;;
 esac
 case "$engine" in
-  libfuzzer) cc=${CC:-clang} cxx=${CXX:-clang++} ;;
-  afl) cc=${CC:-afl-clang-fast} cxx=${CXX:-afl-clang-fast++} ;;
-  standalone) cc=${CC:-clang} cxx=${CXX:-clang++} ;;
+  libfuzzer) cc=${MISE_FUZZ_CC:-clang} cxx=${MISE_FUZZ_CXX:-clang++} ;;
+  afl) cc=${MISE_FUZZ_CC:-afl-clang-fast} cxx=${MISE_FUZZ_CXX:-afl-clang-fast++} ;;
+  standalone) cc=${MISE_FUZZ_CC:-clang} cxx=${MISE_FUZZ_CXX:-clang++} ;;
   *) usage ;;
 esac
 asan=${MISE_FUZZ_ASAN:-$([ "$(uname)" = Darwin ] && echo 0 || echo 1)}
