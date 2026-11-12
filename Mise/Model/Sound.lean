@@ -759,6 +759,29 @@ theorem reach_sound {m : Manifest} (hs : Sched m.medges) (hr : Reads sem m.medge
   have hinv := inv_of_reach sem hs hr h
   exact ⟨sound_of_inv sem hs hr hinv, ninjaBuild_idem sem hs hr hinv.1 hinv.2.1⟩
 
+/-- Every output of an edge has the same deps entry in a reachable state, as
+a run writes one entry to all its outputs. Ninja reads only the first
+output's entry (`ImplicitDepLoader::LoadDepsFromLog`), so the model's lookup
+per output agrees with it. -/
+theorem deps_uniform {es : List MEdge} (hs : Sched es) {st : St V} (h : Reach sem es st) {e : MEdge}
+    (he : e ∈ es) {o o' : Path} (ho : o ∈ e.outs) (ho' : o' ∈ e.outs) : st.deps o = st.deps o' := by
+  induction h with
+  | init _ _ hdeps => rw [hdeps, hdeps]
+  | edit _ _ _ _ ih => exact ih
+  | @step _ e' _ he' ih =>
+    by_cases hc : e' = e
+    · subst hc
+      unfold St.step; split
+      · simp [St.run, ho, ho']
+      · exact ih
+    · have hd := hs.disjoint he' he hc
+      rw [(St.step_other sem (hd.symm o ho)).2.2, (St.step_other sem (hd.symm o' ho')).2.2, ih]
+
+/-- The inputs Ninja checks are the same for every output of an edge. -/
+theorem effIns_uniform {es : List MEdge} (hs : Sched es) {st : St V} (h : Reach sem es st) {e : MEdge}
+    (he : e ∈ es) {o o' : Path} (ho : o ∈ e.outs) (ho' : o' ∈ e.outs) : st.effIns e o = st.effIns e o' := by
+  simp only [St.effIns, deps_uniform sem hs h he ho ho']
+
 /-! ## Command changes -/
 
 /-- Two edge lists with the same outputs and inputs, edge by edge. -/

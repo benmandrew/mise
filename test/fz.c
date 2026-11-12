@@ -2,14 +2,16 @@
 
    fz MODE TAG OUT... -- IN...
 
-   MODE holds `s` (static), `d` (depfile) and `r` (restat) in any mix.
+   MODE holds `s` (static), `d` (depfile), `r` (restat) and `x` in any mix.
    The command reads its inputs in order. A depfile command also follows
    lines `include PATH` from what it reads, breadth first, skipping paths
    already read, and writes `OUT.d` for its first output. Output i gets the
    FNV-1a hash of the arguments after argv[0] joined by spaces, then i, then
    the contents of every file read with lines starting with `#` left out.
    A restat command leaves an output alone when its contents would not
-   change. Every run appends one line to `fz.log`:
+   change. With `x` the command leaves out every output whose hash is a
+   multiple of 3: it removes the file if it exists and writes nothing.
+   Every run appends one line to `fz.log`:
 
      OUT T_START T_READ0 T_READ1 T_WRITE0 T_WRITE1 T_END READ...
 
@@ -17,11 +19,11 @@
    are CLOCK_MONOTONIC_RAW nanoseconds, which every process on the machine
    shares: at entry, before the first and after the last read of an input,
    before the first and after the last write (outputs and depfile; a
-   `restat` command's look at its old output counts here), and before the
-   log write. test/fuzz.py checks the schedule with them. When FZ_DELAY
-   is set to N > 0, the command sleeps a random 0 to N-1 microseconds after
-   entry and again between reading and writing, so that parallel runs
-   overlap more.
+   `restat` command's look at its old output and an `x` command's removal
+   count here), and before the log write. test/fuzz.py checks the schedule
+   with them. When FZ_DELAY is set to N > 0, the command sleeps a random 0
+   to N-1 microseconds after entry and again between reading and writing,
+   so that parallel runs overlap more.
 
    `fzContent` and `fzDyn` in test/MiseTest/Fuzz.lean compute the same
    contents and reads; the harness compares the two. */
@@ -92,7 +94,7 @@ int main(int argc, char **argv) {
     return 2;
   }
   const char *mode = argv[1];
-  int dyn = strchr(mode, 'd') != NULL, restat = strchr(mode, 'r') != NULL;
+  int dyn = strchr(mode, 'd') != NULL, restat = strchr(mode, 'r') != NULL, skip = strchr(mode, 'x') != NULL;
   int nouts = sep - 3;
   char **outs = argv + 3;
 
@@ -166,7 +168,8 @@ int main(int argc, char **argv) {
       }
       h = feed(h, "\0", 1);
     }
-    outl[i] = snprintf(outv[i], sizeof outv[i], "%016llx\n", (unsigned long long)h);
+    /* -1 marks an output that an `x` command leaves out. */
+    outl[i] = skip && h % 3 == 0 ? -1 : snprintf(outv[i], sizeof outv[i], "%016llx\n", (unsigned long long)h);
   }
 
   pause_random(delay);
@@ -174,6 +177,10 @@ int main(int argc, char **argv) {
   for (int i = 0; i < nouts; i++) {
     char *out = outv[i];
     int ol = outl[i];
+    if (ol < 0) {
+      unlink(outs[i]);
+      continue;
+    }
     if (restat) {
       size_t len;
       char *old = slurp(outs[i], &len);

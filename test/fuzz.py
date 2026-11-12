@@ -15,6 +15,14 @@ text, then runs `ninja` with a random `-j` level. It then checks:
 
 After the last step it checks that `ninja -t missingdeps` finds nothing.
 
+`--missing-ok` is for cases generated with `fuzzgen ... absent`, whose
+commands leave out some outputs. Ninja then reruns an edge with a missing
+output in every build, which the model does not (see `Mise/Model/NOTES.md`).
+The option lets such edges run in addition to the model's, and replaces
+check 4: a second build may run only such edges, must pass check 2 and
+must leave the same contents (`ninja -n` does not restat, so it would list
+their dependents).
+
 Edits need fresh mtimes: after writing a file the driver waits until its
 mtime is newer than every file in the case directory.
 
@@ -27,7 +35,7 @@ writes the result to `test/out/fuzz/shrunk/<i>.json`, which
 `fuzz.py test/out/fuzz/shrunk <i>` replays.
 
 usage: fuzz.py [--workers W] [--seed S] [--keep] [--no-shrink]
-               [--shrink-max K] [--fz PATH] [--delay US] CASES_DIR [CASE...]
+               [--shrink-max K] [--fz PATH] [--delay US] [--missing-ok] CASES_DIR [CASE...]
 """
 import argparse
 import copy
@@ -174,8 +182,33 @@ def new_stats():
     return {"max": 0, "pairs": 0, "steps": 0, "multi": 0}
 
 
-def replay_steps(d, steps, jobs, fz, desc, stats=None):
-    """Replay steps in a fresh directory `d`. Returns None, or (kind, message)."""
+def with_missing(d, desc):
+    """The first outputs of the edges with a missing output."""
+    return {e["outs"][0] for e in desc["edges"] if not all((d / o).exists() for o in e["outs"] + e["implicitOuts"])}
+
+
+def check_products(d, s):
+    for p, v in s["products"].items():
+        # A missing file reads as empty, as in the model.
+        got = (d / p).read_text() if (d / p).exists() else ""
+        if got != v:
+            raise Fail("contents", f"{p} holds {got!r}, the model says {v!r}")
+
+
+def ran_edges(d, jobs):
+    """Run `ninja` and return `parse_log` of the runs it made."""
+    log = d / "fz.log"
+    log.unlink(missing_ok=True)
+    run(["ninja", jobs], d)
+    ran, runs = parse_log(log.read_text()) if log.exists() else ([], {})
+    if len(ran) != len(set(ran)):
+        raise Fail("twice", f"an edge ran twice: {sorted(ran)}")
+    return ran, runs
+
+
+def replay_steps(d, steps, jobs, fz, desc, stats=None, missing_ok=False):
+    """Replay steps in a fresh directory `d`. Returns None, or (kind, message).
+    With `missing_ok`, allow the differences `--missing-ok` describes."""
     stats = stats if stats is not None else new_stats()
     shutil.rmtree(d, ignore_errors=True)
     d.mkdir(parents=True)
@@ -187,24 +220,26 @@ def replay_steps(d, steps, jobs, fz, desc, stats=None):
             run([MISE, "gen", "."], d)
             if (d / "build.ninja").read_text() != s["ninja"]:
                 raise Fail("manifest", "build.ninja differs from the expected manifest")
-            log = d / "fz.log"
-            log.unlink(missing_ok=True)
-            run(["ninja", jobs[i]], d)
-            ran, runs = parse_log(log.read_text()) if log.exists() else ([], {})
-            if len(ran) != len(set(ran)):
-                raise Fail("twice", f"an edge ran twice: {sorted(ran)}")
-            if sorted(ran) != s["ran"]:
-                extra = sorted(set(ran) - set(s["ran"]))
-                missing = sorted(set(s["ran"]) - set(ran))
+            ok = with_missing(d, desc) if missing_ok and i > 0 else set()
+            ran, runs = ran_edges(d, jobs[i])
+            extra = sorted(set(ran) - set(s["ran"]) - ok)
+            missing = sorted(set(s["ran"]) - set(ran))
+            if extra or missing:
                 raise Fail("ran", f"ran differs from the model: extra {extra}, missing {missing}")
             stats["multi"] += jobs[i] != "-j1" and len(ran) > 1
             check_schedule(desc, ran, runs, stats)
-            for p, v in s["products"].items():
-                got = (d / p).read_text() if (d / p).exists() else None
-                if got != v:
-                    raise Fail("contents", f"{p} holds {got!r}, the model says {v!r}")
-            if "no work to do" not in run(["ninja", "-n"], d):
-                raise Fail("rerun", "ninja -n has work to do")
+            check_products(d, s)
+            if not missing_ok:
+                if "no work to do" not in run(["ninja", "-n"], d):
+                    raise Fail("rerun", "ninja -n has work to do")
+            else:
+                again, again_runs = ran_edges(d, jobs[i])
+                # Check the second build's schedule too, but keep it out of the overlap statistics.
+                check_schedule(desc, again, again_runs, new_stats())
+                again = sorted(set(again) - with_missing(d, desc))
+                if again:
+                    raise Fail("rerun", f"a second build ran {again}, which have every output")
+                check_products(d, s)
         except Fail as e:
             return e.kind, f"{where}: {e}"
     try:
@@ -314,7 +349,7 @@ def size(desc):
         f"{sum(map(len, desc['steps']))} edits"
 
 
-def shrink(name, desc, jobs, kind, fz):
+def shrink(name, desc, jobs, kind, fz, missing_ok):
     tmp = OUT / "shrink" / name
     tmp.mkdir(parents=True, exist_ok=True)
     trials = 0
@@ -326,12 +361,12 @@ def shrink(name, desc, jobs, kind, fz):
             steps = expect(c, tmp)
             if steps is None:
                 continue
-            r = replay_steps(tmp / "run", steps, cj, fz, c)
+            r = replay_steps(tmp / "run", steps, cj, fz, c, missing_ok=missing_ok)
             if r and r[0] == kind:
                 desc, jobs, progress = c, cj, True
                 break
     steps = expect(desc, tmp)
-    r = replay_steps(OUT / "shrunk-run" / name, steps, jobs, fz, desc)
+    r = replay_steps(OUT / "shrunk-run" / name, steps, jobs, fz, desc, missing_ok=missing_ok)
     shrunk = OUT / "shrunk"
     shrunk.mkdir(parents=True, exist_ok=True)
     (shrunk / f"{name}.json").write_text(json.dumps({"desc": desc, "jobs": jobs, "steps": steps}))
@@ -339,7 +374,7 @@ def shrink(name, desc, jobs, kind, fz):
     return desc, trials, r
 
 
-def replay(case, seed, keep, fz, do_shrink):
+def replay(case, seed, keep, fz, do_shrink, missing_ok):
     name = case.stem
     data = json.loads(case.read_text())
     steps = data["steps"]
@@ -347,7 +382,7 @@ def replay(case, seed, keep, fz, do_shrink):
     jobs = data.get("jobs") or [rng.choice(JOBS) for _ in steps]
     d = OUT / "run" / name
     stats = new_stats()
-    r = replay_steps(d, steps, jobs, fz, data["desc"], stats)
+    r = replay_steps(d, steps, jobs, fz, data["desc"], stats, missing_ok)
     if r is None:
         if not keep:
             shutil.rmtree(d)
@@ -356,7 +391,7 @@ def replay(case, seed, keep, fz, do_shrink):
     report = f"case {name}: {msg}"
     if do_shrink:
         t = time.time()
-        small, trials, r2 = shrink(name, data["desc"], jobs, kind, fz)
+        small, trials, r2 = shrink(name, data["desc"], jobs, kind, fz, missing_ok)
         report += f"\n  shrunk from {size(data['desc'])}\n  to {size(small)} in {trials} trials, {time.time() - t:.1f}s"
         report += f"\n  {r2[1] if r2 else 'the shrunk case passes on replay (flaky?)'}"
         report += f"\n  replay: test/fuzz.py test/out/fuzz/shrunk {name}"
@@ -375,6 +410,8 @@ def main():
     ap.add_argument("--fz", help="use this helper binary instead of compiling test/fz.c")
     ap.add_argument("--delay", type=int, default=20000,
                     help="each command sleeps up to this many microseconds twice, so that runs overlap (0: off)")
+    ap.add_argument("--missing-ok", action="store_true",
+                    help="allow reruns of edges with a missing output (for `absent` cases)")
     a = ap.parse_args()
     cases = sorted(Path(a.cases).glob("*.json"), key=lambda p: int(p.stem))
     if a.only:
@@ -387,7 +424,8 @@ def main():
     t = time.time()
     n = len(cases)
     with ProcessPoolExecutor(a.workers) as ex:
-        results = list(ex.map(replay, cases, [a.seed] * n, [a.keep] * n, [fz] * n, [False] * n))
+        mo = [a.missing_ok] * n
+        results = list(ex.map(replay, cases, [a.seed] * n, [a.keep] * n, [fz] * n, [False] * n, mo))
         fails = [(c, r) for c, (r, _) in zip(cases, results) if r]
         steps = sum(len(json.loads(c.read_text())["steps"]) for c in cases)
         print(f"fuzz: {n - len(fails)}/{n} cases passed, {steps} steps, {time.time() - t:.1f}s")
@@ -398,7 +436,8 @@ def main():
         if fails and not a.no_shrink:
             todo = [c for c, _ in fails[: a.shrink_max]]
             k = len(todo)
-            shrunk = dict(zip(todo, (r for r, _ in ex.map(replay, todo, [a.seed] * k, [True] * k, [fz] * k, [True] * k))))
+            shrunk = dict(zip(todo, (r for r, _ in ex.map(replay, todo, [a.seed] * k, [True] * k, [fz] * k, [True] * k,
+                                                          [a.missing_ok] * k))))
             fails = [(c, shrunk.get(c, r)) for c, r in fails]
     for _, f in fails:
         print("FAIL", f)

@@ -73,3 +73,7 @@ fails if any theorem depends on an axiom outside the standard three. -/
 #print axioms Mise.Model.wrapRun_kept_iff
 #print axioms Mise.Model.wrapRun_fail
 #print axioms Mise.Model.run_withCmp
+
+-- Deviations from Ninja
+#print axioms Mise.Model.deps_uniform
+#print axioms Mise.Model.effIns_uniform

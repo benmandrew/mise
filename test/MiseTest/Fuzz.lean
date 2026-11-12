@@ -6,9 +6,11 @@ import MiseTest.Rng
 /-!
 # Random-graph harness: case generator
 
-`lake exe fuzzgen DIR N SEED` writes `N` random cases to `DIR/<i>.json`, and
-`test/fuzz.py` replays them against real Ninja. `lake exe fuzzgen expect IN
-OUT` reads a case description from `IN` and writes its case to `OUT`.
+`lake exe fuzzgen DIR N SEED [OPTS]` writes `N` random cases to
+`DIR/<i>.json`, and `test/fuzz.py` replays them against real Ninja. `OPTS`
+is a comma-separated list of `Opts` flags; the only one is `absent`.
+`lake exe fuzzgen expect IN OUT` reads a case description from `IN` and
+writes its case to `OUT`.
 
 A case is a random valid graph and a sequence of steps. Every edge runs the
 helper `test/fz.c`, and `sem` below computes the same contents and reads, so
@@ -20,7 +22,9 @@ contents afterwards.
 Depfile commands read only their own private main source, shared headers,
 their declared inputs, and generated files named as order-only inputs. That
 keeps `Graph.DynOK`, so the model's theorems apply, and no include names a
-missing file, where the model and Ninja differ.
+missing file, where the model and Ninja differ. A depfile edge has one
+explicit output and up to two implicit ones, so that Ninja keys its deps by
+the first of several outputs.
 -/
 
 namespace MiseTest.Fuzz
@@ -55,13 +59,21 @@ def insOf (cmd : String) : List String := ((args cmd).dropWhile (· != "--")).dr
 
 def lines (v : String) : List String := v.splitOn "\n"
 
+/-- Whether a helper in mode `x` leaves out an output with hash `h`. -/
+def absent (h : UInt64) : Bool := h % 3 == 0
+
 /-- The contents the helper writes to each output, from the contents of the
-files it read, in order. Lines starting with `#` do not count. -/
+files it read, in order. Lines starting with `#` do not count. In mode `x`
+the helper leaves out some outputs; a missing file reads as empty, so the
+model gives such an output the empty string. -/
 def fzContent (cmd : String) (vs : List String) : List String :=
   let key := feed fnvOffset (" ".intercalate (args cmd) ++ "\n")
+  let skip := ((args cmd).headD "").contains 'x'
   let file (h : UInt64) (v : String) : UInt64 :=
     feed ((lines v).foldl (fun h l => if l.startsWith "#" then h else feed (feed h l) "\n") h) "\x00"
-  (List.range (outsOf cmd).length).map fun i => hex16 (vs.foldl file (feed key (toString i ++ "\n"))) ++ "\n"
+  (List.range (outsOf cmd).length).map fun i =>
+    let h := vs.foldl file (feed key (toString i ++ "\n"))
+    if skip && absent h then "" else hex16 h ++ "\n"
 
 def includes (v : String) : List Path :=
   (lines v).filterMap fun l =>
@@ -92,10 +104,12 @@ def sem : Sem String := Sem.withCmp { exec := fzContent, dyn := fzDyn }
 /-- `(name, mode, depfile, restat, wrapped)`; the mode tells the helper what
 to do. A `restat` rule either has the helper keep unchanged outputs itself
 (mode `r`, emitted with `restat-cmp = false`) or goes through the DSL's
-`cmp` wrapper with a helper that always writes. -/
+`cmp` wrapper with a helper that always writes. The `x` rules leave out
+some outputs, are never wrapped, and only `Opts.absent` uses them. -/
 def ruleSpecs : List (String × String × Bool × Bool × Bool) :=
   [("st", "s", false, false, false), ("str", "sr", false, true, false), ("stw", "s", false, true, true),
-   ("dy", "d", true, false, false), ("dyr", "dr", true, true, false), ("dyw", "d", true, true, true)]
+   ("dy", "d", true, false, false), ("dyr", "dr", true, true, false), ("dyw", "d", true, true, true),
+   ("stx", "srx", false, true, false), ("dyx", "drx", true, true, false)]
 
 def ruleCmd (mode : String) : String := "./fz " ++ mode ++ " ${tag} $out ${iout} -- $in ${imp}"
 
@@ -147,7 +161,15 @@ def edgeVars (tag : String) (iouts imps : List Path) : List (String × String) :
   [("tag", tag)] ++ (if iouts.isEmpty then [] else [("iout", " ".intercalate iouts)]) ++
     (if imps.isEmpty then [] else [("imp", " ".intercalate imps)])
 
-def genCase : GenM Case := do
+/-- Generator options. `absent` gives half the `restat` edges a command that
+leaves out some outputs (`test/fz.c`, mode `x`), which the model cannot
+express; see "Where the model differs from Ninja" in `Mise/Model/NOTES.md`. -/
+structure Opts where
+  absent : Bool := false
+
+def Opts.parse (s : String) : Opts := { absent := (s.splitOn ",").contains "absent" }
+
+def genCase (o : Opts) : GenM Case := do
   let nh := 1 + (← rand 3)
   let np := 1 + (← rand 3)
   let ne := 2 + (← rand 9)
@@ -162,6 +184,7 @@ def genCase : GenM Case := do
   let mut gens : List Path := []
   for i in [0:ne] do
     let restat ← chance 1 2
+    let skip ← if o.absent && restat then chance 1 2 else pure false
     let fresh (xs : List Path) (avoid : List Path) := xs.filter fun x => !avoid.contains x
     if ← chance 2 5 then
       let main := s!"src/m{i}.c"
@@ -170,11 +193,14 @@ def genCase : GenM Case := do
       let oo ← sample (← rand 3) (fresh gens (extra ++ imp))
       let allowed := hs ++ oo
       mains := mains ++ [{ path := main, allowed, includes := ← sample (← rand 3) allowed }]
-      let out := s!"out/e{i}.o"
-      edges := edges ++ [{ rule := if restat then (if i % 2 == 0 then "dyw" else "dyr") else "dy",
-                           outs := [out], ins := main :: extra,
-                           implicitIns := imp, orderOnly := oo, vars := edgeVars "t0" [] imp }]
-      gens := gens ++ [out]
+      -- One explicit output, as `Graph.check` demands of depfile edges.
+      let outs := [s!"out/e{i}.o"]
+      let iouts := (List.range (← rand 3)).map fun k => s!"out/e{i}_i{k}"
+      edges := edges ++ [{ rule := if skip then "dyx" else if restat then (if i % 2 == 0 then "dyw" else "dyr")
+                                   else "dy",
+                           outs, implicitOuts := iouts, ins := main :: extra, implicitIns := imp, orderOnly := oo,
+                           vars := edgeVars "t0" iouts imp }]
+      gens := gens ++ outs ++ iouts
     else
       let pool := plains.map (·.path) ++ hs ++ gens
       let ins ← sample (1 + (← rand 3)) pool
@@ -182,7 +208,8 @@ def genCase : GenM Case := do
       let oo ← sample (← rand 2) (fresh gens (ins ++ imp))
       let outs := (List.range (1 + (← rand 2))).map fun k => s!"out/e{i}_{k}"
       let iouts := if ← chance 1 3 then [s!"out/e{i}_i"] else []
-      edges := edges ++ [{ rule := if restat then (if i % 2 == 0 then "stw" else "str") else "st",
+      edges := edges ++ [{ rule := if skip then "stx" else if restat then (if i % 2 == 0 then "stw" else "str")
+                                   else "st",
                            outs, implicitOuts := iouts, ins,
                            implicitIns := imp, orderOnly := oo, vars := edgeVars "t0" iouts imp }]
       gens := gens ++ outs ++ iouts
@@ -368,9 +395,9 @@ def seeded (seed i : Nat) : Rng := Id.run do
   for _ in [0:4] do g := g.next.2
   g
 
-def genOne (seed i : Nat) : Case × List (List Edit) :=
+def genOne (o : Opts) (seed i : Nat) : Case × List (List Edit) :=
   let gen : GenM (Case × List (List Edit)) := do
-    let c ← genCase
+    let c ← genCase o
     let n := 3 + (← rand 6)
     pure (c, ← genSteps c n)
   (gen.run (seeded seed i)).1
@@ -386,12 +413,13 @@ def main (args : List String) : IO UInt32 := do
     match runCase ⟨d.srcs, d.edges.map (·.toEdge)⟩ d.steps with
     | .error e => IO.eprintln s!"{src}: {e}"; return 1
     | .ok j => IO.FS.writeFile dst j.compress; return 0
-  let (dir, n, seed) := match args with
-    | [d, n, s] => (d, n.toNat!, s.toNat!)
-    | _ => ("test/out/fuzz/cases", 100, 1)
+  let (dir, n, seed, o) := match args with
+    | [d, n, s] => (d, n.toNat!, s.toNat!, ({} : Opts))
+    | [d, n, s, f] => (d, n.toNat!, s.toNat!, Opts.parse f)
+    | _ => ("test/out/fuzz/cases", 100, 1, ({} : Opts))
   IO.FS.createDirAll dir
   for i in [0:n] do
-    let (c, steps) := genOne seed i
+    let (c, steps) := genOne o seed i
     match runCase c steps with
     | .error e => IO.eprintln s!"case {i}: {e}"; return 1
     | .ok j => IO.FS.writeFile s!"{dir}/{i}.json" j.compress
