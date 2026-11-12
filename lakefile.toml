@@ -5,13 +5,13 @@ defaultTargets = ["Mise", "MiseTest", "mise"]
 [[lean_lib]]
 name = "Mise"
 
-[[lean_exe]]
-name = "mise"
-root = "Main"
-
 [[lean_lib]]
 name = "MiseTest"
 srcDir = "test"
+
+[[lean_exe]]
+name = "mise"
+root = "Main"
 
 [[lean_exe]]
 name = "difftest"
