@@ -103,9 +103,7 @@ jobs:
 
   # Releases older than the minimum must refuse an emitted manifest:
   # `ninja-matrix.sh --refuse-only 1.10.2 1.11.1` exits nonzero if either
-  # accepts it. The option comes with the branch conf-ninja-min, not yet on
-  # main, so until then the guard skips the job with a notice and the job
-  # passes. Once the option exists, the job runs it with no change here.
+  # accepts it.
   old-ninja-refuses:
     name: ninja 1.10.2 and 1.11.1 refuse
     runs-on: macos-latest
@@ -114,19 +112,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Look for --refuse-only
-        id: has
-        run: |
-          if grep -q -- --refuse-only test/ninja-matrix.sh; then
-            echo "check=true" >>"$GITHUB_OUTPUT"
-          else
-            echo "::notice::test/ninja-matrix.sh has no --refuse-only option yet (see conf-ninja-min); skipped"
-            echo "check=false" >>"$GITHUB_OUTPUT"
-          fi
-      - if: steps.has.outputs.check == 'true'
-        uses: ./.github/actions/setup
+      - uses: ./.github/actions/setup
       - name: test/ninja-matrix.sh --refuse-only 1.10.2 1.11.1
-        if: steps.has.outputs.check == 'true'
         run: nix develop -c test/ninja-matrix.sh --refuse-only 1.10.2 1.11.1
 
   # Cheap harnesses that ninja-matrix.sh does not run: the restat cmp
