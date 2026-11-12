@@ -4,7 +4,8 @@
 Each case (`<i>.json`) holds a description (sources, edges and steps of
 edits) and the steps the model computed from it. For each step the driver
 writes and deletes the step's files (deletions are products, `.ninja_log`
-and `.ninja_deps`), runs `mise gen` and compares `build.ninja` with the
+and `.ninja_deps`), sets the mtime of the step's aged products to one
+second after the epoch, runs `mise gen` and compares `build.ninja` with the
 expected text, then runs `ninja` with a random `-j` level. A step builds
 every edge, or only some targets (`ninja TARGET...`), or has one edge fail:
 the helper fails when `FZ_FAIL` names its first output. Ninja then runs
@@ -251,6 +252,9 @@ def replay_steps(d, steps, jobs, fz, desc, stats=None, missing_ok=False):
             write_fresh(d, s["write"])
             for p in s["delete"]:
                 (d / p).unlink(missing_ok=True)
+            for p in s["age"]:
+                if (d / p).exists():
+                    os.utime(d / p, ns=(10**9, 10**9))
             run([MISE, "gen", "."], d)
             if (d / "build.ninja").read_text() != s["ninja"]:
                 raise Fail("manifest", "build.ninja differs from the expected manifest")
@@ -473,7 +477,7 @@ def replay(case, seed, keep, fz, do_shrink, missing_ok):
             shutil.rmtree(d.with_name(d.name + ".expect"))
         return None, stats
     kind, msg = r
-    report = f"case {name}: {msg}"
+    report = f"case {name} [{kind}]: {msg}"
     if do_shrink:
         t = time.time()
         small, trials, r2 = shrink(name, data["desc"], jobs, kind, fz, missing_ok)

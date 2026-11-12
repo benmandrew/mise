@@ -1,5 +1,5 @@
 import Lean.Data.Json
-import Mise.Model.Dsl
+import Mise.Model.Basic
 import Mise.Frontend.Toml
 import MiseTest.Rng
 
@@ -15,8 +15,9 @@ writes its case to `OUT`.
 A case is a random valid graph and a sequence of steps. Every edge runs the
 helper `test/fz.c`, and `sem` below computes the same contents and reads, so
 the model predicts what real Ninja must do. Each step lists the files to
-write (sources and `mise.toml`) and to delete (products, `.ninja_log`,
-`.ninja_deps`), the `build.ninja` that `mise gen` must produce, how to
+write (sources and `mise.toml`), to delete (products, `.ninja_log`,
+`.ninja_deps`) and to age (products whose mtime goes back to the distant
+past), the `build.ninja` that `mise gen` must produce, how to
 build (every edge, some targets, or with one edge failing), the edges the
 model runs, and the contents of every output the case has had afterwards.
 
@@ -273,6 +274,9 @@ inductive Edit where
   | rmEdge (out : Path)
   /-- Append an edge, when its inputs exist and its outputs are new. -/
   | addEdge (e : EdgeD)
+  /-- Set a product's mtime to the distant past, as restoring it from a
+  backup would. The case does not change, only the state. -/
+  | age (out : Path)
   deriving Inhabited, ToJson, FromJson
 
 def Edit.describe : Edit → String
@@ -287,6 +291,7 @@ def Edit.describe : Edit → String
   | .delDeps => "delete .ninja_deps"
   | .rmEdge o => s!"remove edge {o}"
   | .addEdge e => s!"add edge {e.outs.headD ""}"
+  | .age o => s!"age {o}"
 
 def bumpTag (vs : List (String × String)) : List (String × String) :=
   vs.map fun (k, v) => if k == "tag" then (k, "t" ++ toString ((String.ofList (v.toList.drop 1)).toNat! + 1)) else (k, v)
@@ -309,7 +314,7 @@ def Case.apply (c : Case) : Edit → Case
   | .addInc p q => c.modSrc p fun s => { s with includes := s.includes ++ [q] }
   | .rmInc p q => c.modSrc p fun s => { s with includes := s.includes.erase q }
   | .retag o => { c with edges := c.edges.map fun g => if g.outs.headD "" == o then { g with vars := bumpTag g.vars } else g }
-  | .touch _ | .delOut _ | .delLog | .delDeps => c
+  | .touch _ | .delOut _ | .delLog | .delDeps | .age _ => c
   | .rmEdge o => match c.edges.find? (·.outs.headD "" == o) with
     | some e => if c.read e then c else { c with edges := c.edges.erase e, removed := c.removed ++ [e] }
     | none => c
@@ -326,7 +331,7 @@ def Case.candidates (c : Case) : List (List Edit) :=
   [ps.map .bump, ps.map .comment, adds, rms, firsts.map .retag, ps.map .touch,
    (products c.graph).map .delOut, [.delLog, .delDeps],
    ((c.edges.filter fun e => !c.read e).map (·.outs.headD "")).map .rmEdge,
-   ((c.removed.filter c.canAdd).map EdgeD.ofEdge).map .addEdge].filter (!·.isEmpty)
+   ((c.removed.filter c.canAdd).map EdgeD.ofEdge).map .addEdge, (products c.graph).map .age].filter (!·.isEmpty)
 
 /-- A new static edge reading sources and products. -/
 def genAdd (c : Case) : GenM Edit := do
@@ -444,11 +449,17 @@ structure StepD where
   tried : Bool := false
   deriving ToJson, FromJson, Inhabited
 
+/-- Product `p` with mtime 0, older than every source and every run. The
+driver sets the real file's mtime to one second after the epoch. -/
+def age (st : St String) (p : Path) : St String :=
+  { st with fs := fun q => if q = p then (st.fs p).map fun (v, _) => (v, 0) else st.fs q }
+
 /-- One step: write the changed files and apply the other edits, check the
 manifest, build, and record what the model runs and the contents it
 leaves. `known` lists every path the case has used, so that the state keeps
-the outputs of removed edges. -/
-def step (sd : StepD) (old : Option Case) (c : Case) (known : List Path) (st : St String) :
+the outputs of removed edges. With `strict`, also check that a second
+build runs nothing and that depfile edges read only what they may. -/
+def step (strict : Bool) (sd : StepD) (old : Option Case) (c : Case) (known : List Path) (st : St String) :
     Except String (Json × St String × List Path) := do
   let g := c.graph
   unless g.check do throw "the graph is not valid"
@@ -469,7 +480,8 @@ def step (sd : StepD) (old : Option Case) (c : Case) (known : List Path) (st : S
   let dels := dedup (sd.edits.filterMap fun | .delOut p => some p | _ => none) |>.filter outs.contains
   let delLog := sd.edits.any fun | .delLog => true | _ => false
   let delDeps := sd.edits.any fun | .delDeps => true | _ => false
-  let st := st.edits (changed.map fun s => (s.path, s.text))
+  let ages := dedup (sd.edits.filterMap fun | .age p => some p | _ => none) |>.filter (products g).contains
+  let st := ages.foldl age (st.edits (changed.map fun s => (s.path, s.text)))
   let st := { st with fs := fun p => if dels.contains p then none else st.fs p }
   let st := if delLog then { st with log := fun _ => none } else st
   let st := if delDeps then { st with deps := fun _ => none } else st
@@ -483,18 +495,19 @@ def step (sd : StepD) (old : Option Case) (c : Case) (known : List Path) (st : S
     | some f, _, _ => pure (failTrace f es [] st)
     | none, _, _ => let r := buildTrace sem (if targets.isEmpty then es else closure es targets) st; pure (r.1, r.2, false)
   let st' := flatten known st'
-  if fail.isNone then
-    unless (buildTrace sem (if targets.isEmpty then es else closure es targets) st').2.isEmpty do
-      throw "the model is not idempotent"
-  for e in es do
-    if e.dyn then
-      for o in e.outs do
-        for k in (st'.deps o).getD [] do
-          unless g.isSource k || e.reads.contains k do throw s!"{o} read {k}, which it may not"
+  if strict then
+    if fail.isNone then
+      unless (buildTrace sem (if targets.isEmpty then es else closure es targets) st').2.isEmpty do
+        throw "the model is not idempotent"
+    for e in es do
+      if e.dyn then
+        for o in e.outs do
+          for k in (st'.deps o).getD [] do
+            unless g.isSource k || e.reads.contains k do throw s!"{o} read {k}, which it may not"
   let write := changed.map (fun s => (s.path, s.text)) ++ (if tomlChanged then [("mise.toml", toml)] else [])
   let delete := dels ++ (if delLog then [".ninja_log"] else []) ++ (if delDeps then [".ninja_deps"] else [])
   let j := Json.mkObj [("edits", toJson (sd.edits.map (·.describe))), ("write", jsonMap write),
-    ("delete", toJson delete), ("ninja", Json.str ninja), ("targets", toJson targets),
+    ("delete", toJson delete), ("age", toJson ages), ("ninja", Json.str ninja), ("targets", toJson targets),
     ("fail", toJson fail), ("stop", toJson (fail.isSome && sd.stop)), ("tried", toJson tried),
     ("edges", toJson (c.edges.map EdgeD.ofEdge)), ("ran", toJson (sortStrs (ran.map (·.outs.headD "")))),
     ("products", Json.mkObj (outs.map fun p => (p, match st'.fs p with
@@ -546,15 +559,15 @@ structure Desc where
   steps : List StepD
   deriving ToJson, FromJson
 
-def runCase (c0 : Case) (steps : List StepD) : Except String Json := do
-  let (j0, st0, k0) ← step {} none c0 [] empty
+def runCase (strict : Bool) (c0 : Case) (steps : List StepD) : Except String Json := do
+  let (j0, st0, k0) ← step strict {} none c0 [] empty
   let mut st := st0
   let mut known := k0
   let mut c := c0
   let mut js := #[j0]
   for sd in steps do
     let c' := sd.edits.foldl Case.apply c
-    let (j, st', known') ← step sd (some c) c' known st
+    let (j, st', known') ← step strict sd (some c) c' known st
     js := js.push j
     st := st'
     known := known'
@@ -578,11 +591,14 @@ end MiseTest.Fuzz
 
 open MiseTest.Fuzz Lean in
 def main (args : List String) : IO UInt32 := do
+  -- `test/mutants.py` turns the model's own checks off, to see what the
+  -- checks against Ninja catch.
+  let strict := (← IO.getEnv "FUZZGEN_NO_SELF_CHECK").isNone
   if let ["expect", src, dst] := args then
     let d ← match Json.parse (← IO.FS.readFile src) >>= fromJson? (α := Desc) with
       | .ok d => pure d
       | .error e => IO.eprintln s!"{src}: {e}"; return 2
-    match runCase { srcs := d.srcs, edges := d.edges.map (·.toEdge) } d.steps with
+    match runCase strict { srcs := d.srcs, edges := d.edges.map (·.toEdge) } d.steps with
     | .error e => IO.eprintln s!"{src}: {e}"; return 1
     | .ok j => IO.FS.writeFile dst j.compress; return 0
   let (dir, n, seed, o) := match args with
@@ -592,7 +608,7 @@ def main (args : List String) : IO UInt32 := do
   IO.FS.createDirAll dir
   for i in [0:n] do
     let (c, steps) := genOne o seed i
-    match runCase c steps with
+    match runCase strict c steps with
     | .error e => IO.eprintln s!"case {i}: {e}"; return 1
     | .ok j => IO.FS.writeFile s!"{dir}/{i}.json" j.compress
   return 0

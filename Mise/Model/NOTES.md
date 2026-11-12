@@ -72,4 +72,4 @@ Spall et al. ([Forward build systems, formally](https://doi.org/10.1145/3497775.
 
 ## Tests
 
-`test/MiseTest/Stage6.lean`, `test/MiseTest/Stage7.lean` and `test/stage6-props.sh`; see `docs/testing.md`.
+`test/MiseTest/Stage6.lean`, `test/MiseTest/Stage7.lean`, `test/stage6-props.sh` and `test/fuzz.sh`. `test/mutants.sh` mutates the definitions in `Basic.lean` and checks that the random-graph harness notices; see `docs/testing.md`.
