@@ -1,0 +1,68 @@
+name: Set up Nix and Lake
+description: >-
+  Install Nix, restore the Nix store and the Lake build from the GitHub cache,
+  and realise the dev shell, so that later steps can run `nix develop -c ...`.
+
+inputs:
+  save-lake:
+    description: >-
+      'true' to save `.lake` at the end of the job. Only a job that builds
+      every Lake target should save it, so that a job that builds only some
+      targets does not store a partial cache under the full key.
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    - name: Install Nix
+      uses: cachix/install-nix-action@75c75c31ebece974e48ebc36b4ad125bd97bd97b # v31.11.3
+      with:
+        github_access_token: ${{ github.token }}
+
+    # The Nix store: Lean, Python, ccache, the C compiler and the Ninja
+    # releases of the conformance matrix, which the flake builds from source.
+    # The dev shell's closure is about 3.9 GiB on aarch64-darwin. GitHub keeps
+    # 10 GB of caches per repository, so only macOS saves the store; the
+    # experimental Linux jobs restore nothing and fetch from cache.nixos.org.
+    - name: Restore the Nix store
+      uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569 # v7.0.2
+      with:
+        primary-key: nix-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.nix', 'flake.lock') }}
+        restore-prefixes-first-match: nix-${{ runner.os }}-${{ runner.arch }}-
+        save: ${{ runner.os == 'macOS' }}
+
+    # Every job realises the same paths, so whichever job saves the store
+    # first saves all of them. On Linux only the dev shell is realised, and
+    # test/ninja-matrix.sh builds the one release it needs.
+    - name: Realise the dev shell and the Ninja releases
+      shell: bash
+      run: |
+        nix develop -c true
+        if [ "$RUNNER_OS" = macOS ]; then
+          sys=$(nix eval --raw --impure --expr builtins.currentSystem)
+          read -r -a pkgs <<<"$(nix eval --raw ".#packages.$sys" \
+            --apply 'ps: builtins.concatStringsSep " " (builtins.attrNames ps)')"
+          nix build --no-link "${pkgs[@]/#/.#}"
+        fi
+
+    # The Lake build. A clean `lake build` of every target took 10 seconds
+    # on an 8-core M1 shared with other jobs (46 jobs, 22 MB of `.lake`), so
+    # the cache saves little today; it is here for when the proofs grow. The
+    # restore prefix lets a partial match still skip the unchanged modules.
+    - name: Restore and save the Lake build
+      if: inputs.save-lake == 'true'
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: .lake
+        key: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain', 'lake-manifest.json') }}-${{ hashFiles('**/*.lean') }}
+        restore-keys: |
+          lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain', 'lake-manifest.json') }}-
+
+    - name: Restore the Lake build
+      if: inputs.save-lake != 'true'
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: .lake
+        key: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain', 'lake-manifest.json') }}-${{ hashFiles('**/*.lean') }}
+        restore-keys: |
+          lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('lean-toolchain', 'lake-manifest.json') }}-

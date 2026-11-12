@@ -1,0 +1,230 @@
+# The heavy harnesses, once a day and on demand. A scheduled run does the
+# work only when main has moved since the last successful nightly run; a
+# run from workflow_dispatch always does it. See docs/testing.md for each
+# harness and its arguments.
+#
+# Every heavy job runs on macos-latest (arm64, the flake's aarch64-darwin),
+# where the harnesses have run. Times in the comments are local, on an
+# 8-core M1; the runner has 3 cores, so expect them to be 2 to 3 times
+# longer there.
+name: Nightly
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  # Decide whether to run. The first run, with no earlier success, runs.
+  # A failed nightly does not count, so the next night tries the same
+  # commit again.
+  changed:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+    outputs:
+      run: ${{ steps.check.outputs.run }}
+    steps:
+      - id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          EVENT: ${{ github.event_name }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" = workflow_dispatch ]; then
+            run=true why="started by hand"
+          else
+            last=$(gh run list --workflow nightly.yml --branch main --status success \
+              --limit 1 --json headSha --jq '.[0].headSha // ""')
+            if [ -z "$last" ]; then
+              run=true why="no earlier successful nightly"
+            elif [ "$last" = "$SHA" ]; then
+              run=false why="main is still at $SHA, the last successful nightly"
+            else
+              run=true why="main moved from $last to $SHA"
+            fi
+          fi
+          echo "run=$run: $why"
+          echo "run=$run" >>"$GITHUB_OUTPUT"
+
+  # 500 random graphs (59 seconds on 8 cores, per docs/testing.md).
+  fuzz:
+    needs: changed
+    if: needs.changed.outputs.run == 'true'
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - name: test/fuzz.sh 500
+        run: nix develop -c test/fuzz.sh 500
+      - name: Upload the shrunk cases
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: fuzz-shrunk
+          path: test/out/fuzz/shrunk/
+          if-no-files-found: ignore
+
+  # Every ordered triple of edit kinds (80 seconds on 8 cores).
+  props:
+    needs: changed
+    if: needs.changed.outputs.run == 'true'
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - name: test/stage6-props.sh --order 3
+        run: nix develop -c test/stage6-props.sh --order 3
+
+  # sandbox-exec and DYLD_INSERT_LIBRARIES are macOS only. Whether the
+  # hosted runner allows sandbox-exec profiles, and keeps DYLD_* for the Nix
+  # store's programs, is unverified until the first run.
+  conf-sandbox:
+    needs: changed
+    if: needs.changed.outputs.run == 'true'
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - name: test/conf-sandbox.sh
+        run: nix develop -c test/conf-sandbox.sh
+
+  conf-depfiles:
+    needs: changed
+    if: needs.changed.outputs.run == 'true'
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - name: test/conf-depfiles.sh
+        run: nix develop -c test/conf-depfiles.sh
+
+  conf-determinism:
+    needs: changed
+    if: needs.changed.outputs.run == 'true'
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - name: test/conf-determinism.sh
+        run: nix develop -c test/conf-determinism.sh
+
+  # 2,500 documents of each kind (16 seconds on 8 cores).
+  toml-diff:
+    needs: changed
+    if: needs.changed.outputs.run == 'true'
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - name: test/toml-diff.sh
+        run: nix develop -c test/toml-diff.sh
+
+  # About 15 minutes locally on 2 workers; the runner has 3.
+  mutants:
+    needs: changed
+    if: needs.changed.outputs.run == 'true'
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - name: test/mutants.sh
+        run: nix develop -c test/mutants.sh
+      - name: Upload the results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: mutants
+          path: test/out/mutants/results.md
+          if-no-files-found: ignore
+
+  # The full matrix, 500 random-graph cases per release. 1.11.1 is allowed
+  # to fail for the Ninja bug described at the `ninja` job in ci.yml.
+  ninja:
+    name: ninja ${{ matrix.release }}
+    needs: changed
+    if: needs.changed.outputs.run == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        release: ["1.11.1", "1.12.1", "1.13.2"]
+    runs-on: macos-latest
+    continue-on-error: ${{ matrix.release == '1.11.1' }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - name: test/ninja-matrix.sh
+        env:
+          RELEASE: ${{ matrix.release }}
+        run: nix develop -c test/ninja-matrix.sh "$RELEASE"
+      - name: Upload the harness logs
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ninja-${{ matrix.release }}
+          path: |
+            test/out/matrix/
+            test/out/fuzz/shrunk/
+          if-no-files-found: ignore
+
+  # Not pass/fail: it records what Ninja does under each mtime fault. The
+  # HFS+ faults need hdiutil, and whether the runner lets it attach a disk
+  # image is unverified. libfaketime adds the clock-skew fault.
+  mtime-faults:
+    needs: changed
+    if: needs.changed.outputs.run == 'true'
+    runs-on: macos-latest
+    continue-on-error: true
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - name: test/mtime-faults.sh
+        run: nix develop -c nix shell --inputs-from . nixpkgs#libfaketime -c test/mtime-faults.sh
+      - name: Upload the report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: mtime-faults-report
+          path: test/out/mtime-faults/report.txt
+          if-no-files-found: warn

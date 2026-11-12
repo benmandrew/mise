@@ -1,0 +1,163 @@
+# Checks for every pull request and every push to main. The heavy harnesses
+# run in nightly.yml. Each job runs its commands in the flake's dev shell
+# (`nix develop -c ...`), as docs/testing.md says to run them locally.
+#
+# OS: the harnesses have run only on macOS, so the required jobs run on
+# macos-latest (arm64, the flake's aarch64-darwin). The ubuntu-latest jobs
+# (x86_64-linux, which the flake also declares) are an experiment: they are
+# marked continue-on-error and have never been run, so they are unverified.
+#
+# Local times are for one run of each job's commands inside `nix develop` on
+# an 8-core M1 shared with other jobs (load average 4 to 17), with a warm
+# Nix store; `proofs` ran first, from an empty .lake. The macos-latest runner
+# has 3 cores, and each job also spends time installing Nix and restoring
+# the caches, which has not been measured.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  # Build, no sorry/admit, axioms of the headline theorems, docs/trusted.md
+  # up to date. The proofs do not depend on the Ninja release, so they run
+  # once. This is the only job that saves the Lake cache, since it builds
+  # every target. Local time: 13 s, from an empty .lake.
+  proofs:
+    name: proofs (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            experimental: false
+          # Unverified: never run on Linux.
+          - os: ubuntu-latest
+            experimental: true
+    runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.experimental }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          save-lake: "true"
+      - name: scripts/check.sh
+        run: nix develop -c scripts/check.sh
+
+  # The four shell harnesses (stage3-diff, stage4-hello, stage6-props
+  # --order 2, fuzz) against each supported Ninja release, with 150
+  # random-graph cases in place of 500. Local times: 37 s on 1.12.1, 40 s on
+  # 1.13.2 and 107 s on 1.11.1, which includes shrinking its failures.
+  #
+  # Known failure: on 1.11.1, 10 of the 150 random-graph cases fail on
+  # `ninja -n`, all after a step that deletes .ninja_deps. When a restat
+  # command keeps its output, Ninja before 1.12 logs the mtime of the newest
+  # input it knew of at the start of the build, which leaves out the
+  # discovered inputs once the deps entry is gone. This is a Ninja bug, fixed
+  # in 1.12 (see docs/testing.md on the conf-ninja-min branch), so the 1.11.1
+  # job may fail without failing the run. Its result still shows in the
+  # checks list.
+  ninja:
+    name: ninja ${{ matrix.release }} (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            release: "1.11.1"
+            allow-failure: true
+          - os: macos-latest
+            release: "1.12.1"
+            allow-failure: false
+          - os: macos-latest
+            release: "1.13.2"
+            allow-failure: false
+          # Experiment, unverified: never run on Linux.
+          - os: ubuntu-latest
+            release: "1.13.2"
+            allow-failure: true
+    runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.allow-failure }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - name: test/ninja-matrix.sh --fuzz 150
+        env:
+          RELEASE: ${{ matrix.release }}
+        run: nix develop -c test/ninja-matrix.sh --fuzz 150 "$RELEASE"
+      - name: Upload the harness logs
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ninja-${{ matrix.release }}-${{ matrix.os }}
+          path: |
+            test/out/matrix/
+            test/out/fuzz/shrunk/
+          if-no-files-found: ignore
+
+  # Ninja 1.10.2 must refuse an emitted manifest. The check comes with the
+  # branch conf-ninja-min (not yet merged), which emits
+  # `ninja_required_version = 1.11.1`. On that branch the check runs at the
+  # start of every test/ninja-matrix.sh run and has no option to run it
+  # alone. TODO(conf-ninja-min): give test/ninja-matrix.sh a `--refuse-only`
+  # option that runs the check and exits; this job then runs it. Until the
+  # option exists, the job reports that the check is missing and passes.
+  ninja-1-10-2-refuses:
+    name: ninja 1.10.2 refuses
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Look for the check
+        id: has
+        run: |
+          if test/ninja-matrix.sh --help | grep -q -- --refuse-only; then
+            echo "check=true" >>"$GITHUB_OUTPUT"
+          else
+            echo "::notice::test/ninja-matrix.sh has no --refuse-only option yet (see conf-ninja-min); skipped"
+            echo "check=false" >>"$GITHUB_OUTPUT"
+          fi
+      - if: steps.has.outputs.check == 'true'
+        uses: ./.github/actions/setup
+      - name: test/ninja-matrix.sh --refuse-only
+        if: steps.has.outputs.check == 'true'
+        run: nix develop -c test/ninja-matrix.sh --refuse-only
+
+  # Cheap harnesses that ninja-matrix.sh does not run: the restat cmp
+  # wrapper, the hello-c example, and the TOML parser against tomllib on 250
+  # documents of each kind in place of 2,500. Local times: 2 s, 1 s and 2 s.
+  extras:
+    name: restat-cmp, stage4-hello, toml-diff
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+      - name: test/restat-cmp.sh
+        run: nix develop -c test/restat-cmp.sh
+      - name: test/stage4-hello.sh
+        run: nix develop -c test/stage4-hello.sh
+      - name: test/toml-diff.sh 250
+        run: nix develop -c test/toml-diff.sh 250
