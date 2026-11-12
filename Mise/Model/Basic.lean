@@ -64,9 +64,9 @@ end Mise.Syntax.Manifest
 namespace Mise.Model
 open Mise Mise.Syntax Mise.Frontend
 
-/-- File system, build log, deps log and clock. A log entry is the command
-and the time recorded for the output; a deps entry is the list of paths the
-command read.
+/-- The model's state: file system, build log, deps log and clock. A log
+entry is the command and the time recorded for an output. A deps entry is
+the list of paths the command read.
 Gloss: states over {V}
 Gloss.one: state -/
 structure St (V : Type) where
@@ -85,12 +85,12 @@ variable {V : Type} [Inhabited V]
 
 namespace St
 
-/-- Contents; a missing file reads as `default`.
+/-- The contents of `p`, or `default` when the file is missing.
 Gloss: the contents of {p} in {st}
 Gloss.fun: the contents of {st} -/
 def content (st : St V) (p : Path) : V := ((st.fs p).map (·.1)).getD default
 
-/-- Modification time; a missing file has time 0.
+/-- The modification time (mtime) of `p`, or 0 when the file is missing.
 Gloss: the mtime of {p} in {st} -/
 def mtime (st : St V) (p : Path) : Nat := ((st.fs p).map (·.2)).getD 0
 
@@ -99,8 +99,9 @@ def newest (st : St V) : List Path → Nat
   | [] => 0
   | p :: ps => max (st.mtime p) (st.newest ps)
 
-/-- The inputs Ninja checks for an output: the static inputs, and for a
-depfile edge the recorded deps. `none` when a depfile edge has no entry. -/
+/-- The inputs Ninja checks for output `o`: the static inputs, plus, for a
+depfile edge, the deps recorded for `o`. `none` when a depfile edge has no
+deps entry for `o`. -/
 def effIns (st : St V) (e : MEdge) (o : Path) : Option (List Path) :=
   if e.dyn then (st.deps o).map (e.ins ++ ·) else some e.ins
 
@@ -146,7 +147,9 @@ def run (sem : Sem V) (st : St V) (e : MEdge) : St V :=
 def step (sem : Sem V) (st : St V) (e : MEdge) : St V :=
   if st.dirty e then st.run sem e else st
 
-/-- A source edit: new contents at a fresh time. -/
+/-- An edit of `p`: the clock advances by one, and `p` gets contents `v`
+stamped with the new time. Any path can be edited; `Reach` allows only
+sources. -/
 def edit (st : St V) (p : Path) (v : V) : St V :=
   { st with fs := fun q => if q = p then some (v, st.clock + 1) else st.fs q, clock := st.clock + 1 }
 
@@ -172,7 +175,8 @@ def EdgeOK (sem : Sem V) (st : St V) (e : MEdge) : Prop :=
 
 end St
 
-/-- Visit edges in order, running the dirty ones. Also returns the edges run.
+/-- Visit the edges in list order, running each one that is dirty when it is
+visited. Returns the final state and the edges run, in order.
 Gloss: the trace of visiting {#2} from {#3}
 Gloss.fst: the state after visiting {#2} from {#3}
 Gloss.snd: the edges run by visiting {#2} from {#3} -/

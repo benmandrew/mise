@@ -49,7 +49,8 @@ def shellList (sep : String) (ps : List Path) : String := sep.intercalate (ps.ma
 /-- The last binding of `k` in a rule. -/
 def Rule.get (r : Rule) (k : String) : Option EvalString := (r.bindings.reverse.find? (·.1 == k)).map (·.2)
 
-/-- What Ninja stores for an edge after parsing it. -/
+/-- What Ninja stores for an edge after parsing it: the edge, its rule, and
+its own scope. -/
 structure EdgeInfo where
   edge : Edge
   rule : Rule
@@ -79,7 +80,8 @@ def EdgeInfo.binding (file : Scope) (c : EdgeInfo) (k : String) : String :=
 def EdgeInfo.command (file : Scope) (c : EdgeInfo) : String := c.binding file "command"
 
 /-- Whether Ninja reads the edge's dependencies from its deps log
-(`deps = gcc`): Ninja checks only that the binding is nonempty. -/
+(`deps = gcc`). Ninja checks only that the evaluated `deps` binding is
+nonempty. -/
 def EdgeInfo.isDyn (file : Scope) (c : EdgeInfo) : Bool := c.binding file "deps" != ""
 
 /-- Whether Ninja re-reads the outputs' mtimes after the command

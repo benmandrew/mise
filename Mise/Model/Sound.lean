@@ -726,9 +726,12 @@ end
 
 /-! ## Histories -/
 
-/-- The states reachable from empty logs by source edits and by running or
-skipping edges in any order. Interrupted builds, builds of some targets, and
-full builds are all sequences of steps. -/
+/-- The states reachable from a start state by source edits and edge visits,
+in any order. The start state has empty build and deps logs, and every
+mtime and log time in it is at most its clock (`St.Fresh`). An edit changes
+a path that no edge in `es` writes. A visit to an edge in `es` runs it if it
+is dirty and otherwise changes nothing (`St.step`). Interrupted builds,
+builds of some targets, and full builds are all sequences of steps. -/
 inductive Reach (es : List MEdge) : St V → Prop
   | init {st : St V} : st.Fresh → (∀ p, st.log p = none) → (∀ p, st.deps p = none) → Reach es st
   | edit {st : St V} (p : Path) (v : V) : Reach es st → (∀ e ∈ es, p ∉ e.outs) → Reach es (st.edit p v)

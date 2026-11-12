@@ -9,8 +9,9 @@ manifest well formed. The parser model (`Mise.Syntax.Parse`) runs the same
 
 namespace Mise.Syntax
 
-/-- A path is a string. `validPath` says which strings the printer and the
-parser model accept.
+/-- A path is a string. `validPath` says which strings the parser model
+accepts as paths, and the printer writes those strings so that they parse
+back.
 Gloss: paths
 Gloss.one: path -/
 abbrev Path := String

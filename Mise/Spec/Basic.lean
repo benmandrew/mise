@@ -12,7 +12,7 @@ one correct store for any set of sources.
 namespace Mise
 
 /-- A build specification: which keys are sources, and for every key a task
-that computes its value from the values of other keys. Correctness
+that computes its value from the values of the keys it fetches. Correctness
 (`Correct`) ignores the task of a source.
 Gloss: specifications with keys {K} and values {V}
 Gloss.one: specification -/
@@ -42,7 +42,9 @@ namespace BuildSpec
 
 variable {K V : Type} (b : BuildSpec K V)
 
-/-- `R` is a correct result of building `b` from sources `S`.
+/-- `R` is a correct result of building `b` from sources `S`: every source
+holds its value in `S`, and every other key holds what its task computes
+when it fetches from `R`.
 Gloss: {R} is a correct result of {b} when the sources are {S} -/
 def Correct (S R : Store K V) : Prop :=
   (∀ k, b.isSource k = true → R k = S k) ∧

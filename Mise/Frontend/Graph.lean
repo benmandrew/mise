@@ -32,9 +32,10 @@ bindings with these names would change what Ninja runs, and a template
 reference to `versionVar` would read the emitted top-level binding. -/
 def reserved : List String := ["in", "out", "in_newline", versionVar] ++ ruleKeys
 
-/-- A rule. The command and description are Ninja values; `${in}` and
+/-- A rule. The command and description are Ninja values. `${in}` and
 `${out}` stand for the edge's explicit inputs and outputs, and any other
-variable is bound by the edge. An empty description is not emitted. -/
+variable takes its value from the edge's variables, or is empty when the
+edge has none of that name. An empty description is not emitted. -/
 structure GRule where
   name : String
   command : EvalString
@@ -64,7 +65,7 @@ namespace GEdge
 
 /-- Explicit then implicit outputs. -/
 def allOuts (e : GEdge) : List Path := e.outs ++ e.implicitOuts
-/-- The inputs the command reads: explicit and implicit. -/
+/-- Explicit then implicit inputs: the inputs a static command reads. -/
 def inputs (e : GEdge) : List Path := e.ins ++ e.implicitIns
 /-- Explicit, implicit and order-only inputs. -/
 def allIns (e : GEdge) : List Path := e.ins ++ e.implicitIns ++ e.orderOnly
@@ -78,7 +79,8 @@ def look (e : GEdge) (v : String) : String :=
 end GEdge
 
 /-- A name for a set of targets, emitted as a `phony` edge. Building the
-name builds the targets. No edge reads it, and no command runs for it.
+name builds the targets, and no command runs for the name itself. In a
+valid graph no edge reads an alias name (`aliasesOK`).
 Gloss: aliases -/
 structure GAlias where
   name : Path
@@ -162,9 +164,14 @@ def Graph.check (g : Graph) : Bool :=
     (g.defaults.all fun d => g.edges.any (·.allOuts.contains d) || g.aliases.any (·.name == d)) &&
     g.edges.all (depfileOutsOK g.rules)
 
-/-- Every input is a declared source or an output of an earlier edge, every
-output has one producer, every name and path can be written in Ninja, and
-every depfile edge has one explicit output.
+/-- `g` passes `Graph.check`. So every input is a declared source or an
+output of an earlier edge, and every output has one producer and is not a
+declared source. Every edge names a rule of `g`, every name and path can be
+written in Ninja, and every depfile edge has one explicit output. Rule
+names are distinct, and so are alias names. An alias name is neither a
+declared source nor an edge output, every alias has at least one target,
+and each alias target is a declared source or an edge output. Each default
+target is an edge output or an alias.
 Gloss: {g} is valid -/
 def Graph.Valid (g : Graph) : Prop := g.check = true
 
@@ -182,7 +189,8 @@ def fetchAll {K V : Type} : List K → Task K V (List V)
   | [] => .pure []
   | k :: ks => .fetch k fun v => (fetchAll ks).bind fun vs => .pure (v :: vs)
 
-/-- What commands mean.
+/-- What commands mean: `exec` for static commands, `dyn` for depfile
+commands, and `keep` for `restat` commands, with the assumption `keep_eq`.
 Gloss: command meanings over {V}
 Gloss.one: command meaning -/
 structure Sem (V : Type) where
@@ -205,25 +213,30 @@ Gloss: {sem} with `cmp` on `restat` outputs -/
 def Sem.withCmp {V : Type} [DecidableEq V] (sem : Sem V) : Sem V :=
   { sem with keep := fun a b => decide (a = b), keep_eq := fun _ _ h => of_decide_eq_true h }
 
-/-- A command as a task returning all its outputs. A static command fetches
-its explicit and implicit inputs in order. -/
+/-- A command as a task returning all its outputs. A depfile command is the
+task `sem.dyn cmd`. A static command fetches `ins` in order and returns
+`sem.exec cmd` applied to their values. -/
 def cmdTask {V : Type} (sem : Sem V) (dyn : Bool) (cmd : String) (ins : List Path) : Task Path V (List V) :=
   if dyn then sem.dyn cmd else (fetchAll ins).bind fun vs => .pure (sem.exec cmd vs)
 
-/-- Output `i` of a command. -/
+/-- Output `i` of a command task, or `default` when the task returns fewer
+than `i + 1` outputs. -/
 def outTask {V : Type} [Inhabited V] (t : Task Path V (List V)) (i : Nat) : Task Path V V :=
   t.bind fun vs => .pure (vs.getD i default)
 
 /-- The first rule whose name is the edge's rule name. -/
 def Graph.ruleOf (g : Graph) (e : GEdge) : Option GRule := g.rules.find? (·.name == e.rule)
 
-/-- The command the DSL means for an edge. -/
+/-- The command the DSL means for an edge: its rule's command, evaluated
+with the edge's variables (`GEdge.look`). The command is empty when `g` has
+no rule of that name. -/
 def Graph.cmd (g : Graph) (e : GEdge) : String :=
   match g.ruleOf e with
   | some r => evalWith e.look r.command
   | none => ""
 
-/-- Whether an edge's rule has a depfile. -/
+/-- Whether an edge's rule has a depfile; `false` when `g` has no rule of
+that name. -/
 def Graph.isDyn (g : Graph) (e : GEdge) : Bool :=
   match g.ruleOf e with
   | some r => r.depfile
@@ -235,12 +248,16 @@ def Graph.isRestat (g : Graph) (e : GEdge) : Bool :=
   | some r => r.restat
   | none => false
 
-/-- Paths no edge produces. -/
+/-- Whether no edge of `g` produces `k`. In a valid graph this holds for an
+alias name. -/
 def Graph.isSource (g : Graph) (k : Path) : Bool := (findOut GEdge.allOuts k g.edges).isNone
 
 variable {V : Type} [Inhabited V]
 
-/-- The meaning of a graph, straight from the DSL.
+/-- The meaning of a graph, straight from the DSL. A path is a source when no
+edge produces it (`Graph.isSource`). Otherwise its task is the command task
+(`cmdTask`) of the first edge that produces it, taking the output at the
+path's position among that edge's outputs.
 Gloss: the specification of {g} -/
 def Graph.spec (sem : Sem V) (g : Graph) : BuildSpec Path V where
   isSource := g.isSource
@@ -248,9 +265,10 @@ def Graph.spec (sem : Sem V) (g : Graph) : BuildSpec Path V where
     | some (_, e) => outTask (cmdTask sem (g.isDyn e) (g.cmd e) e.inputs) (e.allOuts.idxOf k)
     | none => .pure default
 
-/-- The static-ancestor condition (Stage 6): every depfile command reads
-only sources and the edge's own inputs, order-only inputs included. It holds
-for any graph without depfile rules (`Mise.Model.dynOK_static`).
+/-- The static-ancestor condition (Stage 6): for every edge whose rule has a
+depfile, the command fetches, on every branch, only paths that no edge
+produces and the edge's own inputs, order-only inputs included. It holds for
+any graph with no depfile edge (`Mise.Model.dynOK_static`).
 Gloss: the depfile commands of {g} read only allowed inputs -/
 def Graph.DynOK (sem : Sem V) (g : Graph) : Prop :=
   ∀ e ∈ g.edges, g.isDyn e = true → (sem.dyn (g.cmd e)).FetchesOnly fun k => g.isSource k = true ∨ k ∈ e.allIns
@@ -284,7 +302,8 @@ def emitEdge (e : GEdge) : Edge :=
 and the targets are the explicit inputs. -/
 def emitAlias (a : GAlias) : Edge := { outs := [a.name], rule := "phony", ins := a.targets }
 
-/-- The first statement of every emitted manifest. -/
+/-- The first statement of every emitted manifest: the top-level binding of
+`ninja_required_version` (`versionVar`) to `ninjaMinVersion`. -/
 def versionStmt : Stmt := .binding versionVar [.lit ninjaMinVersion]
 
 /-- The manifest `mise` writes for a graph: the version statement
@@ -296,11 +315,13 @@ def emit (g : Graph) : Manifest :=
     g.aliases.map (Stmt.edge ∘ emitAlias) ++
     (if g.defaults.isEmpty then [] else [.default g.defaults]))⟩
 
-/-- The meaning of a manifest under the Ninja evaluation model: each output
-is computed by its edge's evaluated command, which is static or reads a
-depfile according to the edge's `deps` binding. `phony` edges run no
-command and are left out (`Elab.cmdEdges`), so paths no other edge produces
-are sources.
+/-- The meaning of a manifest under the Ninja evaluation model. Each output
+is computed by the evaluated command of the first non-`phony` edge that
+produces it.
+That command is static or reads a depfile according to the edge's `deps`
+binding. `phony` edges run no command and are left out (`Elab.cmdEdges`), so
+a path that only `phony` edges produce, or that no edge produces, is a
+source.
 Gloss: the meaning of {m} -/
 def denote (sem : Sem V) (m : Manifest) : BuildSpec Path V where
   isSource k := (findOut (·.edge.allOuts) k m.elab.cmdEdges).isNone

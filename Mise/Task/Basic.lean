@@ -75,7 +75,7 @@ def interp {M : Type → Type} [Monad M] (h : K → M V) : Task K V α → M α
   | .pure a => Pure.pure a
   | .fetch k c => h k >>= fun v => (c v).interp h
 
-/-- Run a task against a fixed store. -/
+/-- The result of a task when each fetch reads from the store `s`. -/
 def run (s : Store K V) : Task K V α → α
   | .pure a => a
   | .fetch k c => (c (s k)).run s
@@ -168,7 +168,7 @@ theorem run_eq_of_agree (t : Task K V α) (s s' : Store K V)
 
 /-! ## Static fetch bound -/
 
-/-- Every fetch node anywhere in the tree, on every branch, satisfies `P`. -/
+/-- On every branch of the tree, every `fetch` node's key satisfies `P`. -/
 inductive FetchesOnly (P : K → Prop) : Task K V α → Prop
   | pure (a : α) : FetchesOnly P (.pure a)
   | fetch (k : K) (c : V → Task K V α) :

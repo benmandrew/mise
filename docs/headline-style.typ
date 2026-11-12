@@ -47,11 +47,12 @@
 }
 
 #let how-to-read = [
-  The English under each statement is written by `test/MiseTest/Gloss.lean` from the elaborated statement, with each definition's `Gloss:` template; a linked phrase leads to its definition. Parentheses mark an argument that contains a connective, and templates leave out `sem`, the meaning of commands.
+  `test/MiseTest/Gloss.lean` writes the English under each statement from the elaborated statement, using the `Gloss:` template of each definition it names. A linked phrase leads to its definition. Parentheses mark an argument that contains a connective or a binder. Templates leave out `sem`, the meaning of commands.
 ]
 
 #let intro(body) = {
   body
+  parbreak()
   how-to-read
   outline(depth: 1, indent: auto)
 }
@@ -70,7 +71,7 @@
 }
 
 #let defs-intro = [
-  The definitions a core statement names, and the ones they name in turn, in import order. The printer and the parser are shown but not expanded.
+  This part shows the definitions that a core statement names, and the definitions that those name in turn, file by file in import order. The printer and the parser appear, but the definitions they use do not.
 ]
 
 #let file-heading(file) = block(
@@ -93,7 +94,7 @@
 #let no-doc = text(fill: red)[No docstring.]
 
 #let omitted(n, total, names) = block(above: 1.8em)[
-  #strong[Not shown.] The other #n of the #total trusted declarations, which the ones above use: #names. `docs/trusted.md` lists all of them with their sources; the printer and parser among them are covered by the round trip in `meaning` and by `test/stage3-diff.sh` against Ninja.
+  #strong[Not shown.] The other #n of the #total trusted declarations, which the headline theorems also rest on: #names. `docs/trusted.md` lists all of them with their sources. The round trip in `meaning` and the comparison with Ninja in `test/stage3-diff.sh` cover the printer and the parser among them.
 ]
 
 #let other-theorem(name, file, line, url, body) = block(above: 1.3em)[
@@ -102,6 +103,6 @@
   #body
 ]
 
-#let warnings-intro = [Names in a statement with no `Gloss:` template, shown in Lean notation.]
+#let warnings-intro = [These names appear in a statement but have no `Gloss:` template, so the English shows them in Lean notation.]
 
-#let omits-intro = [Arguments a template leaves out of the English.]
+#let omits-intro = [Templates leave these explicit arguments, other than `sem`, out of the English.]
