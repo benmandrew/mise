@@ -14,8 +14,7 @@ environment variable `TRUSTED_OUT` (default `docs`):
   statement as written in the source, and an English translation made by
   `Gloss.statement`. Then come, in reading order, the definitions the core
   statements name and the ones those name in turn, except that the printer
-  and parser are not expanded; the names of the other trusted declarations;
-  and the other theorems with their docstrings.
+  and parser are not expanded.
 
 It prints one line per problem: `missing docstring: X` for a trusted
 declaration without a docstring, and `no template: X` for a constant that a
@@ -423,16 +422,6 @@ open Trusted in
       typ := typ ++ s!"#def-head({tq (short d)}, {defLabel d}, {tq (modPath m)}, {a.line}, {b.line}, {sourceUrl (modPath m) a.line b.line}, ({", ".intercalate gl}{if gl.length == 1 then "," else ""}))[\n"
       typ := typ ++ (if g.rest.isEmpty then "#no-doc\n" else mdBlocks g.rest) ++ "]\n"
       typ := typ ++ s!"#raw(lang: \"lean\", block: true, {tq src})\n\n"
-  let left := omitted.toList.map fun (_, _, _, d) => tCode (short d)
-  typ := typ ++ s!"#omitted({omitted.size}, {sorted.size})[" ++ ", ".intercalate left ++ "]\n\n"
-  -- The other theorems: name, location and docstring.
-  typ := typ ++ "= Other theorems\n\n"
-  for (_, t) in thmRows do
-    if core.contains t then continue
-    let (m, _, a, b) ← location t
-    let doc := reviewDoc ((← liftCoreM (findDocString? env t)).getD "")
-    typ := typ ++ s!"#other-theorem({tq (shortThm t)}, {tq (modPath m)}, {a.line}, {sourceUrl (modPath m) a.line b.line})[\n" ++ mdBlocks doc ++ "]\n"
-  typ := typ ++ "\n"
   for n in sortNames noTemplate do
     report := report.push s!"no template: {n}"
   for n in sortNames omits do

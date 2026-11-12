@@ -93,16 +93,6 @@
 
 #let no-doc = text(fill: red)[No docstring.]
 
-#let omitted(n, total, names) = block(above: 1.8em)[
-  #strong[Not shown.] The other #n of the #total trusted declarations, which the headline theorems also rest on: #names. `docs/trusted.md` lists all of them with their sources. The round trip in `meaning` and the comparison with Ninja in `test/stage3-diff.sh` cover the printer and the parser among them.
-]
-
-#let other-theorem(name, file, line, url, body) = block(above: 1.3em)[
-  #strong(raw(name)) #h(0.3em) #grey(source(url, file + ":" + str(line)))
-  #v(0.45em, weak: true)
-  #body
-]
-
 #let warnings-intro = [These names appear in a statement but have no `Gloss:` template, so the English shows them in Lean notation.]
 
 #let omits-intro = [Templates leave these explicit arguments, other than `sem`, out of the English.]
