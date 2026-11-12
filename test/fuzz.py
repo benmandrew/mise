@@ -50,8 +50,16 @@ keeps the change when the case still fails the same check with the same
 writes the result to `test/out/fuzz/shrunk/<i>.json`, which
 `fuzz.py test/out/fuzz/shrunk <i>` replays.
 
+`--confine sandbox` runs every command under a sandbox profile that kills
+it on a read or write the edge does not allow, and `--confine trace` logs
+the files each command opens and checks them against the edge's inputs and
+its depfile (see test/confine.py). Both rewrite `build.ninja` after the
+manifest check. A `restat` command in the `cmp` wrapper is confined or
+traced inside the wrapper; the wrapper's own `mv`, `cmp` and `rm` are not.
+
 usage: fuzz.py [--workers W] [--seed S] [--keep] [--no-shrink]
-               [--shrink-max K] [--fz PATH] [--delay US] [--missing-ok] CASES_DIR [CASE...]
+               [--shrink-max K] [--fz PATH] [--delay US] [--missing-ok]
+               [--confine MODE] CASES_DIR [CASE...]
 """
 import argparse
 import copy
@@ -65,6 +73,8 @@ import time
 from collections import Counter
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
+
+import confine
 
 ROOT = Path(__file__).resolve().parent.parent
 MISE = ROOT / ".lake" / "build" / "bin" / "mise"
@@ -235,29 +245,48 @@ def ran_edges(d, jobs, targets=(), env=None, fail=False, k0=False):
     with `-k 0`."""
     log = d / "fz.log"
     log.unlink(missing_ok=True)
-    r = run(["ninja", jobs] + (["-k", "0"] if k0 else []) + list(targets), d, env, ok=(0, 1) if fail else (0,))
+    # -v prints each command, which names its trace log under --confine.
+    r = run(["ninja", "-v", jobs] + (["-k", "0"] if k0 else []) + list(targets), d, env, ok=(0, 1) if fail else (0,))
     ran, runs = parse_log(log.read_text()) if log.exists() else ([], {})
     if len(ran) != len(set(ran)):
         raise Fail("twice", f"an edge ran twice: {sorted(ran)}")
     return ran, runs, r
 
 
-def replay_steps(d, steps, jobs, fz, desc, stats=None, missing_ok=False):
+def replay_steps(d, steps, jobs, fz, desc, stats=None, missing_ok=False, mode=None):
     """Replay steps in a fresh directory `d`. Returns None, or (kind, message).
     After a build that stopped at a failure, ask `fuzzgen expect` for the
     model's steps given the edges that finished, and go on with those. With
-    `missing_ok`, allow the differences `--missing-ok` describes."""
+    `missing_ok`, allow the differences `--missing-ok` describes. With `mode`
+    `sandbox` or `trace`, confine or trace every command (see
+    test/confine.py)."""
     stats = stats if stats is not None else new_stats()
     shutil.rmtree(d, ignore_errors=True)
     d.mkdir(parents=True)
     (d / "fz").symlink_to(fz)
+    work = OUT / "confine" / d.parent.name / d.name
+    if mode:
+        shutil.rmtree(work, ignore_errors=True)
+    # fz.log is the harness's record of which edges ran, and fz.fail of
+    # which failing edges were tried.
+    harness = dict(extra_reads=[fz], extra_writes=["fz.log", "fz.fail"])
+
+    def build(targets, env=None, fail=False, k0=False):
+        if mode:
+            confine.clear_traces(work)
+        ran, runs, r = ran_edges(d, jobs[i], targets, env, fail=fail, k0=k0)
+        if mode == "trace":
+            problems, _ = confine.check_trace(d, edges, work, r.stdout, **harness)
+            if problems:
+                raise Fail("trace", "\n  ".join(problems))
+        return ran, runs, r
     tmp = d.with_name(d.name + ".expect")
     tmp.mkdir(parents=True, exist_ok=True)
     desc = copy.deepcopy(desc)
     for i in range(len(steps)):
         s = steps[i]
-        mode = f"{'stop at' if s['stop'] else 'fail'} {s['fail']}" if s["fail"] else f"build {' '.join(s['targets'])}" if s["targets"] else "build all"
-        where = f"step {i} ({'; '.join(s['edits']) or 'no edits'}; {mode}, {jobs[i]})"
+        how = f"{'stop at' if s['stop'] else 'fail'} {s['fail']}" if s["fail"] else f"build {' '.join(s['targets'])}" if s["targets"] else "build all"
+        where = f"step {i} ({'; '.join(s['edits']) or 'no edits'}; {how}, {jobs[i]})"
         try:
             write_fresh(d, s["write"])
             for p in s["delete"]:
@@ -268,6 +297,8 @@ def replay_steps(d, steps, jobs, fz, desc, stats=None, missing_ok=False):
             run([MISE, "gen", "."], d)
             if (d / "build.ninja").read_text() != s["ninja"]:
                 raise Fail("manifest", "build.ninja differs from the expected manifest")
+            if mode:
+                edges = confine.wrap(d, mode, work, **harness)
             ok = with_missing(d, s["edges"]) if missing_ok and i > 0 else set()
             fails = d / "fz.fail"
             fails.unlink(missing_ok=True)
@@ -276,7 +307,7 @@ def replay_steps(d, steps, jobs, fz, desc, stats=None, missing_ok=False):
             if s["fail"]:
                 env["FZ_FAIL"] = s["fail"]
             fail = bool(s["fail"])
-            ran, runs, r = ran_edges(d, jobs[i], s["targets"], env, fail=fail, k0=fail and not s["stop"])
+            ran, runs, r = build(s["targets"], env, fail=fail, k0=fail and not s["stop"])
             tried = lines(fails)
             if s["stop"]:
                 st = desc["steps"][i - 1]
@@ -302,7 +333,7 @@ def replay_steps(d, steps, jobs, fz, desc, stats=None, missing_ok=False):
                 if "no work to do" not in run(["ninja", "-n"] + s["targets"], d).stdout:
                     raise Fail("rerun", "ninja -n has work to do")
             else:
-                again, again_runs, _ = ran_edges(d, jobs[i], s["targets"])
+                again, again_runs, _ = build(s["targets"])
                 # Check the second build's schedule too, but keep it out of the overlap statistics.
                 check_schedule(s["edges"], again, again_runs, new_stats())
                 again = sorted(set(again) - with_missing(d, s["edges"]))
@@ -447,7 +478,7 @@ def size(desc):
         f"{sum(len(s['edits']) for s in desc['steps'])} edits"
 
 
-def shrink(name, desc, jobs, kind, fz, missing_ok):
+def shrink(name, desc, jobs, kind, fz, missing_ok, mode):
     tmp = OUT / "shrink" / name
     tmp.mkdir(parents=True, exist_ok=True)
     trials = 0
@@ -459,12 +490,12 @@ def shrink(name, desc, jobs, kind, fz, missing_ok):
             steps, _ = expect(c, tmp)
             if steps is None:
                 continue
-            r = replay_steps(tmp / "run", steps, cj, fz, c, missing_ok=missing_ok)
+            r = replay_steps(tmp / "run", steps, cj, fz, c, missing_ok=missing_ok, mode=mode)
             if r and r[0] == kind:
                 desc, jobs, progress = c, cj, True
                 break
     steps, _ = expect(desc, tmp)
-    r = replay_steps(OUT / "shrunk-run" / name, steps, jobs, fz, desc, missing_ok=missing_ok)
+    r = replay_steps(OUT / "shrunk-run" / name, steps, jobs, fz, desc, missing_ok=missing_ok, mode=mode)
     shrunk = OUT / "shrunk"
     shrunk.mkdir(parents=True, exist_ok=True)
     (shrunk / f"{name}.json").write_text(json.dumps({"desc": desc, "jobs": jobs, "steps": steps}))
@@ -472,7 +503,7 @@ def shrink(name, desc, jobs, kind, fz, missing_ok):
     return desc, trials, r
 
 
-def replay(case, seed, keep, fz, do_shrink, missing_ok):
+def replay(case, seed, keep, fz, do_shrink, missing_ok, mode=None):
     name = case.stem
     data = json.loads(case.read_text())
     steps = data["steps"]
@@ -482,7 +513,7 @@ def replay(case, seed, keep, fz, do_shrink, missing_ok):
     jobs = data.get("jobs") or [rng.choice(JOBS[:2] if s["stop"] else JOBS) for s in steps]
     d = OUT / "run" / name
     stats = new_stats()
-    r = replay_steps(d, steps, jobs, fz, data["desc"], stats, missing_ok)
+    r = replay_steps(d, steps, jobs, fz, data["desc"], stats, missing_ok, mode)
     if r is None:
         if not keep:
             shutil.rmtree(d)
@@ -492,7 +523,7 @@ def replay(case, seed, keep, fz, do_shrink, missing_ok):
     report = f"case {name} [{kind}]: {msg}"
     if do_shrink:
         t = time.time()
-        small, trials, r2 = shrink(name, data["desc"], jobs, kind, fz, missing_ok)
+        small, trials, r2 = shrink(name, data["desc"], jobs, kind, fz, missing_ok, mode)
         report += f"\n  shrunk from {size(data['desc'])}\n  to {size(small)} in {trials} trials, {time.time() - t:.1f}s"
         report += f"\n  {r2[1] if r2 else 'the shrunk case passes on replay (flaky?)'}"
         report += f"\n  replay: test/fuzz.py test/out/fuzz/shrunk {name}"
@@ -526,6 +557,7 @@ def main():
     ap.add_argument("--fz", help="use this helper binary instead of compiling test/fz.c")
     ap.add_argument("--delay", type=int, default=20000,
                     help="each command sleeps up to this many microseconds twice, so that runs overlap (0: off)")
+    ap.add_argument("--confine", choices=["sandbox", "trace"], help="run every command confined or traced")
     ap.add_argument("--missing-ok", action="store_true",
                     help="allow reruns of edges with a missing output (for `absent` cases)")
     a = ap.parse_args()
@@ -543,9 +575,9 @@ def main():
     n = len(cases)
     with ProcessPoolExecutor(a.workers) as ex:
         mo = [a.missing_ok] * n
-        results = list(ex.map(replay, cases, [a.seed] * n, [a.keep] * n, [fz] * n, [False] * n, mo))
+        results = list(ex.map(replay, cases, [a.seed] * n, [a.keep] * n, [fz] * n, [False] * n, mo, [a.confine] * n))
         fails = [(c, r) for c, (r, _) in zip(cases, results) if r]
-        print(f"fuzz: {n - len(fails)}/{n} cases passed in {time.time() - t:.1f}s, {summary(cases)}")
+        print(f"fuzz: {n - len(fails)}/{n} cases passed{' under ' + a.confine if a.confine else ''} in {time.time() - t:.1f}s, {summary(cases)}")
         st = [s for _, s in results]
         print(f"fuzz: of {sum(s['multi'] for s in st)} builds with -j above 1 that ran two or more edges, "
               f"{sum(s['steps'] for s in st)} ran edges at the same time; "
@@ -554,7 +586,7 @@ def main():
             todo = [c for c, _ in fails[: a.shrink_max]]
             k = len(todo)
             shrunk = dict(zip(todo, (r for r, _ in ex.map(replay, todo, [a.seed] * k, [True] * k, [fz] * k, [True] * k,
-                                                          [a.missing_ok] * k))))
+                                                          [a.missing_ok] * k, [a.confine] * k))))
             fails = [(c, shrunk.get(c, r)) for c, r in fails]
     for _, f in fails:
         print("FAIL", f)
