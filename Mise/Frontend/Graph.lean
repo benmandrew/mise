@@ -178,7 +178,8 @@ structure Sem (V : Type) where
 /-- The semantics of a build whose `restat` commands go through the DSL's
 command wrapper (`wrapCommand`), which compares with `cmp`: an output is
 left untouched exactly when its contents are equal, so `keep_eq` holds by
-construction. -/
+construction.
+Gloss: {sem} with each `restat` output kept exactly when its contents are unchanged -/
 def Sem.withCmp {V : Type} [DecidableEq V] (sem : Sem V) : Sem V :=
   { sem with keep := fun a b => decide (a = b), keep_eq := fun _ _ h => of_decide_eq_true h }
 

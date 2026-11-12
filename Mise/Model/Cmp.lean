@@ -116,7 +116,8 @@ theorem run_withCmp [Inhabited V] (sem : Sem V) (st : St V) (e : MEdge) :
 /-- The files: contents and mtime of each path, or `none` when absent. -/
 abbrev Files (V : Type) := Path → Option (V × Nat)
 
-/-- Where the wrapper moves an old output while its command runs. -/
+/-- Where the wrapper moves an old output while its command runs.
+Gloss: the `.mise-old` file of {p} -/
 def aside (p : Path) : Path := p ++ ".mise-old"
 
 theorem aside_inj {p q : Path} (h : aside p = aside q) : p = q := (String.append_left_inj _).mp h
@@ -375,7 +376,8 @@ variable [Inhabited V]
 /-- Ninja runs edge `e` through the wrapper at the next time step, where the
 command leaves `w` at the outputs and exits 0 when `ok`. The files are what
 the script leaves. Ninja writes the log and deps entries only when the
-script exits 0. -/
+script exits 0.
+Gloss: the state after Ninja runs {e} from {st} through the wrapper, where the command leaves {w} at the outputs and exits 0 when {ok} -/
 def St.runWrapped (sem : Sem V) (st : St V) (e : MEdge) (w : Path → Option V) (ok : Bool) : St V :=
   let r := script e.restat e.outs w ok (st.clock + 1) st.fs
   if r.2 then { st.run sem e with fs := r.1 } else { st with fs := r.1 }

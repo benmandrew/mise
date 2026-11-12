@@ -22,11 +22,13 @@
 
 #raw("sem : Sem V");#" says what each command computes. It is a parameter, so the theorems hold for every choice of command meanings.";
 
+#"The model has no failing commands: a run writes every output. The DSL makes that hold by wrapping each command in a script that restores the old outputs when the command fails or leaves an output missing. ";#raw("wrapped_run");#" shows the state after such a run is reachable, so the other theorems also cover histories with failed commands.";
+
 #how-to-read
 
 = Theorems
 
-#theorem-heading("meaning", "Mise/Headline.lean", 78)
+#theorem-heading("meaning", "Mise/Headline.lean", 84)
 
 #"The text ";#raw("mise");#" writes parses, under the parser model, to the manifest it emitted, and that manifest, read through the model of Ninja's variable evaluation, means the build the DSL describes.";
 
@@ -47,9 +49,9 @@
 - #"(";#"the meaning of ";#"(";#"the manifest ";#raw("mise");#" emits for ";#raw("g");#")";#" under the Ninja evaluation model";#")";#" equals ";#"(";#"the build specification ";#raw("g");#" describes";#")";#".";
 ]
 #part[Names in the statement]
-#link(label("def:Mise.BuildSpec"))[#raw("BuildSpec");];, #link(label("def:Mise.Frontend.Graph"))[#raw("Frontend.Graph");];, #link(label("def:Mise.Frontend.Graph.Valid"))[#raw("Frontend.Graph.Valid");];, #link(label("def:Mise.Frontend.Graph.spec"))[#raw("Frontend.Graph.spec");];, #link(label("def:Mise.Frontend.Sem"))[#raw("Frontend.Sem");];, #link(label("def:Mise.Frontend.denote"))[#raw("Frontend.denote");];, #link(label("def:Mise.Frontend.emit"))[#raw("Frontend.emit");];, #link(label("def:Mise.Syntax.Manifest"))[#raw("Syntax.Manifest");];, #link(label("def:Mise.Syntax.Path"))[#raw("Syntax.Path");];, #link(label("def:Mise.Syntax.parse"))[#raw("Syntax.parse");];, #link(label("def:Mise.Syntax.print"))[#raw("Syntax.print");];. The statement rests on 120 trusted declarations in all.
+#link(label("def:Mise.BuildSpec"))[#raw("BuildSpec");];, #link(label("def:Mise.Frontend.Graph"))[#raw("Frontend.Graph");];, #link(label("def:Mise.Frontend.Graph.Valid"))[#raw("Frontend.Graph.Valid");];, #link(label("def:Mise.Frontend.Graph.spec"))[#raw("Frontend.Graph.spec");];, #link(label("def:Mise.Frontend.Sem"))[#raw("Frontend.Sem");];, #link(label("def:Mise.Frontend.denote"))[#raw("Frontend.denote");];, #link(label("def:Mise.Frontend.emit"))[#raw("Frontend.emit");];, #link(label("def:Mise.Syntax.Manifest"))[#raw("Syntax.Manifest");];, #link(label("def:Mise.Syntax.Path"))[#raw("Syntax.Path");];, #link(label("def:Mise.Syntax.parse"))[#raw("Syntax.parse");];, #link(label("def:Mise.Syntax.print"))[#raw("Syntax.print");];. The statement rests on 124 trusted declarations in all.
 
-#theorem-heading("correct_unique", "Mise/Headline.lean", 85)
+#theorem-heading("correct_unique", "Mise/Headline.lean", 91)
 
 #"A build described by a valid graph has at most one correct result for any sources. ";#raw("Correct");#" is the correctness predicate of ";#emph[#"Build Systems à la Carte";];#": sources keep their values, and every target holds what its task computes from the result.";
 
@@ -73,9 +75,9 @@
 - #raw("R₁");#" equals ";#raw("R₂");#".";
 ]
 #part[Names in the statement]
-#link(label("def:Mise.BuildSpec.Correct"))[#raw("BuildSpec.Correct");];, #link(label("def:Mise.Frontend.Graph"))[#raw("Frontend.Graph");];, #link(label("def:Mise.Frontend.Graph.DynOK"))[#raw("Frontend.Graph.DynOK");];, #link(label("def:Mise.Frontend.Graph.Valid"))[#raw("Frontend.Graph.Valid");];, #link(label("def:Mise.Frontend.Graph.spec"))[#raw("Frontend.Graph.spec");];, #link(label("def:Mise.Frontend.Sem"))[#raw("Frontend.Sem");];, #link(label("def:Mise.Syntax.Path"))[#raw("Syntax.Path");];. The statement rests on 55 trusted declarations in all.
+#link(label("def:Mise.BuildSpec.Correct"))[#raw("BuildSpec.Correct");];, #link(label("def:Mise.Frontend.Graph"))[#raw("Frontend.Graph");];, #link(label("def:Mise.Frontend.Graph.DynOK"))[#raw("Frontend.Graph.DynOK");];, #link(label("def:Mise.Frontend.Graph.Valid"))[#raw("Frontend.Graph.Valid");];, #link(label("def:Mise.Frontend.Graph.spec"))[#raw("Frontend.Graph.spec");];, #link(label("def:Mise.Frontend.Sem"))[#raw("Frontend.Sem");];, #link(label("def:Mise.Syntax.Path"))[#raw("Syntax.Path");];. The statement rests on 57 trusted declarations in all.
 
-#theorem-heading("build_correct", "Mise/Headline.lean", 95)
+#theorem-heading("build_correct", "Mise/Headline.lean", 101)
 
 #"After any history, one ";#raw("ninja");#" run leaves correct contents for the current sources.";
 
@@ -98,9 +100,9 @@
 - #"(";#"the file contents of ";#"(";#"the state after one ";#raw("ninja");#" run for ";#raw("g");#" from ";#raw("st");#")";#")";#" is a correct result of building ";#"(";#"the build specification ";#raw("g");#" describes";#")";#" from the sources ";#"(";#"the file contents of ";#raw("st");#")";#".";
 ]
 #part[Names in the statement]
-#link(label("def:Mise.BuildSpec.Correct"))[#raw("BuildSpec.Correct");];, #link(label("def:Mise.Frontend.Graph"))[#raw("Frontend.Graph");];, #link(label("def:Mise.Frontend.Graph.DynOK"))[#raw("Frontend.Graph.DynOK");];, #link(label("def:Mise.Frontend.Graph.Valid"))[#raw("Frontend.Graph.Valid");];, #link(label("def:Mise.Frontend.Graph.spec"))[#raw("Frontend.Graph.spec");];, #link(label("def:Mise.Frontend.Sem"))[#raw("Frontend.Sem");];, #link(label("def:Mise.Headline.Reachable"))[#raw("Headline.Reachable");];, #link(label("def:Mise.Headline.build"))[#raw("Headline.build");];, #link(label("def:Mise.Model.St"))[#raw("Model.St");];, #link(label("def:Mise.Model.St.content"))[#raw("Model.St.content");];, #link(label("def:Mise.Syntax.Path"))[#raw("Syntax.Path");];. The statement rests on 105 trusted declarations in all.
+#link(label("def:Mise.BuildSpec.Correct"))[#raw("BuildSpec.Correct");];, #link(label("def:Mise.Frontend.Graph"))[#raw("Frontend.Graph");];, #link(label("def:Mise.Frontend.Graph.DynOK"))[#raw("Frontend.Graph.DynOK");];, #link(label("def:Mise.Frontend.Graph.Valid"))[#raw("Frontend.Graph.Valid");];, #link(label("def:Mise.Frontend.Graph.spec"))[#raw("Frontend.Graph.spec");];, #link(label("def:Mise.Frontend.Sem"))[#raw("Frontend.Sem");];, #link(label("def:Mise.Headline.Reachable"))[#raw("Headline.Reachable");];, #link(label("def:Mise.Headline.build"))[#raw("Headline.build");];, #link(label("def:Mise.Model.St"))[#raw("Model.St");];, #link(label("def:Mise.Model.St.content"))[#raw("Model.St.content");];, #link(label("def:Mise.Syntax.Path"))[#raw("Syntax.Path");];. The statement rests on 109 trusted declarations in all.
 
-#theorem-heading("rebuild_noop", "Mise/Headline.lean", 102)
+#theorem-heading("rebuild_noop", "Mise/Headline.lean", 108)
 
 #"After any history, a second ";#raw("ninja");#" run executes nothing and changes nothing.";
 
@@ -124,9 +126,9 @@
 - #"(";#"the state after one ";#raw("ninja");#" run for ";#raw("g");#" from ";#"(";#"the state after one ";#raw("ninja");#" run for ";#raw("g");#" from ";#raw("st");#")";#")";#" equals ";#"(";#"the state after one ";#raw("ninja");#" run for ";#raw("g");#" from ";#raw("st");#")";#".";
 ]
 #part[Names in the statement]
-#link(label("def:Mise.Frontend.Graph"))[#raw("Frontend.Graph");];, #link(label("def:Mise.Frontend.Graph.DynOK"))[#raw("Frontend.Graph.DynOK");];, #link(label("def:Mise.Frontend.Graph.Valid"))[#raw("Frontend.Graph.Valid");];, #link(label("def:Mise.Frontend.Sem"))[#raw("Frontend.Sem");];, #link(label("def:Mise.Headline.Reachable"))[#raw("Headline.Reachable");];, #link(label("def:Mise.Headline.build"))[#raw("Headline.build");];, #link(label("def:Mise.Headline.ran"))[#raw("Headline.ran");];, #link(label("def:Mise.Model.MEdge"))[#raw("Model.MEdge");];, #link(label("def:Mise.Model.St"))[#raw("Model.St");];. The statement rests on 101 trusted declarations in all.
+#link(label("def:Mise.Frontend.Graph"))[#raw("Frontend.Graph");];, #link(label("def:Mise.Frontend.Graph.DynOK"))[#raw("Frontend.Graph.DynOK");];, #link(label("def:Mise.Frontend.Graph.Valid"))[#raw("Frontend.Graph.Valid");];, #link(label("def:Mise.Frontend.Sem"))[#raw("Frontend.Sem");];, #link(label("def:Mise.Headline.Reachable"))[#raw("Headline.Reachable");];, #link(label("def:Mise.Headline.build"))[#raw("Headline.build");];, #link(label("def:Mise.Headline.ran"))[#raw("Headline.ran");];, #link(label("def:Mise.Model.MEdge"))[#raw("Model.MEdge");];, #link(label("def:Mise.Model.St"))[#raw("Model.St");];. The statement rests on 105 trusted declarations in all.
 
-#theorem-heading("ran_nodup", "Mise/Headline.lean", 112)
+#theorem-heading("ran_nodup", "Mise/Headline.lean", 118)
 
 #"One ";#raw("ninja");#" run executes each edge at most once.";
 
@@ -147,9 +149,9 @@
 - #"no element occurs twice in ";#"(";#"the edges one ";#raw("ninja");#" run for ";#raw("g");#" executes from ";#raw("st");#")";#".";
 ]
 #part[Names in the statement]
-#link(label("def:Mise.Frontend.Graph"))[#raw("Frontend.Graph");];, #link(label("def:Mise.Frontend.Graph.Valid"))[#raw("Frontend.Graph.Valid");];, #link(label("def:Mise.Frontend.Sem"))[#raw("Frontend.Sem");];, #link(label("def:Mise.Headline.ran"))[#raw("Headline.ran");];, #link(label("def:Mise.Model.MEdge"))[#raw("Model.MEdge");];, #link(label("def:Mise.Model.St"))[#raw("Model.St");];. The statement rests on 88 trusted declarations in all.
+#link(label("def:Mise.Frontend.Graph"))[#raw("Frontend.Graph");];, #link(label("def:Mise.Frontend.Graph.Valid"))[#raw("Frontend.Graph.Valid");];, #link(label("def:Mise.Frontend.Sem"))[#raw("Frontend.Sem");];, #link(label("def:Mise.Headline.ran"))[#raw("Headline.ran");];, #link(label("def:Mise.Model.MEdge"))[#raw("Model.MEdge");];, #link(label("def:Mise.Model.St"))[#raw("Model.St");];. The statement rests on 92 trusted declarations in all.
 
-#theorem-heading("rebuild_minimal", "Mise/Headline.lean", 116)
+#theorem-heading("rebuild_minimal", "Mise/Headline.lean", 122)
 
 #"Build, edit some sources, build again. Every edge the second build runs has a reason: an input ";#raw("p");#" that Ninja checks for it, whose mtime is newer than anything the first build left, and that was either edited or written by an edge that ran earlier in the second build. An edge whose inputs were left untouched, including by a ";#raw("restat");#" edge that kept its output, does not run.";
 
@@ -176,9 +178,9 @@
 - #"there are ";#raw("pre");#" and ";#raw("post");#" among ";#"lists of ";#"model edges";#" such that ";#"both ";#"(";#"the edges of the manifest for ";#raw("g");#")";#" equals ";#"(";#raw("pre");#" followed by ";#"(";#raw("e");#" followed by ";#raw("post");#")";#")";#" and ";#"there is ";#raw("p");#" among ";#"paths";#" such that ";#"all of: ";#raw("p");#" is an input Ninja checks for some output of ";#raw("e");#" in ";#"(";#"the state after one ";#raw("ninja");#" run for ";#raw("g");#" from ";#raw("st₀");#")";#", ";#"(";#"the clock of ";#"(";#"the state after one ";#raw("ninja");#" run for ";#raw("g");#" from ";#raw("st₀");#")";#")";#" is less than ";#"(";#"the mtime of ";#raw("p");#" in ";#"(";#"the state after Ninja visits ";#raw("pre");#" in order from ";#"(";#"(";#"the state after one ";#raw("ninja");#" run for ";#raw("g");#" from ";#raw("st₀");#")";#" after the edits ";#raw("E");#")";#")";#")";#", and ";#"either ";#raw("p");#" is in ";#"(";#"the list of ";#"(";#"the first component of ";#raw("x");#")";#" for each ";#raw("x");#" in ";#raw("E");#")";#", or ";#"there is ";#raw("e'");#" in ";#"(";#"the edges that run when Ninja visits ";#raw("pre");#" in order from ";#"(";#"(";#"the state after one ";#raw("ninja");#" run for ";#raw("g");#" from ";#raw("st₀");#")";#" after the edits ";#raw("E");#")";#")";#" such that ";#raw("p");#" is in ";#"(";#"the outputs of ";#raw("e'");#")";#".";
 ]
 #part[Names in the statement]
-#link(label("def:Mise.Frontend.Graph"))[#raw("Frontend.Graph");];, #link(label("def:Mise.Frontend.Graph.DynOK"))[#raw("Frontend.Graph.DynOK");];, #link(label("def:Mise.Frontend.Graph.Valid"))[#raw("Frontend.Graph.Valid");];, #link(label("def:Mise.Frontend.Sem"))[#raw("Frontend.Sem");];, #link(label("def:Mise.Headline.Checks"))[#raw("Headline.Checks");];, #link(label("def:Mise.Headline.IsSource"))[#raw("Headline.IsSource");];, #link(label("def:Mise.Headline.Reachable"))[#raw("Headline.Reachable");];, #link(label("def:Mise.Headline.build"))[#raw("Headline.build");];, #link(label("def:Mise.Headline.edges"))[#raw("Headline.edges");];, #link(label("def:Mise.Headline.ran"))[#raw("Headline.ran");];, #link(label("def:Mise.Model.MEdge"))[#raw("Model.MEdge");];, #link(label("def:Mise.Model.MEdge"))[#raw("Model.MEdge.outs");];, #link(label("def:Mise.Model.St"))[#raw("Model.St");];, #link(label("def:Mise.Model.St"))[#raw("Model.St.clock");];, #link(label("def:Mise.Model.St.edits"))[#raw("Model.St.edits");];, #link(label("def:Mise.Model.St.mtime"))[#raw("Model.St.mtime");];, #link(label("def:Mise.Model.buildTrace"))[#raw("Model.buildTrace");];, #link(label("def:Mise.Syntax.Path"))[#raw("Syntax.Path");];. The statement rests on 104 trusted declarations in all.
+#link(label("def:Mise.Frontend.Graph"))[#raw("Frontend.Graph");];, #link(label("def:Mise.Frontend.Graph.DynOK"))[#raw("Frontend.Graph.DynOK");];, #link(label("def:Mise.Frontend.Graph.Valid"))[#raw("Frontend.Graph.Valid");];, #link(label("def:Mise.Frontend.Sem"))[#raw("Frontend.Sem");];, #link(label("def:Mise.Headline.Checks"))[#raw("Headline.Checks");];, #link(label("def:Mise.Headline.IsSource"))[#raw("Headline.IsSource");];, #link(label("def:Mise.Headline.Reachable"))[#raw("Headline.Reachable");];, #link(label("def:Mise.Headline.build"))[#raw("Headline.build");];, #link(label("def:Mise.Headline.edges"))[#raw("Headline.edges");];, #link(label("def:Mise.Headline.ran"))[#raw("Headline.ran");];, #link(label("def:Mise.Model.MEdge"))[#raw("Model.MEdge");];, #link(label("def:Mise.Model.MEdge"))[#raw("Model.MEdge.outs");];, #link(label("def:Mise.Model.St"))[#raw("Model.St");];, #link(label("def:Mise.Model.St"))[#raw("Model.St.clock");];, #link(label("def:Mise.Model.St.edits"))[#raw("Model.St.edits");];, #link(label("def:Mise.Model.St.mtime"))[#raw("Model.St.mtime");];, #link(label("def:Mise.Model.buildTrace"))[#raw("Model.buildTrace");];, #link(label("def:Mise.Syntax.Path"))[#raw("Syntax.Path");];. The statement rests on 108 trusted declarations in all.
 
-#theorem-heading("restat_cutoff", "Mise/Headline.lean", 133)
+#theorem-heading("restat_cutoff", "Mise/Headline.lean", 139)
 
 #strong[#"Early cutoff.";];#" A ";#raw("restat");#" edge that keeps every output changes no other edge's dirtiness, so nothing is rebuilt on its account.";
 
@@ -202,7 +204,7 @@
 #part[Names in the statement]
 #link(label("def:Mise.Frontend.Sem"))[#raw("Frontend.Sem");];, #link(label("def:Mise.Model.Disjoint"))[#raw("Model.Disjoint");];, #link(label("def:Mise.Model.MEdge"))[#raw("Model.MEdge");];, #link(label("def:Mise.Model.MEdge"))[#raw("Model.MEdge.outs");];, #link(label("def:Mise.Model.St"))[#raw("Model.St");];, #link(label("def:Mise.Model.St.dirty"))[#raw("Model.St.dirty");];, #link(label("def:Mise.Model.St.kept"))[#raw("Model.St.kept");];, #link(label("def:Mise.Model.St.run"))[#raw("Model.St.run");];, #link(label("def:Mise.Syntax.Path"))[#raw("Syntax.Path");];. The statement rests on 24 trusted declarations in all.
 
-#theorem-heading("any_order", "Mise/Headline.lean", 141)
+#theorem-heading("any_order", "Mise/Headline.lean", 147)
 
 #"After any history, running the edges in any valid order leaves the same correct contents and runs the same edges, each at most once, as manifest order.";
 
@@ -228,11 +230,45 @@
 - #"(";#"the edges that run when Ninja visits ";#raw("es");#" in order from ";#raw("st");#")";#" is a reordering of ";#"(";#"the edges one ";#raw("ninja");#" run for ";#raw("g");#" executes from ";#raw("st");#")";#".";
 ]
 #part[Names in the statement]
-#link(label("def:Mise.BuildSpec.Correct"))[#raw("BuildSpec.Correct");];, #link(label("def:Mise.Frontend.Graph"))[#raw("Frontend.Graph");];, #link(label("def:Mise.Frontend.Graph.DynOK"))[#raw("Frontend.Graph.DynOK");];, #link(label("def:Mise.Frontend.Graph.Valid"))[#raw("Frontend.Graph.Valid");];, #link(label("def:Mise.Frontend.Graph.spec"))[#raw("Frontend.Graph.spec");];, #link(label("def:Mise.Frontend.Sem"))[#raw("Frontend.Sem");];, #link(label("def:Mise.Headline.Reachable"))[#raw("Headline.Reachable");];, #link(label("def:Mise.Headline.ValidOrder"))[#raw("Headline.ValidOrder");];, #link(label("def:Mise.Headline.ran"))[#raw("Headline.ran");];, #link(label("def:Mise.Model.MEdge"))[#raw("Model.MEdge");];, #link(label("def:Mise.Model.St"))[#raw("Model.St");];, #link(label("def:Mise.Model.St.content"))[#raw("Model.St.content");];, #link(label("def:Mise.Model.buildTrace"))[#raw("Model.buildTrace");];, #link(label("def:Mise.Syntax.Path"))[#raw("Syntax.Path");];. The statement rests on 108 trusted declarations in all.
+#link(label("def:Mise.BuildSpec.Correct"))[#raw("BuildSpec.Correct");];, #link(label("def:Mise.Frontend.Graph"))[#raw("Frontend.Graph");];, #link(label("def:Mise.Frontend.Graph.DynOK"))[#raw("Frontend.Graph.DynOK");];, #link(label("def:Mise.Frontend.Graph.Valid"))[#raw("Frontend.Graph.Valid");];, #link(label("def:Mise.Frontend.Graph.spec"))[#raw("Frontend.Graph.spec");];, #link(label("def:Mise.Frontend.Sem"))[#raw("Frontend.Sem");];, #link(label("def:Mise.Headline.Reachable"))[#raw("Headline.Reachable");];, #link(label("def:Mise.Headline.ValidOrder"))[#raw("Headline.ValidOrder");];, #link(label("def:Mise.Headline.ran"))[#raw("Headline.ran");];, #link(label("def:Mise.Model.MEdge"))[#raw("Model.MEdge");];, #link(label("def:Mise.Model.St"))[#raw("Model.St");];, #link(label("def:Mise.Model.St.content"))[#raw("Model.St.content");];, #link(label("def:Mise.Model.buildTrace"))[#raw("Model.buildTrace");];, #link(label("def:Mise.Syntax.Path"))[#raw("Syntax.Path");];. The statement rests on 112 trusted declarations in all.
+
+#theorem-heading("wrapped_run", "Mise/Headline.lean", 160)
+
+#strong[#"Failed commands.";];#" The DSL wraps every command, unless its rule opts out, in a script that ";#raw("Mise.Model.script");#" models. The command leaves ";#raw("w");#" at the outputs, writing what ";#raw("sem");#" says (";#raw("hw");#"), and exits 0 when ";#raw("ok");#". If it fails or leaves an output missing, the state after the run is the state before it; otherwise the run is the model's run. In both cases the state after the run is reachable under ";#raw("Sem.withCmp");#", which keeps a ";#raw("restat");#" output exactly when ";#raw("cmp");#" finds it unchanged, so the theorems above apply to it. The script needs that no output is another output's ";#raw(".mise-old");#" file (";#raw("ha");#") and that no ";#raw(".mise-old");#" file of an output exists (";#raw("hold");#").";
+
+#part[Statement]
+#raw(lang: "lean", block: true, "theorem wrapped_run [DecidableEq V] (g : Graph) (hg : g.Valid) {st : St V}\n    (h : Reachable sem.withCmp g st) {e : MEdge} (he : e ∈ edges g) (hdirty : st.dirty e = true)\n    (w : Path → Option V) (ok : Bool) (hw : ∀ o ∈ e.outs, ∀ v, w o = some v → v = st.outVal sem e o)\n    (ha : ∀ o ∈ e.outs, aside o ∉ e.outs) (hold : ∀ o ∈ e.outs, st.fs (aside o) = none) :\n    ((ok = false ∨ ∃ o ∈ e.outs, w o = none) → st.runWrapped sem e w ok = st) ∧\n      Reachable sem.withCmp g (st.runWrapped sem e w ok)")
+
+#part[In English]
+#english[
+#part-sub[For all]
+- #raw("V");#" ranges over ";#"types";#".";
+- #raw("sem");#" ranges over ";#"command meanings over ";#"elements of ";#raw("V");#".";
+- #raw("g");#" ranges over ";#"build graphs";#".";
+- #raw("st");#" ranges over ";#"model states over ";#"elements of ";#raw("V");#".";
+- #raw("e");#" ranges over ";#"model edges";#".";
+- #raw("w");#" ranges over ";#"functions from ";#"paths";#" to ";#"optional ";#"elements of ";#raw("V");#".";
+- #raw("ok");#" ranges over ";#"Booleans";#".";
+#part-sub[Assume]
+- #raw("V");#" has a default element";#".";
+- #"equality on ";#raw("V");#" is decidable";#".";
+- #"(";#raw("hg");#") ";#raw("g");#" is valid";#".";
+- #"(";#raw("h");#") ";#raw("st");#" can arise for ";#raw("g");#" from empty logs by source edits and Ninja edge visits";#" (taking ";#raw("sem");#" to be ";#"(";#raw("sem");#" with each ";#raw("restat");#" output kept exactly when its contents are unchanged";#")";#")";#".";
+- #"(";#raw("he");#") ";#raw("e");#" is in ";#"(";#"the edges of the manifest for ";#raw("g");#")";#".";
+- #"(";#raw("hdirty");#") ";#"(";#"whether ";#raw("e");#" is dirty in ";#raw("st");#")";#" is ";#raw("true");#".";
+- #"(";#raw("hw");#") ";#"for every ";#raw("o");#" in ";#"(";#"the outputs of ";#raw("e");#")";#", ";#"for every ";#raw("v");#" among ";#"elements of ";#raw("V");#", ";#"if ";#raw("w o");#" equals ";#"(";#raw("some");#" ";#raw("v");#")";#", then ";#raw("v");#" equals ";#"(";#"the contents that running ";#raw("e");#" in ";#raw("st");#" writes to ";#raw("o");#")";#".";
+- #"(";#raw("ha");#") ";#"for every ";#raw("o");#" in ";#"(";#"the outputs of ";#raw("e");#")";#", ";#"(";#"the ";#raw(".mise-old");#" file of ";#raw("o");#")";#" is not in ";#"(";#"the outputs of ";#raw("e");#")";#".";
+- #"(";#raw("hold");#") ";#"for every ";#raw("o");#" in ";#"(";#"the outputs of ";#raw("e");#")";#", ";#"(";#"the file at ";#"(";#"the ";#raw(".mise-old");#" file of ";#raw("o");#")";#" in ";#raw("st");#")";#" equals ";#raw("none");#".";
+#part-sub[Then]
+- #"if ";#"either ";#raw("ok");#" equals ";#raw("false");#", or ";#"there is ";#raw("o");#" in ";#"(";#"the outputs of ";#raw("e");#")";#" such that ";#raw("w o");#" equals ";#raw("none");#", then ";#"(";#"the state after Ninja runs ";#raw("e");#" from ";#raw("st");#" through the wrapper, where the command leaves ";#raw("w");#" at the outputs and exits 0 when ";#raw("ok");#")";#" equals ";#raw("st");#".";
+- #"(";#"the state after Ninja runs ";#raw("e");#" from ";#raw("st");#" through the wrapper, where the command leaves ";#raw("w");#" at the outputs and exits 0 when ";#raw("ok");#")";#" can arise for ";#raw("g");#" from empty logs by source edits and Ninja edge visits";#" (taking ";#raw("sem");#" to be ";#"(";#raw("sem");#" with each ";#raw("restat");#" output kept exactly when its contents are unchanged";#")";#")";#".";
+]
+#part[Names in the statement]
+#link(label("def:Mise.Frontend.Graph"))[#raw("Frontend.Graph");];, #link(label("def:Mise.Frontend.Graph.Valid"))[#raw("Frontend.Graph.Valid");];, #link(label("def:Mise.Frontend.Sem"))[#raw("Frontend.Sem");];, #link(label("def:Mise.Frontend.Sem.withCmp"))[#raw("Frontend.Sem.withCmp");];, #link(label("def:Mise.Headline.Reachable"))[#raw("Headline.Reachable");];, #link(label("def:Mise.Headline.edges"))[#raw("Headline.edges");];, #link(label("def:Mise.Model.MEdge"))[#raw("Model.MEdge");];, #link(label("def:Mise.Model.MEdge"))[#raw("Model.MEdge.outs");];, #link(label("def:Mise.Model.St"))[#raw("Model.St");];, #link(label("def:Mise.Model.St.dirty"))[#raw("Model.St.dirty");];, #link(label("def:Mise.Model.St"))[#raw("Model.St.fs");];, #link(label("def:Mise.Model.St.outVal"))[#raw("Model.St.outVal");];, #link(label("def:Mise.Model.St.runWrapped"))[#raw("Model.St.runWrapped");];, #link(label("def:Mise.Model.aside"))[#raw("Model.aside");];, #link(label("def:Mise.Syntax.Path"))[#raw("Syntax.Path");];. The statement rests on 104 trusted declarations in all.
 
 = Trusted definitions
 
-#trusted-intro(159, 858)
+#trusted-intro(173, 941)
 
 == #raw("Mise/Task/Basic.lean");
 
@@ -900,56 +936,68 @@
 
 == #raw("Mise/Frontend/Graph.lean");
 
-#def-heading("Frontend.reserved", "def:Mise.Frontend.reserved", "Mise/Frontend/Graph.lean", 22, 24)
+#def-heading("Frontend.ninjaMinVersion", "def:Mise.Frontend.ninjaMinVersion", "Mise/Frontend/Graph.lean", 22, 25)
 
-#"Names a template or an edge may not use as a variable of its own. Edge bindings with these names would change what Ninja runs.";
+#"The oldest Ninja release ";#raw("mise");#" supports. ";#raw("emit");#" writes it first in every manifest as the top-level binding ";#raw("ninja_required_version");#", which makes older releases refuse the manifest.";
 
-#raw(lang: "lean", block: true, "def reserved : List String := [\"in\", \"out\", \"in_newline\"] ++ ruleKeys")
-#uses[#link(label("def:Mise.Syntax.ruleKeys"))[#raw("Syntax.ruleKeys");];]
+#raw(lang: "lean", block: true, "def ninjaMinVersion : String := \"1.12.1\"")
 
-#def-heading("Frontend.GRule", "def:Mise.Frontend.GRule", "Mise/Frontend/Graph.lean", 26, 39)
+#def-heading("Frontend.versionVar", "def:Mise.Frontend.versionVar", "Mise/Frontend/Graph.lean", 27, 28)
+
+#"The top-level binding Ninja checks its own version against.";
+
+#raw(lang: "lean", block: true, "def versionVar : String := \"ninja_required_version\"")
+
+#def-heading("Frontend.reserved", "def:Mise.Frontend.reserved", "Mise/Frontend/Graph.lean", 30, 33)
+
+#"Names a template or an edge may not use as a variable of its own. Edge bindings with these names would change what Ninja runs, and a template reference to ";#raw("versionVar");#" would read the emitted top-level binding.";
+
+#raw(lang: "lean", block: true, "def reserved : List String := [\"in\", \"out\", \"in_newline\", versionVar] ++ ruleKeys")
+#uses[#link(label("def:Mise.Frontend.versionVar"))[#raw("Frontend.versionVar");];, #link(label("def:Mise.Syntax.ruleKeys"))[#raw("Syntax.ruleKeys");];]
+
+#def-heading("Frontend.GRule", "def:Mise.Frontend.GRule", "Mise/Frontend/Graph.lean", 35, 48)
 
 #"A rule. The command and description are Ninja values; ";#raw("${in}");#" and ";#raw("${out}");#" stand for the edge's explicit inputs and outputs, and any other variable is bound by the edge. An empty description is not emitted.";
 
 #raw(lang: "lean", block: true, "structure GRule where\n  name : String\n  command : EvalString\n  description : EvalString := []\n  /-- Emit `depfile = ${out}.d` and `deps = gcc`: the command writes a\n  Makefile-style depfile listing what it read. -/\n  depfile : Bool := false\n  /-- Emit `restat = 1`: the command may leave an output untouched when its\n  contents would not change, and Ninja then skips dependents on its account. -/\n  restat : Bool := false\n  deriving DecidableEq, Repr, Inhabited")
 #uses[#link(label("def:Mise.Syntax.EvalString"))[#raw("Syntax.EvalString");];]
 
-#def-heading("Frontend.GEdge", "def:Mise.Frontend.GEdge", "Mise/Frontend/Graph.lean", 41, 52)
+#def-heading("Frontend.GEdge", "def:Mise.Frontend.GEdge", "Mise/Frontend/Graph.lean", 50, 61)
 
 #"An edge in the DSL: the name of its rule, explicit and implicit outputs, explicit, implicit and order-only inputs, and the edge's own variables with their literal values.";
 
 #raw(lang: "lean", block: true, "structure GEdge where\n  rule : String\n  outs : List Path\n  implicitOuts : List Path := []\n  ins : List Path := []\n  implicitIns : List Path := []\n  orderOnly : List Path := []\n  vars : List (String × String) := []\n  deriving DecidableEq, Repr, Inhabited")
 #uses[#link(label("def:Mise.Syntax.Path"))[#raw("Syntax.Path");];]
 
-#def-heading("Frontend.GEdge.allOuts", "def:Mise.Frontend.GEdge.allOuts", "Mise/Frontend/Graph.lean", 56, 57)
+#def-heading("Frontend.GEdge.allOuts", "def:Mise.Frontend.GEdge.allOuts", "Mise/Frontend/Graph.lean", 65, 66)
 
 #"Explicit then implicit outputs.";
 
 #raw(lang: "lean", block: true, "def allOuts (e : GEdge) : List Path := e.outs ++ e.implicitOuts")
 #uses[#link(label("def:Mise.Frontend.GEdge"))[#raw("Frontend.GEdge");];, #link(label("def:Mise.Syntax.Path"))[#raw("Syntax.Path");];]
 
-#def-heading("Frontend.GEdge.inputs", "def:Mise.Frontend.GEdge.inputs", "Mise/Frontend/Graph.lean", 58, 59)
+#def-heading("Frontend.GEdge.inputs", "def:Mise.Frontend.GEdge.inputs", "Mise/Frontend/Graph.lean", 67, 68)
 
 #"The inputs the command reads: explicit and implicit.";
 
 #raw(lang: "lean", block: true, "def inputs (e : GEdge) : List Path := e.ins ++ e.implicitIns")
 #uses[#link(label("def:Mise.Frontend.GEdge"))[#raw("Frontend.GEdge");];, #link(label("def:Mise.Syntax.Path"))[#raw("Syntax.Path");];]
 
-#def-heading("Frontend.GEdge.allIns", "def:Mise.Frontend.GEdge.allIns", "Mise/Frontend/Graph.lean", 60, 61)
+#def-heading("Frontend.GEdge.allIns", "def:Mise.Frontend.GEdge.allIns", "Mise/Frontend/Graph.lean", 69, 70)
 
 #"Explicit, implicit and order-only inputs.";
 
 #raw(lang: "lean", block: true, "def allIns (e : GEdge) : List Path := e.ins ++ e.implicitIns ++ e.orderOnly")
 #uses[#link(label("def:Mise.Frontend.GEdge"))[#raw("Frontend.GEdge");];, #link(label("def:Mise.Syntax.Path"))[#raw("Syntax.Path");];]
 
-#def-heading("Frontend.GEdge.look", "def:Mise.Frontend.GEdge.look", "Mise/Frontend/Graph.lean", 63, 67)
+#def-heading("Frontend.GEdge.look", "def:Mise.Frontend.GEdge.look", "Mise/Frontend/Graph.lean", 72, 76)
 
 #"The value of a variable in this edge's command, as the DSL defines it.";
 
 #raw(lang: "lean", block: true, "def look (e : GEdge) (v : String) : String :=\n  if v = \"in\" then shellList \" \" e.ins\n  else if v = \"out\" then shellList \" \" e.outs\n  else ((e.vars.find? (·.1 == v)).map (·.2)).getD \"\"")
 #uses[#link(label("def:Mise.Frontend.GEdge"))[#raw("Frontend.GEdge");];, #link(label("def:Mise.Syntax.shellList"))[#raw("Syntax.shellList");];]
 
-#def-heading("Frontend.Graph", "def:Mise.Frontend.Graph", "Mise/Frontend/Graph.lean", 71, 79)
+#def-heading("Frontend.Graph", "def:Mise.Frontend.Graph", "Mise/Frontend/Graph.lean", 80, 88)
 
 #"A build as the DSL describes it: declared sources, rules, edges in the order they were added, and default targets.";
 
@@ -958,79 +1006,86 @@
 #raw(lang: "lean", block: true, "structure Graph where\n  sources : List Path := []\n  rules : List GRule := []\n  edges : List GEdge := []\n  defaults : List Path := []\n  deriving Repr, Inhabited")
 #uses[#link(label("def:Mise.Frontend.GEdge"))[#raw("Frontend.GEdge");];, #link(label("def:Mise.Frontend.GRule"))[#raw("Frontend.GRule");];, #link(label("def:Mise.Syntax.Path"))[#raw("Syntax.Path");];]
 
-#def-heading("Frontend.tmplVarsOK", "def:Mise.Frontend.tmplVarsOK", "Mise/Frontend/Graph.lean", 83, 88)
+#def-heading("Frontend.tmplVarsOK", "def:Mise.Frontend.tmplVarsOK", "Mise/Frontend/Graph.lean", 92, 97)
 
 #"Every variable the template refers to is ";#raw("in");#", ";#raw("out");#", or a name outside ";#raw("reserved");#".";
 
 #raw(lang: "lean", block: true, "def tmplVarsOK (t : EvalString) : Bool :=\n  t.all fun\n    | .var n => n == \"in\" || n == \"out\" || !reserved.contains n\n    | .lit _ => true")
 #uses[#link(label("def:Mise.Frontend.reserved"))[#raw("Frontend.reserved");];, #link(label("def:Mise.Syntax.EvalString"))[#raw("Syntax.EvalString");];, #link(label("def:Mise.Syntax.Seg"))[#raw("Syntax.Seg");];]
 
-#def-heading("Frontend.GRule.ok", "def:Mise.Frontend.GRule.ok", "Mise/Frontend/Graph.lean", 90, 95)
+#def-heading("Frontend.GRule.ok", "def:Mise.Frontend.GRule.ok", "Mise/Frontend/Graph.lean", 99, 104)
 
 #"A rule ";#raw("mise");#" can emit: the name is an identifier other than ";#raw("phony");#", the command is a valid nonempty value whose only reserved variables are ";#raw("in");#" and ";#raw("out");#", and the description is a valid value.";
 
 #raw(lang: "lean", block: true, "def GRule.ok (r : GRule) : Bool :=\n  validIdent r.name && r.name != \"phony\" && validEval r.command && !r.command.isEmpty &&\n    tmplVarsOK r.command && validEval r.description")
 #uses[#link(label("def:Mise.Frontend.GRule"))[#raw("Frontend.GRule");];, #link(label("def:Mise.Frontend.tmplVarsOK"))[#raw("Frontend.tmplVarsOK");];, #link(label("def:Mise.Syntax.Seg"))[#raw("Syntax.Seg");];, #link(label("def:Mise.Syntax.validEval"))[#raw("Syntax.validEval");];, #link(label("def:Mise.Syntax.validIdent"))[#raw("Syntax.validIdent");];]
 
-#def-heading("Frontend.varsOK", "def:Mise.Frontend.varsOK", "Mise/Frontend/Graph.lean", 97, 101)
+#def-heading("Frontend.varsOK", "def:Mise.Frontend.varsOK", "Mise/Frontend/Graph.lean", 106, 110)
 
 #"Edge variables ";#raw("mise");#" can emit: no name occurs twice, every name is an identifier outside ";#raw("reserved");#", and no value contains a newline, carriage return or NUL.";
 
 #raw(lang: "lean", block: true, "def varsOK (vs : List (String × String)) : Bool :=\n  nodupB (vs.map (·.1)) && vs.all fun b => validIdent b.1 && !reserved.contains b.1 && b.2.toList.all litChar")
 #uses[#link(label("def:Mise.Frontend.reserved"))[#raw("Frontend.reserved");];, #link(label("def:Mise.Syntax.litChar"))[#raw("Syntax.litChar");];, #link(label("def:Mise.Syntax.nodupB"))[#raw("Syntax.nodupB");];, #link(label("def:Mise.Syntax.validIdent"))[#raw("Syntax.validIdent");];]
 
-#def-heading("Frontend.GEdge.ok", "def:Mise.Frontend.GEdge.ok", "Mise/Frontend/Graph.lean", 103, 107)
+#def-heading("Frontend.GEdge.ok", "def:Mise.Frontend.GEdge.ok", "Mise/Frontend/Graph.lean", 112, 116)
 
 #"An edge is acceptable after the edges whose outputs are ";#raw("prev");#".";
 
 #raw(lang: "lean", block: true, "def GEdge.ok (names : List String) (srcs prev : List Path) (e : GEdge) : Bool :=\n  names.contains e.rule && !e.outs.isEmpty && (e.allOuts ++ e.allIns).all validPath &&\n    nodupB e.allOuts && e.allOuts.all (fun o => !prev.contains o && !srcs.contains o) &&\n    e.allIns.all (fun i => srcs.contains i || prev.contains i) && varsOK e.vars")
 #uses[#link(label("def:Mise.Frontend.GEdge"))[#raw("Frontend.GEdge");];, #link(label("def:Mise.Frontend.GEdge.allIns"))[#raw("Frontend.GEdge.allIns");];, #link(label("def:Mise.Frontend.GEdge.allOuts"))[#raw("Frontend.GEdge.allOuts");];, #link(label("def:Mise.Frontend.varsOK"))[#raw("Frontend.varsOK");];, #link(label("def:Mise.Syntax.Path"))[#raw("Syntax.Path");];, #link(label("def:Mise.Syntax.nodupB"))[#raw("Syntax.nodupB");];, #link(label("def:Mise.Syntax.validPath"))[#raw("Syntax.validPath");];]
 
-#def-heading("Frontend.edgesOK", "def:Mise.Frontend.edgesOK", "Mise/Frontend/Graph.lean", 109, 113)
+#def-heading("Frontend.edgesOK", "def:Mise.Frontend.edgesOK", "Mise/Frontend/Graph.lean", 118, 122)
 
 #"Each edge is acceptable (";#raw("GEdge.ok");#") after the ones before it. The list of paths holds the outputs of the edges already checked.";
 
 #raw(lang: "lean", block: true, "def edgesOK (names : List String) (srcs : List Path) : List Path → List GEdge → Bool\n  | _, [] => true\n  | prev, e :: es => e.ok names srcs prev && edgesOK names srcs (prev ++ e.allOuts) es")
 #uses[#link(label("def:Mise.Frontend.GEdge"))[#raw("Frontend.GEdge");];, #link(label("def:Mise.Frontend.GEdge.allOuts"))[#raw("Frontend.GEdge.allOuts");];, #link(label("def:Mise.Frontend.GEdge.ok"))[#raw("Frontend.GEdge.ok");];, #link(label("def:Mise.Syntax.Path"))[#raw("Syntax.Path");];]
 
-#def-heading("Frontend.Graph.ruleNames", "def:Mise.Frontend.Graph.ruleNames", "Mise/Frontend/Graph.lean", 115, 116)
+#def-heading("Frontend.Graph.ruleNames", "def:Mise.Frontend.Graph.ruleNames", "Mise/Frontend/Graph.lean", 124, 125)
 
 #"The names of the graph's rules, in order.";
 
 #raw(lang: "lean", block: true, "def Graph.ruleNames (g : Graph) : List String := g.rules.map (·.name)")
 #uses[#link(label("def:Mise.Frontend.GRule"))[#raw("Frontend.GRule");];, #link(label("def:Mise.Frontend.Graph"))[#raw("Frontend.Graph");];]
 
-#def-heading("Frontend.Graph.check", "def:Mise.Frontend.Graph.check", "Mise/Frontend/Graph.lean", 118, 123)
+#def-heading("Frontend.depfileOutsOK", "def:Mise.Frontend.depfileOutsOK", "Mise/Frontend/Graph.lean", 127, 133)
 
-#"The validity check: rule names are distinct, every rule is acceptable (";#raw("GRule.ok");#"), every edge is acceptable after the ones before it (";#raw("edgesOK");#"), and every default target is an output of some edge.";
+#"An edge whose rule has a depfile has one explicit output. The depfile is ";#raw("${out}.d");#", which names one file only for one output; with more, Ninja finds no depfile, treats it as empty and records no deps.";
 
-#raw(lang: "lean", block: true, "def Graph.check (g : Graph) : Bool :=\n  nodupB g.ruleNames && g.rules.all GRule.ok && edgesOK g.ruleNames g.sources [] g.edges &&\n    g.defaults.all fun d => g.edges.any (·.allOuts.contains d)")
-#uses[#link(label("def:Mise.Frontend.GEdge"))[#raw("Frontend.GEdge");];, #link(label("def:Mise.Frontend.GEdge.allOuts"))[#raw("Frontend.GEdge.allOuts");];, #link(label("def:Mise.Frontend.GRule"))[#raw("Frontend.GRule");];, #link(label("def:Mise.Frontend.GRule.ok"))[#raw("Frontend.GRule.ok");];, #link(label("def:Mise.Frontend.Graph"))[#raw("Frontend.Graph");];, #link(label("def:Mise.Frontend.Graph.ruleNames"))[#raw("Frontend.Graph.ruleNames");];, #link(label("def:Mise.Frontend.edgesOK"))[#raw("Frontend.edgesOK");];, #link(label("def:Mise.Syntax.Path"))[#raw("Syntax.Path");];, #link(label("def:Mise.Syntax.nodupB"))[#raw("Syntax.nodupB");];]
+#raw(lang: "lean", block: true, "def depfileOutsOK (rules : List GRule) (e : GEdge) : Bool :=\n  match rules.find? (·.name == e.rule) with\n  | some r => !r.depfile || e.outs.length == 1\n  | none => true")
+#uses[#link(label("def:Mise.Frontend.GEdge"))[#raw("Frontend.GEdge");];, #link(label("def:Mise.Frontend.GRule"))[#raw("Frontend.GRule");];, #link(label("def:Mise.Syntax.Path"))[#raw("Syntax.Path");];]
 
-#def-heading("Frontend.Graph.Valid", "def:Mise.Frontend.Graph.Valid", "Mise/Frontend/Graph.lean", 125, 128)
+#def-heading("Frontend.Graph.check", "def:Mise.Frontend.Graph.check", "Mise/Frontend/Graph.lean", 135, 142)
 
-#"Every input is a declared source or an output of an earlier edge, every output has one producer, and every name and path can be written in Ninja.";
+#"The validity check: rule names are distinct, every rule is acceptable (";#raw("GRule.ok");#"), every edge is acceptable after the ones before it (";#raw("edgesOK");#"), every default target is an output of some edge, and every edge whose rule has a depfile has one explicit output (";#raw("depfileOutsOK");#").";
+
+#raw(lang: "lean", block: true, "def Graph.check (g : Graph) : Bool :=\n  nodupB g.ruleNames && g.rules.all GRule.ok && edgesOK g.ruleNames g.sources [] g.edges &&\n    (g.defaults.all fun d => g.edges.any (·.allOuts.contains d)) && g.edges.all (depfileOutsOK g.rules)")
+#uses[#link(label("def:Mise.Frontend.GEdge"))[#raw("Frontend.GEdge");];, #link(label("def:Mise.Frontend.GEdge.allOuts"))[#raw("Frontend.GEdge.allOuts");];, #link(label("def:Mise.Frontend.GRule"))[#raw("Frontend.GRule");];, #link(label("def:Mise.Frontend.GRule.ok"))[#raw("Frontend.GRule.ok");];, #link(label("def:Mise.Frontend.Graph"))[#raw("Frontend.Graph");];, #link(label("def:Mise.Frontend.Graph.ruleNames"))[#raw("Frontend.Graph.ruleNames");];, #link(label("def:Mise.Frontend.depfileOutsOK"))[#raw("Frontend.depfileOutsOK");];, #link(label("def:Mise.Frontend.edgesOK"))[#raw("Frontend.edgesOK");];, #link(label("def:Mise.Syntax.Path"))[#raw("Syntax.Path");];, #link(label("def:Mise.Syntax.nodupB"))[#raw("Syntax.nodupB");];]
+
+#def-heading("Frontend.Graph.Valid", "def:Mise.Frontend.Graph.Valid", "Mise/Frontend/Graph.lean", 144, 148)
+
+#"Every input is a declared source or an output of an earlier edge, every output has one producer, every name and path can be written in Ninja, and every depfile edge has one explicit output.";
 
 #template("Template", "{g} is valid")
 
 #raw(lang: "lean", block: true, "def Graph.Valid (g : Graph) : Prop := g.check = true")
 #uses[#link(label("def:Mise.Frontend.Graph"))[#raw("Frontend.Graph");];, #link(label("def:Mise.Frontend.Graph.check"))[#raw("Frontend.Graph.check");];]
 
-#def-heading("Frontend.findOut", "def:Mise.Frontend.findOut", "Mise/Frontend/Graph.lean", 134, 137)
+#def-heading("Frontend.findOut", "def:Mise.Frontend.findOut", "Mise/Frontend/Graph.lean", 154, 157)
 
 #"The first element whose outputs contain ";#raw("k");#", with its index.";
 
 #raw(lang: "lean", block: true, "def findOut {α : Type} (outs : α → List Path) (k : Path) : List α → Option (Nat × α)\n  | [] => none\n  | a :: as => if (outs a).contains k then some (0, a) else (findOut outs k as).map fun p => (p.1 + 1, p.2)")
 #uses[#link(label("def:Mise.Syntax.Path"))[#raw("Syntax.Path");];]
 
-#def-heading("Frontend.fetchAll", "def:Mise.Frontend.fetchAll", "Mise/Frontend/Graph.lean", 139, 142)
+#def-heading("Frontend.fetchAll", "def:Mise.Frontend.fetchAll", "Mise/Frontend/Graph.lean", 159, 162)
 
 #"Fetch keys in order.";
 
 #raw(lang: "lean", block: true, "def fetchAll {K V : Type} : List K → Task K V (List V)\n  | [] => .pure []\n  | k :: ks => .fetch k fun v => (fetchAll ks).bind fun vs => .pure (v :: vs)")
 #uses[#link(label("def:Mise.Frontend.findOut"))[#raw("Frontend.findOut");];, #link(label("def:Mise.Task"))[#raw("Task");];, #link(label("def:Mise.Task.bind"))[#raw("Task.bind");];]
 
-#def-heading("Frontend.Sem", "def:Mise.Frontend.Sem", "Mise/Frontend/Graph.lean", 144, 156)
+#def-heading("Frontend.Sem", "def:Mise.Frontend.Sem", "Mise/Frontend/Graph.lean", 164, 176)
 
 #"What commands mean.";
 
@@ -1039,49 +1094,58 @@
 #raw(lang: "lean", block: true, "structure Sem (V : Type) where\n  /-- A static command's outputs from its inputs' contents. -/\n  exec : String → List V → List V\n  /-- A depfile command: what it reads, and its outputs. -/\n  dyn : String → Task Path V (List V)\n  /-- Stage 7: when a `restat` command would write `new` over `old`, it may\n  leave the file untouched when `keep old new` holds. -/\n  keep : V → V → Bool := fun _ _ => false\n  /-- The assumption behind early cutoff: a command leaves a file untouched\n  only when its new contents would be identical. -/\n  keep_eq : ∀ a b, keep a b = true → a = b := by intro a b h; simp at h")
 #uses[#link(label("def:Mise.Syntax.Path"))[#raw("Syntax.Path");];, #link(label("def:Mise.Task"))[#raw("Task");];]
 
-#def-heading("Frontend.cmdTask", "def:Mise.Frontend.cmdTask", "Mise/Frontend/Graph.lean", 164, 167)
+#def-heading("Frontend.Sem.withCmp", "def:Mise.Frontend.Sem.withCmp", "Mise/Frontend/Graph.lean", 178, 184)
+
+#"The semantics of a build whose ";#raw("restat");#" commands go through the DSL's command wrapper (";#raw("wrapCommand");#"), which compares with ";#raw("cmp");#": an output is left untouched exactly when its contents are equal, so ";#raw("keep_eq");#" holds by construction.";
+
+#template("Template", "{sem} with each `restat` output kept exactly when its contents are unchanged")
+
+#raw(lang: "lean", block: true, "def Sem.withCmp {V : Type} [DecidableEq V] (sem : Sem V) : Sem V :=\n  { sem with keep := fun a b => decide (a = b), keep_eq := fun _ _ h => of_decide_eq_true h }")
+#uses[#link(label("def:Mise.Frontend.Sem"))[#raw("Frontend.Sem");];]
+
+#def-heading("Frontend.cmdTask", "def:Mise.Frontend.cmdTask", "Mise/Frontend/Graph.lean", 186, 189)
 
 #"A command as a task returning all its outputs. A static command fetches its explicit and implicit inputs in order.";
 
 #raw(lang: "lean", block: true, "def cmdTask {V : Type} (sem : Sem V) (dyn : Bool) (cmd : String) (ins : List Path) : Task Path V (List V) :=\n  if dyn then sem.dyn cmd else (fetchAll ins).bind fun vs => .pure (sem.exec cmd vs)")
 #uses[#link(label("def:Mise.Frontend.Sem"))[#raw("Frontend.Sem");];, #link(label("def:Mise.Frontend.fetchAll"))[#raw("Frontend.fetchAll");];, #link(label("def:Mise.Syntax.Path"))[#raw("Syntax.Path");];, #link(label("def:Mise.Task"))[#raw("Task");];, #link(label("def:Mise.Task.bind"))[#raw("Task.bind");];]
 
-#def-heading("Frontend.outTask", "def:Mise.Frontend.outTask", "Mise/Frontend/Graph.lean", 169, 171)
+#def-heading("Frontend.outTask", "def:Mise.Frontend.outTask", "Mise/Frontend/Graph.lean", 191, 193)
 
 #"Output ";#raw("i");#" of a command.";
 
 #raw(lang: "lean", block: true, "def outTask {V : Type} [Inhabited V] (t : Task Path V (List V)) (i : Nat) : Task Path V V :=\n  t.bind fun vs => .pure (vs.getD i default)")
 #uses[#link(label("def:Mise.Syntax.Path"))[#raw("Syntax.Path");];, #link(label("def:Mise.Task"))[#raw("Task");];, #link(label("def:Mise.Task.bind"))[#raw("Task.bind");];]
 
-#def-heading("Frontend.Graph.ruleOf", "def:Mise.Frontend.Graph.ruleOf", "Mise/Frontend/Graph.lean", 173, 174)
+#def-heading("Frontend.Graph.ruleOf", "def:Mise.Frontend.Graph.ruleOf", "Mise/Frontend/Graph.lean", 195, 196)
 
 #"The first rule whose name is the edge's rule name.";
 
 #raw(lang: "lean", block: true, "def Graph.ruleOf (g : Graph) (e : GEdge) : Option GRule := g.rules.find? (·.name == e.rule)")
 #uses[#link(label("def:Mise.Frontend.GEdge"))[#raw("Frontend.GEdge");];, #link(label("def:Mise.Frontend.GRule"))[#raw("Frontend.GRule");];, #link(label("def:Mise.Frontend.Graph"))[#raw("Frontend.Graph");];]
 
-#def-heading("Frontend.Graph.cmd", "def:Mise.Frontend.Graph.cmd", "Mise/Frontend/Graph.lean", 176, 180)
+#def-heading("Frontend.Graph.cmd", "def:Mise.Frontend.Graph.cmd", "Mise/Frontend/Graph.lean", 198, 202)
 
 #"The command the DSL means for an edge.";
 
 #raw(lang: "lean", block: true, "def Graph.cmd (g : Graph) (e : GEdge) : String :=\n  match g.ruleOf e with\n  | some r => evalWith e.look r.command\n  | none => \"\"")
-#uses[#link(label("def:Mise.Frontend.GEdge"))[#raw("Frontend.GEdge");];, #link(label("def:Mise.Frontend.GEdge.look"))[#raw("Frontend.GEdge.look");];, #link(label("def:Mise.Frontend.GRule"))[#raw("Frontend.GRule");];, #link(label("def:Mise.Frontend.Graph"))[#raw("Frontend.Graph");];, #link(label("def:Mise.Frontend.Graph.ruleOf"))[#raw("Frontend.Graph.ruleOf");];, #link(label("def:Mise.Syntax.evalWith"))[#raw("Syntax.evalWith");];]
+#uses[#link(label("def:Mise.Frontend.GEdge"))[#raw("Frontend.GEdge");];, #link(label("def:Mise.Frontend.GEdge.look"))[#raw("Frontend.GEdge.look");];, #link(label("def:Mise.Frontend.GRule"))[#raw("Frontend.GRule");];, #link(label("def:Mise.Frontend.Graph"))[#raw("Frontend.Graph");];, #link(label("def:Mise.Frontend.Graph.ruleOf"))[#raw("Frontend.Graph.ruleOf");];, #link(label("def:Mise.Frontend.depfileOutsOK"))[#raw("Frontend.depfileOutsOK");];, #link(label("def:Mise.Syntax.evalWith"))[#raw("Syntax.evalWith");];]
 
-#def-heading("Frontend.Graph.isDyn", "def:Mise.Frontend.Graph.isDyn", "Mise/Frontend/Graph.lean", 182, 186)
+#def-heading("Frontend.Graph.isDyn", "def:Mise.Frontend.Graph.isDyn", "Mise/Frontend/Graph.lean", 204, 208)
 
 #"Whether an edge's rule has a depfile.";
 
 #raw(lang: "lean", block: true, "def Graph.isDyn (g : Graph) (e : GEdge) : Bool :=\n  match g.ruleOf e with\n  | some r => r.depfile\n  | none => false")
-#uses[#link(label("def:Mise.Frontend.GEdge"))[#raw("Frontend.GEdge");];, #link(label("def:Mise.Frontend.GRule"))[#raw("Frontend.GRule");];, #link(label("def:Mise.Frontend.Graph"))[#raw("Frontend.Graph");];, #link(label("def:Mise.Frontend.Graph.cmd"))[#raw("Frontend.Graph.cmd");];, #link(label("def:Mise.Frontend.Graph.ruleOf"))[#raw("Frontend.Graph.ruleOf");];]
+#uses[#link(label("def:Mise.Frontend.GEdge"))[#raw("Frontend.GEdge");];, #link(label("def:Mise.Frontend.GRule"))[#raw("Frontend.GRule");];, #link(label("def:Mise.Frontend.Graph"))[#raw("Frontend.Graph");];, #link(label("def:Mise.Frontend.Graph.ruleOf"))[#raw("Frontend.Graph.ruleOf");];, #link(label("def:Mise.Frontend.depfileOutsOK"))[#raw("Frontend.depfileOutsOK");];]
 
-#def-heading("Frontend.Graph.isSource", "def:Mise.Frontend.Graph.isSource", "Mise/Frontend/Graph.lean", 194, 195)
+#def-heading("Frontend.Graph.isSource", "def:Mise.Frontend.Graph.isSource", "Mise/Frontend/Graph.lean", 216, 217)
 
 #"Paths no edge produces.";
 
 #raw(lang: "lean", block: true, "def Graph.isSource (g : Graph) (k : Path) : Bool := (findOut GEdge.allOuts k g.edges).isNone")
 #uses[#link(label("def:Mise.Frontend.GEdge"))[#raw("Frontend.GEdge");];, #link(label("def:Mise.Frontend.GEdge.allOuts"))[#raw("Frontend.GEdge.allOuts");];, #link(label("def:Mise.Frontend.Graph"))[#raw("Frontend.Graph");];, #link(label("def:Mise.Frontend.findOut"))[#raw("Frontend.findOut");];, #link(label("def:Mise.Syntax.Path"))[#raw("Syntax.Path");];]
 
-#def-heading("Frontend.Graph.spec", "def:Mise.Frontend.Graph.spec", "Mise/Frontend/Graph.lean", 199, 205)
+#def-heading("Frontend.Graph.spec", "def:Mise.Frontend.Graph.spec", "Mise/Frontend/Graph.lean", 221, 227)
 
 #"The meaning of a graph, straight from the DSL.";
 
@@ -1090,7 +1154,7 @@
 #raw(lang: "lean", block: true, "def Graph.spec (sem : Sem V) (g : Graph) : BuildSpec Path V where\n  isSource := g.isSource\n  task k := match findOut GEdge.allOuts k g.edges with\n    | some (_, e) => outTask (cmdTask sem (g.isDyn e) (g.cmd e) e.inputs) (e.allOuts.idxOf k)\n    | none => .pure default")
 #uses[#link(label("def:Mise.BuildSpec"))[#raw("BuildSpec");];, #link(label("def:Mise.Frontend.GEdge"))[#raw("Frontend.GEdge");];, #link(label("def:Mise.Frontend.GEdge.allOuts"))[#raw("Frontend.GEdge.allOuts");];, #link(label("def:Mise.Frontend.GEdge.inputs"))[#raw("Frontend.GEdge.inputs");];, #link(label("def:Mise.Frontend.Graph"))[#raw("Frontend.Graph");];, #link(label("def:Mise.Frontend.Graph.cmd"))[#raw("Frontend.Graph.cmd");];, #link(label("def:Mise.Frontend.Graph.isDyn"))[#raw("Frontend.Graph.isDyn");];, #link(label("def:Mise.Frontend.Graph.isSource"))[#raw("Frontend.Graph.isSource");];, #link(label("def:Mise.Frontend.Sem"))[#raw("Frontend.Sem");];, #link(label("def:Mise.Frontend.cmdTask"))[#raw("Frontend.cmdTask");];, #link(label("def:Mise.Frontend.findOut"))[#raw("Frontend.findOut");];, #link(label("def:Mise.Frontend.outTask"))[#raw("Frontend.outTask");];, #link(label("def:Mise.Syntax.Path"))[#raw("Syntax.Path");];, #link(label("def:Mise.Task"))[#raw("Task");];]
 
-#def-heading("Frontend.Graph.DynOK", "def:Mise.Frontend.Graph.DynOK", "Mise/Frontend/Graph.lean", 207, 211)
+#def-heading("Frontend.Graph.DynOK", "def:Mise.Frontend.Graph.DynOK", "Mise/Frontend/Graph.lean", 229, 233)
 
 #"The static-ancestor condition (Stage 6): every depfile command reads only sources and the edge's own inputs, order-only inputs included.";
 
@@ -1099,51 +1163,58 @@
 #raw(lang: "lean", block: true, "def Graph.DynOK (sem : Sem V) (g : Graph) : Prop :=\n  ∀ e ∈ g.edges, g.isDyn e = true → (sem.dyn (g.cmd e)).FetchesOnly fun k => g.isSource k = true ∨ k ∈ e.allIns")
 #uses[#link(label("def:Mise.Frontend.GEdge"))[#raw("Frontend.GEdge");];, #link(label("def:Mise.Frontend.GEdge.allIns"))[#raw("Frontend.GEdge.allIns");];, #link(label("def:Mise.Frontend.Graph"))[#raw("Frontend.Graph");];, #link(label("def:Mise.Frontend.Graph.cmd"))[#raw("Frontend.Graph.cmd");];, #link(label("def:Mise.Frontend.Graph.isDyn"))[#raw("Frontend.Graph.isDyn");];, #link(label("def:Mise.Frontend.Graph.isSource"))[#raw("Frontend.Graph.isSource");];, #link(label("def:Mise.Frontend.Sem"))[#raw("Frontend.Sem");];, #link(label("def:Mise.Syntax.Path"))[#raw("Syntax.Path");];, #link(label("def:Mise.Task.FetchesOnly"))[#raw("Task.FetchesOnly");];]
 
-#def-heading("Frontend.depfileBindings", "def:Mise.Frontend.depfileBindings", "Mise/Frontend/Graph.lean", 215, 216)
+#def-heading("Frontend.depfileBindings", "def:Mise.Frontend.depfileBindings", "Mise/Frontend/Graph.lean", 237, 238)
 
 #"What a rule with a depfile adds: ";#raw("depfile = ${out}.d");#" and ";#raw("deps = gcc");#".";
 
 #raw(lang: "lean", block: true, "def depfileBindings : List Binding := [(\"depfile\", [.var \"out\", .lit \".d\"]), (\"deps\", [.lit \"gcc\"])]")
 #uses[#link(label("def:Mise.Syntax.Binding"))[#raw("Syntax.Binding");];, #link(label("def:Mise.Syntax.EvalString"))[#raw("Syntax.EvalString");];, #link(label("def:Mise.Syntax.Seg"))[#raw("Syntax.Seg");];]
 
-#def-heading("Frontend.restatBindings", "def:Mise.Frontend.restatBindings", "Mise/Frontend/Graph.lean", 218, 219)
+#def-heading("Frontend.restatBindings", "def:Mise.Frontend.restatBindings", "Mise/Frontend/Graph.lean", 240, 241)
 
 #"What a rule with ";#raw("restat");#" adds: ";#raw("restat = 1");#".";
 
 #raw(lang: "lean", block: true, "def restatBindings : List Binding := [(\"restat\", [.lit \"1\"])]")
 #uses[#link(label("def:Mise.Syntax.Binding"))[#raw("Syntax.Binding");];, #link(label("def:Mise.Syntax.EvalString"))[#raw("Syntax.EvalString");];, #link(label("def:Mise.Syntax.Seg"))[#raw("Syntax.Seg");];]
 
-#def-heading("Frontend.emitRule", "def:Mise.Frontend.emitRule", "Mise/Frontend/Graph.lean", 221, 226)
+#def-heading("Frontend.emitRule", "def:Mise.Frontend.emitRule", "Mise/Frontend/Graph.lean", 243, 248)
 
 #"A DSL rule as a Ninja rule: ";#raw("command");#", then ";#raw("description");#" when it is nonempty, then the depfile and ";#raw("restat");#" bindings when the rule asks for them.";
 
 #raw(lang: "lean", block: true, "def emitRule (r : GRule) : Rule :=\n  ⟨r.name, [(\"command\", r.command)] ++ (if r.description.isEmpty then [] else [(\"description\", r.description)]) ++\n    (if r.depfile then depfileBindings else []) ++ (if r.restat then restatBindings else [])⟩")
 #uses[#link(label("def:Mise.Frontend.GRule"))[#raw("Frontend.GRule");];, #link(label("def:Mise.Frontend.depfileBindings"))[#raw("Frontend.depfileBindings");];, #link(label("def:Mise.Frontend.restatBindings"))[#raw("Frontend.restatBindings");];, #link(label("def:Mise.Syntax.Binding"))[#raw("Syntax.Binding");];, #link(label("def:Mise.Syntax.EvalString"))[#raw("Syntax.EvalString");];, #link(label("def:Mise.Syntax.Rule"))[#raw("Syntax.Rule");];, #link(label("def:Mise.Syntax.Seg"))[#raw("Syntax.Seg");];]
 
-#def-heading("Frontend.litVal", "def:Mise.Frontend.litVal", "Mise/Frontend/Graph.lean", 228, 229)
+#def-heading("Frontend.litVal", "def:Mise.Frontend.litVal", "Mise/Frontend/Graph.lean", 250, 251)
 
 #"A string as a value of literal text. The empty string is the empty value.";
 
 #raw(lang: "lean", block: true, "def litVal (s : String) : EvalString := if s.toList.isEmpty then [] else [.lit s]")
 #uses[#link(label("def:Mise.Syntax.EvalString"))[#raw("Syntax.EvalString");];, #link(label("def:Mise.Syntax.Seg"))[#raw("Syntax.Seg");];]
 
-#def-heading("Frontend.emitEdge", "def:Mise.Frontend.emitEdge", "Mise/Frontend/Graph.lean", 231, 236)
+#def-heading("Frontend.emitEdge", "def:Mise.Frontend.emitEdge", "Mise/Frontend/Graph.lean", 253, 258)
 
 #"A DSL edge as a Ninja edge with the same paths and rule. Each edge variable becomes a binding to its literal value.";
 
 #raw(lang: "lean", block: true, "def emitEdge (e : GEdge) : Edge :=\n  { outs := e.outs, implicitOuts := e.implicitOuts, rule := e.rule, ins := e.ins,\n    implicitIns := e.implicitIns, orderOnly := e.orderOnly,\n    bindings := e.vars.map fun b => (b.1, litVal b.2) }")
 #uses[#link(label("def:Mise.Frontend.GEdge"))[#raw("Frontend.GEdge");];, #link(label("def:Mise.Frontend.litVal"))[#raw("Frontend.litVal");];, #link(label("def:Mise.Syntax.Binding"))[#raw("Syntax.Binding");];, #link(label("def:Mise.Syntax.Edge"))[#raw("Syntax.Edge");];, #link(label("def:Mise.Syntax.EvalString"))[#raw("Syntax.EvalString");];]
 
-#def-heading("Frontend.emit", "def:Mise.Frontend.emit", "Mise/Frontend/Graph.lean", 238, 243)
+#def-heading("Frontend.versionStmt", "def:Mise.Frontend.versionStmt", "Mise/Frontend/Graph.lean", 260, 261)
 
-#"The manifest ";#raw("mise");#" writes for a graph: the rules, then the edges in order, then a ";#raw("default");#" statement if the graph has default targets.";
+#"The first statement of every emitted manifest.";
+
+#raw(lang: "lean", block: true, "def versionStmt : Stmt := .binding versionVar [.lit ninjaMinVersion]")
+#uses[#link(label("def:Mise.Frontend.ninjaMinVersion"))[#raw("Frontend.ninjaMinVersion");];, #link(label("def:Mise.Frontend.versionVar"))[#raw("Frontend.versionVar");];, #link(label("def:Mise.Syntax.Seg"))[#raw("Syntax.Seg");];, #link(label("def:Mise.Syntax.Stmt"))[#raw("Syntax.Stmt");];]
+
+#def-heading("Frontend.emit", "def:Mise.Frontend.emit", "Mise/Frontend/Graph.lean", 263, 269)
+
+#"The manifest ";#raw("mise");#" writes for a graph: the version statement (";#raw("versionStmt");#"), the rules, then the edges in order, then a ";#raw("default");#" statement if the graph has default targets.";
 
 #template("Template", "the manifest `mise` emits for {g}")
 
-#raw(lang: "lean", block: true, "def emit (g : Graph) : Manifest :=\n  ⟨g.rules.map (Stmt.rule ∘ emitRule) ++ g.edges.map (Stmt.edge ∘ emitEdge) ++\n    (if g.defaults.isEmpty then [] else [.default g.defaults])⟩")
-#uses[#link(label("def:Mise.Frontend.GEdge"))[#raw("Frontend.GEdge");];, #link(label("def:Mise.Frontend.GRule"))[#raw("Frontend.GRule");];, #link(label("def:Mise.Frontend.Graph"))[#raw("Frontend.Graph");];, #link(label("def:Mise.Frontend.emitEdge"))[#raw("Frontend.emitEdge");];, #link(label("def:Mise.Frontend.emitRule"))[#raw("Frontend.emitRule");];, #link(label("def:Mise.Syntax.Edge"))[#raw("Syntax.Edge");];, #link(label("def:Mise.Syntax.Manifest"))[#raw("Syntax.Manifest");];, #link(label("def:Mise.Syntax.Path"))[#raw("Syntax.Path");];, #link(label("def:Mise.Syntax.Rule"))[#raw("Syntax.Rule");];, #link(label("def:Mise.Syntax.Stmt"))[#raw("Syntax.Stmt");];]
+#raw(lang: "lean", block: true, "def emit (g : Graph) : Manifest :=\n  ⟨versionStmt :: (g.rules.map (Stmt.rule ∘ emitRule) ++ g.edges.map (Stmt.edge ∘ emitEdge) ++\n    (if g.defaults.isEmpty then [] else [.default g.defaults]))⟩")
+#uses[#link(label("def:Mise.Frontend.GEdge"))[#raw("Frontend.GEdge");];, #link(label("def:Mise.Frontend.GRule"))[#raw("Frontend.GRule");];, #link(label("def:Mise.Frontend.Graph"))[#raw("Frontend.Graph");];, #link(label("def:Mise.Frontend.emitEdge"))[#raw("Frontend.emitEdge");];, #link(label("def:Mise.Frontend.emitRule"))[#raw("Frontend.emitRule");];, #link(label("def:Mise.Frontend.versionStmt"))[#raw("Frontend.versionStmt");];, #link(label("def:Mise.Syntax.Edge"))[#raw("Syntax.Edge");];, #link(label("def:Mise.Syntax.Manifest"))[#raw("Syntax.Manifest");];, #link(label("def:Mise.Syntax.Path"))[#raw("Syntax.Path");];, #link(label("def:Mise.Syntax.Rule"))[#raw("Syntax.Rule");];, #link(label("def:Mise.Syntax.Stmt"))[#raw("Syntax.Stmt");];]
 
-#def-heading("Frontend.denote", "def:Mise.Frontend.denote", "Mise/Frontend/Graph.lean", 245, 255)
+#def-heading("Frontend.denote", "def:Mise.Frontend.denote", "Mise/Frontend/Graph.lean", 271, 281)
 
 #"The meaning of a manifest under the Ninja evaluation model: each output is computed by its edge's evaluated command, which is static or reads a depfile according to the edge's ";#raw("deps");#" binding. Paths no edge produces are sources.";
 
@@ -1191,16 +1262,16 @@
 #raw(lang: "lean", block: true, "def medges (m : Manifest) : List Mise.Model.MEdge := m.elab.edges.map (Mise.Model.toMEdge m.elab.file)")
 #uses[#link(label("def:Mise.Model.MEdge"))[#raw("Model.MEdge");];, #link(label("def:Mise.Model.toMEdge"))[#raw("Model.toMEdge");];, #link(label("def:Mise.Syntax.EdgeInfo"))[#raw("Syntax.EdgeInfo");];, #link(label("def:Mise.Syntax.Elab"))[#raw("Syntax.Elab");];, #link(label("def:Mise.Syntax.Manifest"))[#raw("Syntax.Manifest");];, #link(label("def:Mise.Syntax.Manifest.elab"))[#raw("Syntax.Manifest.elab");];]
 
-#def-heading("Model.St", "def:Mise.Model.St", "Mise/Model/Basic.lean", 65, 76)
+#def-heading("Model.St", "def:Mise.Model.St", "Mise/Model/Basic.lean", 65, 79)
 
 #"File system, build log, deps log and clock. A log entry is the command and the time recorded for the output; a deps entry is the list of paths the command read.";
 
 #template("Template", "model states over {V}")
 
-#raw(lang: "lean", block: true, "structure St (V : Type) where\n  fs : Path → Option (V × Nat)\n  log : Path → Option (String × Nat)\n  deps : Path → Option (List Path) := fun _ => none\n  /-- The current time. Every edit and every command run advances it by\n  one, and stamps what it writes with the new time.\n  Gloss: the clock of {self} -/\n  clock : Nat")
+#raw(lang: "lean", block: true, "structure St (V : Type) where\n  /-- Each path's contents and mtime, or `none` when the file is missing.\n  Gloss: the file at {#2} in {self}\n  Gloss.fun: the file system of {self} -/\n  fs : Path → Option (V × Nat)\n  log : Path → Option (String × Nat)\n  deps : Path → Option (List Path) := fun _ => none\n  /-- The current time. Every edit and every command run advances it by\n  one, and stamps what it writes with the new time.\n  Gloss: the clock of {self} -/\n  clock : Nat")
 #uses[#link(label("def:Mise.Syntax.Path"))[#raw("Syntax.Path");];]
 
-#def-heading("Model.St.content", "def:Mise.Model.St.content", "Mise/Model/Basic.lean", 82, 85)
+#def-heading("Model.St.content", "def:Mise.Model.St.content", "Mise/Model/Basic.lean", 85, 88)
 
 #"Contents; a missing file reads as ";#raw("default");#".";
 
@@ -1211,7 +1282,7 @@
 #raw(lang: "lean", block: true, "def content (st : St V) (p : Path) : V := ((st.fs p).map (·.1)).getD default")
 #uses[#link(label("def:Mise.Model.St"))[#raw("Model.St");];, #link(label("def:Mise.Syntax.Path"))[#raw("Syntax.Path");];]
 
-#def-heading("Model.St.mtime", "def:Mise.Model.St.mtime", "Mise/Model/Basic.lean", 87, 89)
+#def-heading("Model.St.mtime", "def:Mise.Model.St.mtime", "Mise/Model/Basic.lean", 90, 92)
 
 #"Modification time; a missing file has time 0.";
 
@@ -1220,28 +1291,28 @@
 #raw(lang: "lean", block: true, "def mtime (st : St V) (p : Path) : Nat := ((st.fs p).map (·.2)).getD 0")
 #uses[#link(label("def:Mise.Model.St"))[#raw("Model.St");];, #link(label("def:Mise.Syntax.Path"))[#raw("Syntax.Path");];]
 
-#def-heading("Model.St.newest", "def:Mise.Model.St.newest", "Mise/Model/Basic.lean", 91, 94)
+#def-heading("Model.St.newest", "def:Mise.Model.St.newest", "Mise/Model/Basic.lean", 94, 97)
 
 #"The newest mtime among some inputs.";
 
 #raw(lang: "lean", block: true, "def newest (st : St V) : List Path → Nat\n  | [] => 0\n  | p :: ps => max (st.mtime p) (st.newest ps)")
 #uses[#link(label("def:Mise.Model.St"))[#raw("Model.St");];, #link(label("def:Mise.Model.St.mtime"))[#raw("Model.St.mtime");];, #link(label("def:Mise.Syntax.Path"))[#raw("Syntax.Path");];]
 
-#def-heading("Model.St.effIns", "def:Mise.Model.St.effIns", "Mise/Model/Basic.lean", 96, 99)
+#def-heading("Model.St.effIns", "def:Mise.Model.St.effIns", "Mise/Model/Basic.lean", 99, 102)
 
 #"The inputs Ninja checks for an output: the static inputs, and for a depfile edge the recorded deps. ";#raw("none");#" when a depfile edge has no entry.";
 
 #raw(lang: "lean", block: true, "def effIns (st : St V) (e : MEdge) (o : Path) : Option (List Path) :=\n  if e.dyn then (st.deps o).map (e.ins ++ ·) else some e.ins")
 #uses[#link(label("def:Mise.Model.MEdge"))[#raw("Model.MEdge");];, #link(label("def:Mise.Model.St"))[#raw("Model.St");];, #link(label("def:Mise.Syntax.Path"))[#raw("Syntax.Path");];]
 
-#def-heading("Model.St.outDirty", "def:Mise.Model.St.outDirty", "Mise/Model/Basic.lean", 101, 110)
+#def-heading("Model.St.outDirty", "def:Mise.Model.St.outDirty", "Mise/Model/Basic.lean", 104, 113)
 
 #"Whether output ";#raw("o");#" of ";#raw("e");#" is dirty: true when the file is missing, has no log entry, or (for a depfile edge) has no deps entry; when the logged command differs from the edge's; when the log time is older than the newest input Ninja checks; or, for an edge without ";#raw("restat");#", when the file is older than that input.";
 
 #raw(lang: "lean", block: true, "def outDirty (st : St V) (e : MEdge) (o : Path) : Bool :=\n  match st.fs o, st.log o, st.effIns e o with\n  | some (_, t), some (c, lt), some D =>\n    (!e.restat && decide (t < st.newest D)) || c != e.cmd || decide (lt < st.newest D)\n  | _, _, _ => true")
 #uses[#link(label("def:Mise.Model.MEdge"))[#raw("Model.MEdge");];, #link(label("def:Mise.Model.St"))[#raw("Model.St");];, #link(label("def:Mise.Model.St.effIns"))[#raw("Model.St.effIns");];, #link(label("def:Mise.Model.St.newest"))[#raw("Model.St.newest");];, #link(label("def:Mise.Syntax.Path"))[#raw("Syntax.Path");];]
 
-#def-heading("Model.St.dirty", "def:Mise.Model.St.dirty", "Mise/Model/Basic.lean", 112, 114)
+#def-heading("Model.St.dirty", "def:Mise.Model.St.dirty", "Mise/Model/Basic.lean", 115, 117)
 
 #"Whether Ninja runs the edge: some output is dirty (";#raw("outDirty");#").";
 
@@ -1250,14 +1321,16 @@
 #raw(lang: "lean", block: true, "def dirty (st : St V) (e : MEdge) : Bool := e.outs.any (st.outDirty e)")
 #uses[#link(label("def:Mise.Model.MEdge"))[#raw("Model.MEdge");];, #link(label("def:Mise.Model.St"))[#raw("Model.St");];, #link(label("def:Mise.Model.St.outDirty"))[#raw("Model.St.outDirty");];, #link(label("def:Mise.Syntax.Path"))[#raw("Syntax.Path");];]
 
-#def-heading("Model.St.outVal", "def:Mise.Model.St.outVal", "Mise/Model/Basic.lean", 116, 118)
+#def-heading("Model.St.outVal", "def:Mise.Model.St.outVal", "Mise/Model/Basic.lean", 119, 122)
 
 #"The contents a run writes to output ";#raw("o");#".";
+
+#template("Template", "the contents that running {e} in {st} writes to {o}")
 
 #raw(lang: "lean", block: true, "def outVal (sem : Sem V) (st : St V) (e : MEdge) (o : Path) : V :=\n  ((e.task sem).run st.content).getD (e.outs.idxOf o) default")
 #uses[#link(label("def:Mise.Frontend.Sem"))[#raw("Frontend.Sem");];, #link(label("def:Mise.Model.MEdge"))[#raw("Model.MEdge");];, #link(label("def:Mise.Model.MEdge.task"))[#raw("Model.MEdge.task");];, #link(label("def:Mise.Model.St"))[#raw("Model.St");];, #link(label("def:Mise.Model.St.content"))[#raw("Model.St.content");];, #link(label("def:Mise.Syntax.Path"))[#raw("Syntax.Path");];, #link(label("def:Mise.Task.run"))[#raw("Task.run");];]
 
-#def-heading("Model.St.kept", "def:Mise.Model.St.kept", "Mise/Model/Basic.lean", 120, 125)
+#def-heading("Model.St.kept", "def:Mise.Model.St.kept", "Mise/Model/Basic.lean", 124, 129)
 
 #"A ";#raw("restat");#" command leaves output ";#raw("o");#" untouched (Stage 7).";
 
@@ -1266,7 +1339,7 @@
 #raw(lang: "lean", block: true, "def kept (sem : Sem V) (st : St V) (e : MEdge) (o : Path) : Bool :=\n  e.restat && match st.fs o with\n    | some (old, _) => sem.keep old (st.outVal sem e o)\n    | none => false")
 #uses[#link(label("def:Mise.Frontend.Sem"))[#raw("Frontend.Sem");];, #link(label("def:Mise.Model.MEdge"))[#raw("Model.MEdge");];, #link(label("def:Mise.Model.St"))[#raw("Model.St");];, #link(label("def:Mise.Model.St.outVal"))[#raw("Model.St.outVal");];, #link(label("def:Mise.Syntax.Path"))[#raw("Syntax.Path");];]
 
-#def-heading("Model.St.run", "def:Mise.Model.St.run", "Mise/Model/Basic.lean", 127, 136)
+#def-heading("Model.St.run", "def:Mise.Model.St.run", "Mise/Model/Basic.lean", 131, 140)
 
 #"Run an edge's command: write every output it does not keep, its log entry and its deps entry at a fresh time. Writes are atomic.";
 
@@ -1275,21 +1348,21 @@
 #raw(lang: "lean", block: true, "def run (sem : Sem V) (st : St V) (e : MEdge) : St V :=\n  let t := st.clock + 1\n  let D := (e.task sem).deps st.content\n  { fs := fun p => if e.outs.contains p && !st.kept sem e p then some (st.outVal sem e p, t) else st.fs p\n    log := fun p => if e.outs.contains p then some (e.cmd, t) else st.log p\n    deps := fun p => if e.outs.contains p then some D else st.deps p\n    clock := t }")
 #uses[#link(label("def:Mise.Frontend.Sem"))[#raw("Frontend.Sem");];, #link(label("def:Mise.Model.MEdge"))[#raw("Model.MEdge");];, #link(label("def:Mise.Model.MEdge.task"))[#raw("Model.MEdge.task");];, #link(label("def:Mise.Model.St"))[#raw("Model.St");];, #link(label("def:Mise.Model.St.content"))[#raw("Model.St.content");];, #link(label("def:Mise.Model.St.kept"))[#raw("Model.St.kept");];, #link(label("def:Mise.Model.St.outVal"))[#raw("Model.St.outVal");];, #link(label("def:Mise.Syntax.Path"))[#raw("Syntax.Path");];, #link(label("def:Mise.Task.deps"))[#raw("Task.deps");];]
 
-#def-heading("Model.St.step", "def:Mise.Model.St.step", "Mise/Model/Basic.lean", 138, 140)
+#def-heading("Model.St.step", "def:Mise.Model.St.step", "Mise/Model/Basic.lean", 142, 144)
 
 #"Ninja's visit to an edge: run it if it is dirty, otherwise change nothing.";
 
 #raw(lang: "lean", block: true, "def step (sem : Sem V) (st : St V) (e : MEdge) : St V :=\n  if st.dirty e then st.run sem e else st")
 #uses[#link(label("def:Mise.Frontend.Sem"))[#raw("Frontend.Sem");];, #link(label("def:Mise.Model.MEdge"))[#raw("Model.MEdge");];, #link(label("def:Mise.Model.St"))[#raw("Model.St");];, #link(label("def:Mise.Model.St.dirty"))[#raw("Model.St.dirty");];, #link(label("def:Mise.Model.St.run"))[#raw("Model.St.run");];]
 
-#def-heading("Model.St.edit", "def:Mise.Model.St.edit", "Mise/Model/Basic.lean", 142, 144)
+#def-heading("Model.St.edit", "def:Mise.Model.St.edit", "Mise/Model/Basic.lean", 146, 148)
 
 #"A source edit: new contents at a fresh time.";
 
 #raw(lang: "lean", block: true, "def edit (st : St V) (p : Path) (v : V) : St V :=\n  { st with fs := fun q => if q = p then some (v, st.clock + 1) else st.fs q, clock := st.clock + 1 }")
 #uses[#link(label("def:Mise.Model.St"))[#raw("Model.St");];, #link(label("def:Mise.Syntax.Path"))[#raw("Syntax.Path");];]
 
-#def-heading("Model.St.edits", "def:Mise.Model.St.edits", "Mise/Model/Basic.lean", 146, 150)
+#def-heading("Model.St.edits", "def:Mise.Model.St.edits", "Mise/Model/Basic.lean", 150, 154)
 
 #"Apply source edits in list order, each with ";#raw("edit");#".";
 
@@ -1298,14 +1371,14 @@
 #raw(lang: "lean", block: true, "def edits (st : St V) : List (Path × V) → St V\n  | [] => st\n  | (p, v) :: es => (st.edit p v).edits es")
 #uses[#link(label("def:Mise.Model.St"))[#raw("Model.St");];, #link(label("def:Mise.Model.St.edit"))[#raw("Model.St.edit");];, #link(label("def:Mise.Syntax.Path"))[#raw("Syntax.Path");];]
 
-#def-heading("Model.St.Fresh", "def:Mise.Model.St.Fresh", "Mise/Model/Basic.lean", 152, 154)
+#def-heading("Model.St.Fresh", "def:Mise.Model.St.Fresh", "Mise/Model/Basic.lean", 156, 158)
 
 #"Every recorded mtime and log time is at most the clock.";
 
 #raw(lang: "lean", block: true, "def Fresh (st : St V) : Prop :=\n  (∀ p v t, st.fs p = some (v, t) → t ≤ st.clock) ∧ ∀ p c t, st.log p = some (c, t) → t ≤ st.clock")
 #uses[#link(label("def:Mise.Model.St"))[#raw("Model.St");];, #link(label("def:Mise.Syntax.Path"))[#raw("Syntax.Path");];]
 
-#def-heading("Model.buildTrace", "def:Mise.Model.buildTrace", "Mise/Model/Basic.lean", 168, 176)
+#def-heading("Model.buildTrace", "def:Mise.Model.buildTrace", "Mise/Model/Basic.lean", 172, 180)
 
 #"Visit edges in order, running the dirty ones. Also returns the edges run.";
 
@@ -1318,14 +1391,14 @@
 #raw(lang: "lean", block: true, "def buildTrace (sem : Sem V) : List MEdge → St V → St V × List MEdge\n  | [], st => (st, [])\n  | e :: es, st =>\n    let r := buildTrace sem es (st.step sem e)\n    (r.1, if st.dirty e then e :: r.2 else r.2)")
 #uses[#link(label("def:Mise.Frontend.Sem"))[#raw("Frontend.Sem");];, #link(label("def:Mise.Model.MEdge"))[#raw("Model.MEdge");];, #link(label("def:Mise.Model.St"))[#raw("Model.St");];, #link(label("def:Mise.Model.St.dirty"))[#raw("Model.St.dirty");];, #link(label("def:Mise.Model.St.step"))[#raw("Model.St.step");];]
 
-#def-heading("Model.ninjaBuild", "def:Mise.Model.ninjaBuild", "Mise/Model/Basic.lean", 178, 181)
+#def-heading("Model.ninjaBuild", "def:Mise.Model.ninjaBuild", "Mise/Model/Basic.lean", 182, 185)
 
 #"One ";#raw("ninja");#" run on a manifest: visit the edges in manifest order, running the dirty ones, and return the final state.";
 
 #raw(lang: "lean", block: true, "def ninjaBuild (sem : Sem V) (m : Manifest) (st : St V) : St V :=\n  (buildTrace sem m.medges st).1")
 #uses[#link(label("def:Mise.Frontend.Sem"))[#raw("Frontend.Sem");];, #link(label("def:Mise.Model.MEdge"))[#raw("Model.MEdge");];, #link(label("def:Mise.Model.St"))[#raw("Model.St");];, #link(label("def:Mise.Model.buildTrace"))[#raw("Model.buildTrace");];, #link(label("def:Mise.Syntax.Manifest"))[#raw("Syntax.Manifest");];, #link(label("def:Mise.Syntax.Manifest.medges"))[#raw("Syntax.Manifest.medges");];]
 
-#def-heading("Model.Disjoint", "def:Mise.Model.Disjoint", "Mise/Model/Basic.lean", 201, 203)
+#def-heading("Model.Disjoint", "def:Mise.Model.Disjoint", "Mise/Model/Basic.lean", 205, 207)
 
 #"No path is in both lists.";
 
@@ -1334,7 +1407,7 @@
 #raw(lang: "lean", block: true, "def Disjoint (a b : List Path) : Prop := ∀ p ∈ a, p ∉ b")
 #uses[#link(label("def:Mise.Syntax.Path"))[#raw("Syntax.Path");];]
 
-#def-heading("Model.Sched", "def:Mise.Model.Sched", "Mise/Model/Basic.lean", 205, 210)
+#def-heading("Model.Sched", "def:Mise.Model.Sched", "Mise/Model/Basic.lean", 209, 214)
 
 #"Edges in a schedulable order: no edge reads its own outputs or a later edge's outputs, order-only inputs included, and no two edges share an output.";
 
@@ -1350,9 +1423,78 @@
 #raw(lang: "lean", block: true, "inductive Reach (es : List MEdge) : St V → Prop\n  | init {st : St V} : st.Fresh → (∀ p, st.log p = none) → (∀ p, st.deps p = none) → Reach es st\n  | edit {st : St V} (p : Path) (v : V) : Reach es st → (∀ e ∈ es, p ∉ e.outs) → Reach es (st.edit p v)\n  | step {st : St V} {e : MEdge} : Reach es st → e ∈ es → Reach es (st.step sem e)")
 #uses[#link(label("def:Mise.Frontend.Sem"))[#raw("Frontend.Sem");];, #link(label("def:Mise.Model.MEdge"))[#raw("Model.MEdge");];, #link(label("def:Mise.Model.St"))[#raw("Model.St");];, #link(label("def:Mise.Model.St.Fresh"))[#raw("Model.St.Fresh");];, #link(label("def:Mise.Model.St.edit"))[#raw("Model.St.edit");];, #link(label("def:Mise.Model.St.step"))[#raw("Model.St.step");];, #link(label("def:Mise.Syntax.Path"))[#raw("Syntax.Path");];]
 
+== #raw("Mise/Model/Cmp.lean");
+
+#def-heading("Model.Files", "def:Mise.Model.Files", "Mise/Model/Cmp.lean", 116, 117)
+
+#"The files: contents and mtime of each path, or ";#raw("none");#" when absent.";
+
+#raw(lang: "lean", block: true, "abbrev Files (V : Type) := Path → Option (V × Nat)")
+#uses[#link(label("def:Mise.Syntax.Path"))[#raw("Syntax.Path");];]
+
+#def-heading("Model.aside", "def:Mise.Model.aside", "Mise/Model/Cmp.lean", 119, 121)
+
+#"Where the wrapper moves an old output while its command runs.";
+
+#template("Template", "the `.mise-old` file of {p}")
+
+#raw(lang: "lean", block: true, "def aside (p : Path) : Path := p ++ \".mise-old\"")
+#uses[#link(label("def:Mise.Syntax.Path"))[#raw("Syntax.Path");];]
+
+#def-heading("Model.mvF", "def:Mise.Model.mvF", "Mise/Model/Cmp.lean", 125, 126)
+
+#raw("mv -f a b");#": ";#raw("b");#" gets ";#raw("a");#"'s file, mtime included, and ";#raw("a");#" is gone.";
+
+#raw(lang: "lean", block: true, "def mvF (a b : Path) (fs : Files V) : Files V := fun p => if p = b then fs a else if p = a then none else fs p")
+#uses[#link(label("def:Mise.Model.Files"))[#raw("Model.Files");];, #link(label("def:Mise.Syntax.Path"))[#raw("Syntax.Path");];]
+
+#def-heading("Model.rmF", "def:Mise.Model.rmF", "Mise/Model/Cmp.lean", 128, 129)
+
+#raw("rm -f a");#".";
+
+#raw(lang: "lean", block: true, "def rmF (a : Path) (fs : Files V) : Files V := fun p => if p = a then none else fs p")
+#uses[#link(label("def:Mise.Model.Files"))[#raw("Model.Files");];, #link(label("def:Mise.Syntax.Path"))[#raw("Syntax.Path");];]
+
+#def-heading("Model.stash", "def:Mise.Model.stash", "Mise/Model/Cmp.lean", 131, 134)
+
+#"The first loop, for output ";#raw("f");#": ";#raw("if [ -e f ]; then mv -f f f.mise-old; elif [ -e f.mise-old ]; then rm -f f.mise-old; fi");#".";
+
+#raw(lang: "lean", block: true, "def stash (fs : Files V) (f : Path) : Files V :=\n  if (fs f).isSome then mvF f (aside f) fs else if (fs (aside f)).isSome then rmF (aside f) fs else fs")
+#uses[#link(label("def:Mise.Model.Files"))[#raw("Model.Files");];, #link(label("def:Mise.Model.aside"))[#raw("Model.aside");];, #link(label("def:Mise.Model.mvF"))[#raw("Model.mvF");];, #link(label("def:Mise.Model.rmF"))[#raw("Model.rmF");];, #link(label("def:Mise.Syntax.Path"))[#raw("Syntax.Path");];]
+
+#def-heading("Model.command", "def:Mise.Model.command", "Mise/Model/Cmp.lean", 136, 143)
+
+#"The command: it writes ";#raw("v");#" at time ";#raw("t");#" to each output ";#raw("f");#" with ";#raw("w f = some v");#", and changes no other file.";
+
+#raw(lang: "lean", block: true, "def command (outs : List Path) (w : Path → Option V) (t : Nat) (fs : Files V) : Files V := fun p =>\n  if p ∈ outs then\n    match w p with\n    | some v => some (v, t)\n    | none => fs p\n  else fs p")
+#uses[#link(label("def:Mise.Model.Files"))[#raw("Model.Files");];, #link(label("def:Mise.Syntax.Path"))[#raw("Syntax.Path");];]
+
+#def-heading("Model.settle", "def:Mise.Model.settle", "Mise/Model/Cmp.lean", 145, 157)
+
+#"The last loop, for output ";#raw("f");#", where ";#raw("s");#" is whether the status is 0: ";#raw("if [ $s != 0 ]; then rm -f f; if [ -e f.mise-old ]; then mv -f f.mise-old f; fi; elif [ -e f.mise-old ]; then ...; fi");#". The elided part is ";#raw("rm -f f.mise-old");#", or with ";#raw("cmp");#" (a ";#raw("restat");#" rule) ";#raw("if cmp -s f f.mise-old; then mv -f f.mise-old f; else rm -f f.mise-old; fi");#".";
+
+#raw(lang: "lean", block: true, "def settle (cmp s : Bool) (fs : Files V) (f : Path) : Files V :=\n  if !s then\n    let fs' := rmF f fs\n    if (fs' (aside f)).isSome then mvF (aside f) f fs' else fs'\n  else if (fs (aside f)).isSome then\n    if cmp && decide ((fs f).map (·.1) = (fs (aside f)).map (·.1)) then mvF (aside f) f fs\n    else rmF (aside f) fs\n  else fs")
+#uses[#link(label("def:Mise.Model.Files"))[#raw("Model.Files");];, #link(label("def:Mise.Model.aside"))[#raw("Model.aside");];, #link(label("def:Mise.Model.mvF"))[#raw("Model.mvF");];, #link(label("def:Mise.Model.rmF"))[#raw("Model.rmF");];, #link(label("def:Mise.Syntax.Path"))[#raw("Syntax.Path");];]
+
+#def-heading("Model.script", "def:Mise.Model.script", "Mise/Model/Cmp.lean", 159, 168)
+
+#"The script ";#raw("wrapCommand");#" emits, for a command with outputs ";#raw("outs");#" that leaves ";#raw("w");#" and exits 0 when ";#raw("ok");#", run at time ";#raw("t");#": the files afterwards, and whether the script exits 0. The status is 0 when the command exited 0 and every output exists.";
+
+#raw(lang: "lean", block: true, "def script (cmp : Bool) (outs : List Path) (w : Path → Option V) (ok : Bool) (t : Nat) (fs : Files V) :\n    Files V × Bool :=\n  let fs₁ := outs.foldl stash fs\n  let fs₂ := command outs w t fs₁\n  let s := ok && outs.all fun f => (fs₂ f).isSome\n  (outs.foldl (settle cmp s) fs₂, s)")
+#uses[#link(label("def:Mise.Model.Files"))[#raw("Model.Files");];, #link(label("def:Mise.Model.command"))[#raw("Model.command");];, #link(label("def:Mise.Model.settle"))[#raw("Model.settle");];, #link(label("def:Mise.Model.stash"))[#raw("Model.stash");];, #link(label("def:Mise.Syntax.Path"))[#raw("Syntax.Path");];]
+
+#def-heading("Model.St.runWrapped", "def:Mise.Model.St.runWrapped", "Mise/Model/Cmp.lean", 376, 383)
+
+#"Ninja runs edge ";#raw("e");#" through the wrapper at the next time step, where the command leaves ";#raw("w");#" at the outputs and exits 0 when ";#raw("ok");#". The files are what the script leaves. Ninja writes the log and deps entries only when the script exits 0.";
+
+#template("Template", "the state after Ninja runs {e} from {st} through the wrapper, where the command leaves {w} at the outputs and exits 0 when {ok}")
+
+#raw(lang: "lean", block: true, "def St.runWrapped (sem : Sem V) (st : St V) (e : MEdge) (w : Path → Option V) (ok : Bool) : St V :=\n  let r := script e.restat e.outs w ok (st.clock + 1) st.fs\n  if r.2 then { st.run sem e with fs := r.1 } else { st with fs := r.1 }")
+#uses[#link(label("def:Mise.Frontend.Sem"))[#raw("Frontend.Sem");];, #link(label("def:Mise.Model.Files"))[#raw("Model.Files");];, #link(label("def:Mise.Model.MEdge"))[#raw("Model.MEdge");];, #link(label("def:Mise.Model.St"))[#raw("Model.St");];, #link(label("def:Mise.Model.St.run"))[#raw("Model.St.run");];, #link(label("def:Mise.Model.script"))[#raw("Model.script");];, #link(label("def:Mise.Syntax.Path"))[#raw("Syntax.Path");];]
+
 == #raw("Mise/Headline.lean");
 
-#def-heading("Headline.edges", "def:Mise.Headline.edges", "Mise/Headline.lean", 41, 44)
+#def-heading("Headline.edges", "def:Mise.Headline.edges", "Mise/Headline.lean", 47, 50)
 
 #"The edges of the manifest ";#raw("mise");#" emits for ";#raw("g");#", as the Ninja model sees them.";
 
@@ -1361,7 +1503,7 @@
 #raw(lang: "lean", block: true, "abbrev edges (g : Graph) : List MEdge := (emit g).medges")
 #uses[#link(label("def:Mise.Frontend.Graph"))[#raw("Frontend.Graph");];, #link(label("def:Mise.Frontend.emit"))[#raw("Frontend.emit");];, #link(label("def:Mise.Model.MEdge"))[#raw("Model.MEdge");];, #link(label("def:Mise.Syntax.Manifest.medges"))[#raw("Syntax.Manifest.medges");];]
 
-#def-heading("Headline.Reachable", "def:Mise.Headline.Reachable", "Mise/Headline.lean", 46, 50)
+#def-heading("Headline.Reachable", "def:Mise.Headline.Reachable", "Mise/Headline.lean", 52, 56)
 
 #raw("st");#" can arise from empty build and deps logs by any sequence of source edits and of edges run or skipped as Ninja would. Full builds, builds of some targets and interrupted builds are all such sequences.";
 
@@ -1370,7 +1512,7 @@
 #raw(lang: "lean", block: true, "abbrev Reachable (g : Graph) (st : St V) : Prop := Reach sem (edges g) st")
 #uses[#link(label("def:Mise.Frontend.Graph"))[#raw("Frontend.Graph");];, #link(label("def:Mise.Frontend.Sem"))[#raw("Frontend.Sem");];, #link(label("def:Mise.Headline.edges"))[#raw("Headline.edges");];, #link(label("def:Mise.Model.Reach"))[#raw("Model.Reach");];, #link(label("def:Mise.Model.St"))[#raw("Model.St");];]
 
-#def-heading("Headline.build", "def:Mise.Headline.build", "Mise/Headline.lean", 52, 54)
+#def-heading("Headline.build", "def:Mise.Headline.build", "Mise/Headline.lean", 58, 60)
 
 #"The state after one ";#raw("ninja");#" run on the emitted manifest.";
 
@@ -1379,7 +1521,7 @@
 #raw(lang: "lean", block: true, "abbrev build (g : Graph) (st : St V) : St V := ninjaBuild sem (emit g) st")
 #uses[#link(label("def:Mise.Frontend.Graph"))[#raw("Frontend.Graph");];, #link(label("def:Mise.Frontend.Sem"))[#raw("Frontend.Sem");];, #link(label("def:Mise.Frontend.emit"))[#raw("Frontend.emit");];, #link(label("def:Mise.Model.St"))[#raw("Model.St");];, #link(label("def:Mise.Model.ninjaBuild"))[#raw("Model.ninjaBuild");];]
 
-#def-heading("Headline.ran", "def:Mise.Headline.ran", "Mise/Headline.lean", 56, 58)
+#def-heading("Headline.ran", "def:Mise.Headline.ran", "Mise/Headline.lean", 62, 64)
 
 #"The edges that one ";#raw("ninja");#" run executes, in order.";
 
@@ -1388,7 +1530,7 @@
 #raw(lang: "lean", block: true, "abbrev ran (g : Graph) (st : St V) : List MEdge := (buildTrace sem (edges g) st).2")
 #uses[#link(label("def:Mise.Frontend.Graph"))[#raw("Frontend.Graph");];, #link(label("def:Mise.Frontend.Sem"))[#raw("Frontend.Sem");];, #link(label("def:Mise.Headline.edges"))[#raw("Headline.edges");];, #link(label("def:Mise.Model.MEdge"))[#raw("Model.MEdge");];, #link(label("def:Mise.Model.St"))[#raw("Model.St");];, #link(label("def:Mise.Model.buildTrace"))[#raw("Model.buildTrace");];]
 
-#def-heading("Headline.IsSource", "def:Mise.Headline.IsSource", "Mise/Headline.lean", 60, 62)
+#def-heading("Headline.IsSource", "def:Mise.Headline.IsSource", "Mise/Headline.lean", 66, 68)
 
 #"No edge of the manifest writes ";#raw("p");#".";
 
@@ -1397,7 +1539,7 @@
 #raw(lang: "lean", block: true, "abbrev IsSource (g : Graph) (p : Path) : Prop := ∀ e ∈ edges g, p ∉ e.outs")
 #uses[#link(label("def:Mise.Frontend.Graph"))[#raw("Frontend.Graph");];, #link(label("def:Mise.Headline.edges"))[#raw("Headline.edges");];, #link(label("def:Mise.Model.MEdge"))[#raw("Model.MEdge");];, #link(label("def:Mise.Syntax.Path"))[#raw("Syntax.Path");];]
 
-#def-heading("Headline.ValidOrder", "def:Mise.Headline.ValidOrder", "Mise/Headline.lean", 64, 68)
+#def-heading("Headline.ValidOrder", "def:Mise.Headline.ValidOrder", "Mise/Headline.lean", 70, 74)
 
 #raw("es");#" is an order a parallel Ninja could run the edges in: the same edges as the manifest, where each edge reads no output of itself or of a later edge.";
 
@@ -1406,7 +1548,7 @@
 #raw(lang: "lean", block: true, "abbrev ValidOrder (g : Graph) (es : List MEdge) : Prop := es.Perm (edges g) ∧ Sched es")
 #uses[#link(label("def:Mise.Frontend.Graph"))[#raw("Frontend.Graph");];, #link(label("def:Mise.Headline.edges"))[#raw("Headline.edges");];, #link(label("def:Mise.Model.MEdge"))[#raw("Model.MEdge");];, #link(label("def:Mise.Model.Sched"))[#raw("Model.Sched");];]
 
-#def-heading("Headline.Checks", "def:Mise.Headline.Checks", "Mise/Headline.lean", 70, 74)
+#def-heading("Headline.Checks", "def:Mise.Headline.Checks", "Mise/Headline.lean", 76, 80)
 
 #raw("p");#" is an input Ninja checks for some output of ";#raw("e");#" in state ";#raw("st");#": a static input, or for a depfile edge a path its deps log entry records.";
 

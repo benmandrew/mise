@@ -67,6 +67,9 @@ and the time recorded for the output; a deps entry is the list of paths the
 command read.
 Gloss: model states over {V} -/
 structure St (V : Type) where
+  /-- Each path's contents and mtime, or `none` when the file is missing.
+  Gloss: the file at {#2} in {self}
+  Gloss.fun: the file system of {self} -/
   fs : Path → Option (V × Nat)
   log : Path → Option (String × Nat)
   deps : Path → Option (List Path) := fun _ => none
@@ -113,7 +116,8 @@ def outDirty (st : St V) (e : MEdge) (o : Path) : Bool :=
 Gloss: whether {e} is dirty in {st} -/
 def dirty (st : St V) (e : MEdge) : Bool := e.outs.any (st.outDirty e)
 
-/-- The contents a run writes to output `o`. -/
+/-- The contents a run writes to output `o`.
+Gloss: the contents that running {e} in {st} writes to {o} -/
 def outVal (sem : Sem V) (st : St V) (e : MEdge) (o : Path) : V :=
   ((e.task sem).run st.content).getD (e.outs.idxOf o) default
 

@@ -21,8 +21,9 @@ A template is text with slots. `{x}` is the argument whose binder is named
 `x`; `{#k}` is the `k`-th explicit argument, counting from 1. Text between
 backticks is set in code font. A template may leave out arguments: the
 templates for the model leave out `sem`, the meaning of commands, which is
-the same throughout a statement. Any other explicit argument a template leaves
-out is reported in `omits`. Arguments that are not a single name are put in
+the same throughout a statement. When the argument for `sem` is anything other
+than a variable, the phrase ends with `(taking sem to be …)`. Any other
+explicit argument a template leaves out is reported in `omits`. Arguments that are not a single name are put in
 parentheses, except in the phrase for a type. A partial application without
 a `Gloss.fun:` line is read as `fun x => f … x`.
 
@@ -89,6 +90,7 @@ def coreTemplates : List (Name × Mode × String) := [
   (``List.Perm, .prop, "{#1} is a reordering of {#2}"),
   (``List.Nodup, .prop, "no element occurs twice in {#1}"),
   (``Inhabited, .prop, "{#1} has a default element"),
+  (``DecidableEq, .prop, "equality on {#1} is decidable"),
   (``True, .prop, "true"),
   (``False, .prop, "false"),
   (``List, .typ, "lists of {#1}"),
@@ -225,7 +227,10 @@ partial def fill (n : Name) (mode : Mode) (t : String) (args : Array Expr) : M (
   let binders ← forallTelescope info.type fun xs _ => xs.mapM fun x => do
     let d ← x.fvarId!.getDecl
     return (d.userName.eraseMacroScopes.toString, d.binderInfo.isExplicit)
-  let explicit := (List.range binders.size).filter fun i => binders[i]!.2
+  -- Arguments past the constant's own binders (a field of function type,
+  -- applied) count as further explicit arguments.
+  let explicit := (List.range binders.size).filter (fun i => binders[i]!.2) ++
+    (List.range args.size).filter (· ≥ binders.size)
   let mut out : Phrase := #[]
   let mut seen : List Nat := []
   for p in pieces t do
@@ -245,8 +250,15 @@ partial def fill (n : Name) (mode : Mode) (t : String) (args : Array Expr) : M (
       -- Plural type phrases nest without ambiguity, so they are not grouped.
       out := out ++ (if mode == .typ then ph else group ph)
   for i in explicit do
-    if i < args.size && !seen.contains i && binders[i]!.1 != "sem" then
-      modify fun s => { s with omits := s.omits.insert (n ++ .mkSimple binders[i]!.1) }
+    if i < args.size && !seen.contains i then
+      let name := (binders[i]?.map (·.1)).getD s!"#{i + 1}"
+      if name != "sem" then
+        modify fun s => { s with omits := s.omits.insert (n ++ .mkSimple name) }
+      -- `sem` may be left out only when it is the statement's own variable;
+      -- any other argument there is spelt out.
+      else if !args[i]!.isFVar then
+        out := out ++ txt " (taking " ++ code name ++ txt " to be " ++ group (← argPhrase mode args[i]!) ++
+          txt ")"
   return some out
 
 /-- A slot's argument: a clause if it is a proposition, a type in type
