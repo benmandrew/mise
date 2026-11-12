@@ -22,3 +22,8 @@ root = "MiseTest.DiffTest"
 name = "fuzzgen"
 srcDir = "test"
 root = "MiseTest.Fuzz"
+
+[[lean_exe]]
+name = "tomljson"
+srcDir = "test"
+root = "MiseTest.TomlJson"

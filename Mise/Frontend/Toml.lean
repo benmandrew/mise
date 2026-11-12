@@ -41,7 +41,7 @@ escapes, literal strings, booleans, decimal integers, arrays (across lines,
 with a trailing comma), inline tables, `[table]` and `[[array]]` headers.
 It rejects with a position: dotted keys, dotted headers, multi-line strings,
 floats, dates, and other integer forms. `test/MiseTest/Toml.lean` compares
-it with Lake's parser.
+it with Lake's parser, and `test/toml-diff.sh` with Python's `tomllib`.
 -/
 
 namespace Mise.Frontend.Toml
