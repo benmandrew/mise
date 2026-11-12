@@ -1,0 +1,85 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "mise build description",
+  "description": "A build description read by `mise gen` and `mise build`. Mise/Frontend/Toml.lean is the reference; this schema checks shape only.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "sources": {
+      "description": "Files that exist before the build.",
+      "$ref": "#/definitions/paths"
+    },
+    "defaults": {
+      "description": "Targets built when Ninja is given none. Each names a source or a build output.",
+      "$ref": "#/definitions/paths"
+    },
+    "params": {
+      "description": "Parameter defaults, overridden by `mise build --set name=value`.",
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "rule": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "command"],
+        "properties": {
+          "name": { "type": "string" },
+          "command": { "type": "string" },
+          "description": { "type": "string" },
+          "depfile": {
+            "description": "The command writes a depfile at `$out.d`.",
+            "type": "boolean",
+            "default": false
+          },
+          "restat": {
+            "description": "Keep an output the command leaves unchanged, so its dependants need not rebuild.",
+            "type": "boolean",
+            "default": false
+          },
+          "wrap": {
+            "description": "Run the command in mise's wrapper, which restores the old outputs when it fails.",
+            "type": "boolean",
+            "default": true
+          }
+        }
+      }
+    },
+    "build": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["rule"],
+        "properties": {
+          "rule": { "type": "string" },
+          "outs": { "$ref": "#/definitions/paths" },
+          "implicit-outs": { "$ref": "#/definitions/paths" },
+          "ins": {
+            "description": "Each names a source or an output of an earlier build.",
+            "$ref": "#/definitions/paths"
+          },
+          "implicit-ins": { "$ref": "#/definitions/paths" },
+          "order-only": { "$ref": "#/definitions/paths" },
+          "vars": {
+            "description": "Edge variables with literal values.",
+            "type": "object",
+            "additionalProperties": { "type": "string" }
+          },
+          "params": {
+            "description": "Edge variables bound to the parameters of the same name in [params].",
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "paths": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  }
+}

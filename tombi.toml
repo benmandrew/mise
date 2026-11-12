@@ -1,0 +1,5 @@
+# The SchemaStore catalog maps every `mise.toml` to the schema of
+# jdx/mise, a different tool. Use this project's schema instead.
+[[schemas]]
+path = "schema/mise.schema.json"
+include = ["**/mise.toml"]
