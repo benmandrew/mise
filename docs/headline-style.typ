@@ -48,7 +48,7 @@
   set enum(spacing: 0.65em)
   show: lean-code
   show link: set text(fill: rgb("#1f4e9c"))
-  set heading(numbering: none)
+  set heading(numbering: "1.1")
   show heading.where(level: 1): set text(size: 12pt)
   show heading.where(level: 1): set block(above: 2.2em, below: 1em)
   show heading.where(level: 2): set text(size: 1.2 * body-size)
