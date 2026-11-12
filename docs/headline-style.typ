@@ -4,10 +4,10 @@
 // Lean highlighting. The grammar's source and licence are at the top of
 // lean4.sublime-syntax. scripts/trusted.sh --check compiles a probe through
 // this function and fails if the code comes out in one colour. Inline code
-// scales with the text around it; code blocks have a fixed size.
+// has the size of the text around it; code blocks have a fixed size.
 #let lean-code(body) = {
   set raw(syntaxes: "lean4.sublime-syntax")
-  show raw: set text(font: "DejaVu Sans Mono", size: 0.86em)
+  show raw: set text(font: "DejaVu Sans Mono", size: 1em)
   show raw.where(block: true): set text(size: 8pt)
   show raw.where(block: true): block.with(
     fill: luma(247), inset: (x: 5pt, y: 4pt), radius: 2pt, width: 100%, breakable: true,
@@ -17,8 +17,7 @@
 
 #let body-size = 9.5pt
 
-// Code at a fixed size, for names in headings. Inline code is otherwise
-// scaled down relative to the text around it.
+// Code at a fixed size, for names in headings.
 #let code-at(size, body) = {
   show raw: set text(size: size)
   body
@@ -57,12 +56,7 @@
   body
   parbreak()
   how-to-read
-  // Fixed line edges, so a line of smaller code text takes the same height
-  // as a line of body text and the entries are evenly spaced.
-  {
-    set text(top-edge: 0.8 * body-size, bottom-edge: -0.25 * body-size)
-    outline(depth: 2, indent: auto)
-  }
+  outline(depth: 2, indent: auto)
 }
 
 #let part-sub(body) = block(above: 1em, below: 0.5em, text(weight: "bold", body + ":"))
