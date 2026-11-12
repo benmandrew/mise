@@ -9,7 +9,8 @@
 // Lean highlighting. The grammar's source and licence are at the top of
 // lean4.sublime-syntax. scripts/trusted.sh --check compiles a probe through
 // this function and fails if the code comes out in one colour. Inline code
-// has the size of the text around it; code blocks have a fixed size.
+// is 0.8 of the size of the text around it, since typst scales raw text by
+// 0.8 under any size set here; code blocks have a fixed size.
 #let code-box = block.with(
   fill: luma(247), inset: (x: 5pt, y: 4pt), radius: 2pt, width: 100%, breakable: true,
   above: 0.8em, below: 0.8em)
@@ -25,8 +26,11 @@
 // A theorem statement whose names link to their definitions. Each part is a
 // piece of the source and the label of the definition it names, or `none`.
 // Each piece is highlighted on its own; the pieces split only at names.
+// The pieces are inline raw, so they take an absolute size to match the code
+// blocks; a size relative to the text would be scaled by 0.8.
 #let lean-linked(..parts) = code-box({
   set text(size: 8pt)
+  show raw: set text(size: 8pt)
   show link: underline.with(stroke: 0.4pt + luma(150), offset: 1.6pt)
   for (piece, target) in parts.pos() {
     let code = raw(piece, lang: "lean")
