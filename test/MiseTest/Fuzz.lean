@@ -522,16 +522,20 @@ def age (st : St String) (p : Path) : St String :=
 manifest, build, and record what the model runs and the contents it
 leaves. `known` lists every path the case has used, so that the state keeps
 the outputs of removed edges. With `strict`, also check that a second
-build runs nothing and that depfile edges read only what they may. -/
-def step (strict : Bool) (sd : StepD) (old : Option Case) (c : Case) (known : List Path) (st : St String) :
-    Except String (Json × St String × List Path) := do
+build runs nothing and that depfile edges read only what they may. With
+`checkToml`, check that `mise.toml` loads back as the graph; the in-process
+harness (`fuzz/build`) turns that off, since loading the TOML costs most of
+a case's time. -/
+def step (strict : Bool) (sd : StepD) (old : Option Case) (c : Case) (known : List Path) (st : St String)
+    (checkToml : Bool := true) : Except String (Json × St String × List Path) := do
   let g := c.graph
   unless g.check do throw "the graph is not valid"
-  let toml := tomlOf g
   let ninja := print (emit g)
-  match Toml.load toml with
-  | .error e => throw s!"mise.toml does not load: {e}"
-  | .ok vg => unless print (emit vg.1) == ninja do throw "mise.toml does not read back as the graph"
+  let toml := tomlOf g
+  if checkToml then
+    match Toml.load toml with
+    | .error e => throw s!"mise.toml does not load: {e}"
+    | .ok vg => unless print (emit vg.1) == ninja do throw "mise.toml does not read back as the graph"
   let touched := sd.edits.filterMap fun | .touch p => some p | _ => none
   let changed := c.srcs.filter fun s => touched.contains s.path || match old with
     | some o => (o.srcs.find? (·.path == s.path)).map (·.text) != some s.text
@@ -630,15 +634,16 @@ structure Desc where
   steps : List StepD
   deriving ToJson, FromJson
 
-def runCase (strict : Bool) (c0 : Case) (steps : List StepD) : Except String Json := do
-  let (j0, st0, k0) ← step strict {} none c0 [] empty
+def runCase (strict : Bool) (c0 : Case) (steps : List StepD) (checkToml : Bool := true) :
+    Except String Json := do
+  let (j0, st0, k0) ← step strict {} none c0 [] empty checkToml
   let mut st := st0
   let mut known := k0
   let mut c := c0
   let mut js := #[j0]
   for sd in steps do
     let c' := sd.edits.foldl Case.apply c
-    let (j, st', known') ← step strict sd (some c) c' known st
+    let (j, st', known') ← step strict sd (some c) c' known st checkToml
     js := js.push j
     st := st'
     known := known'

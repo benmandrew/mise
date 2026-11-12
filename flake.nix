@@ -63,7 +63,16 @@
         assert lib.assertMsg (toolchain == wanted)
           "lean-toolchain says ${toolchain}, but nixpkgs provides ${wanted}";
         # mkShell's stdenv supplies the C compiler the examples use.
-        { default = shellWith pkgs pkgs.ninja; }
+        {
+          default = shellWith pkgs pkgs.ninja;
+          # The in-process build fuzzer (fuzz/build): clang with libFuzzer,
+          # AFL++ on Linux, and the Ninja sources it links.
+          fuzz = (shellWith pkgs pkgs.ninja).overrideAttrs (old: {
+            nativeBuildInputs = (old.nativeBuildInputs or [ ]) ++ [ pkgs.clang ]
+              ++ lib.optionals pkgs.stdenv.hostPlatform.isLinux [ pkgs.aflplusplus ];
+            NINJA_SRC = (ninjas pkgs).ninja-1_13_2.src;
+          });
+        }
         // lib.mapAttrs (_: shellWith pkgs) (ninjas pkgs));
     };
 }
