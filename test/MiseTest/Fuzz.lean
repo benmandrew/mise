@@ -38,8 +38,16 @@ def hex16 (h : UInt64) : String :=
   let d := Nat.toDigits 16 h.toNat
   String.ofList (List.replicate (16 - d.length) '0' ++ d)
 
+/-- The command inside the DSL's `cmp` wrapper (`cmpWrap`), or the command
+itself when it is not wrapped. The wrapper does not change what the helper
+computes, only which outputs keep their old file. -/
+def inner (cmd : String) : String :=
+  match cmd.splitOn "; if ( " with
+  | [_, rest] => (rest.splitOn " ); then ").headD rest
+  | _ => cmd
+
 /-- The command's arguments after the program name, as the shell splits them. -/
-def args (cmd : String) : List String := ((cmd.splitOn " ").filter (· != "")).drop 1
+def args (cmd : String) : List String := (((inner cmd).splitOn " ").filter (· != "")).drop 1
 
 def outsOf (cmd : String) : List String := ((args cmd).drop 2).takeWhile (· != "--")
 
@@ -75,21 +83,35 @@ def fzDyn (cmd : String) : Task Path String (List String) :=
   (bfs 10000 ins ins []).bind fun vs => .pure (fzContent cmd vs)
 
 /-- The helper as command semantics. A `restat` run leaves an output alone
-when its contents would not change. -/
-def sem : Sem String :=
-  { exec := fzContent, dyn := fzDyn, keep := (· == ·), keep_eq := fun _ _ h => by simpa using h }
+when its contents would not change, whether the helper decides that (mode
+`r`) or the `cmp` wrapper does, as `Sem.withCmp` says. -/
+def sem : Sem String := Sem.withCmp { exec := fzContent, dyn := fzDyn }
 
 /-! ## Random graphs -/
 
-/-- `(name, mode, depfile, restat)`; the mode tells the helper what to do. -/
-def ruleSpecs : List (String × String × Bool × Bool) :=
-  [("st", "s", false, false), ("str", "sr", false, true), ("dy", "d", true, false), ("dyr", "dr", true, true)]
+/-- `(name, mode, depfile, restat, wrapped)`; the mode tells the helper what
+to do. A `restat` rule either has the helper keep unchanged outputs itself
+(mode `r`, emitted with `restat-cmp = false`) or goes through the DSL's
+`cmp` wrapper with a helper that always writes. -/
+def ruleSpecs : List (String × String × Bool × Bool × Bool) :=
+  [("st", "s", false, false, false), ("str", "sr", false, true, false), ("stw", "s", false, true, true),
+   ("dy", "d", true, false, false), ("dyr", "dr", true, true, false), ("dyw", "d", true, true, true)]
 
 def ruleCmd (mode : String) : String := "./fz " ++ mode ++ " ${tag} $out ${iout} -- $in ${imp}"
 
 def rules : List GRule :=
-  ruleSpecs.map fun (name, mode, depfile, restat) =>
-    { name, command := (readValue (ruleCmd mode).toList).getD [], depfile, restat }
+  ruleSpecs.map fun (name, mode, depfile, restat, wrapped) =>
+    { name, command := (readValue (if wrapped then cmpWrap (ruleCmd mode) else ruleCmd mode).toList).getD [],
+      depfile, restat }
+
+def wrapped (rule : String) : Bool := ruleSpecs.any fun (n, _, _, _, w) => n == rule && w
+
+/-- The edge as the DSL's `edge` makes it: a wrapped edge's implicit outputs
+also go to the wrapper in `mise_iouts`. -/
+def withIouts (e : GEdge) : GEdge :=
+  if wrapped e.rule && !e.implicitOuts.isEmpty then
+    { e with vars := e.vars ++ [(cmpOutsVar, shellList " " e.implicitOuts)] }
+  else e
 
 structure Src where
   path : Path
@@ -108,7 +130,7 @@ structure Case where
   srcs : List Src
   edges : List GEdge
 
-def Case.graph (c : Case) : Graph := { sources := c.srcs.map (·.path), rules, edges := c.edges }
+def Case.graph (c : Case) : Graph := { sources := c.srcs.map (·.path), rules, edges := c.edges.map withIouts }
 
 /-- `k` distinct elements of `xs`, in random order. -/
 def sample {α} [Inhabited α] (k : Nat) (xs : List α) : GenM (List α) := do
@@ -149,7 +171,8 @@ def genCase : GenM Case := do
       let allowed := hs ++ oo
       mains := mains ++ [{ path := main, allowed, includes := ← sample (← rand 3) allowed }]
       let out := s!"out/e{i}.o"
-      edges := edges ++ [{ rule := if restat then "dyr" else "dy", outs := [out], ins := main :: extra,
+      edges := edges ++ [{ rule := if restat then (if i % 2 == 0 then "dyw" else "dyr") else "dy",
+                           outs := [out], ins := main :: extra,
                            implicitIns := imp, orderOnly := oo, vars := edgeVars "t0" [] imp }]
       gens := gens ++ [out]
     else
@@ -159,7 +182,8 @@ def genCase : GenM Case := do
       let oo ← sample (← rand 2) (fresh gens (ins ++ imp))
       let outs := (List.range (1 + (← rand 2))).map fun k => s!"out/e{i}_{k}"
       let iouts := if ← chance 1 3 then [s!"out/e{i}_i"] else []
-      edges := edges ++ [{ rule := if restat then "str" else "st", outs, implicitOuts := iouts, ins,
+      edges := edges ++ [{ rule := if restat then (if i % 2 == 0 then "stw" else "str") else "st",
+                           outs, implicitOuts := iouts, ins,
                            implicitIns := imp, orderOnly := oo, vars := edgeVars "t0" iouts imp }]
       gens := gens ++ outs ++ iouts
   pure { srcs := plains ++ headers ++ mains, edges }
@@ -213,16 +237,18 @@ def tarr (xs : List String) : String := "[" ++ ", ".intercalate (xs.map tstr) ++
 
 def tomlOf (g : Graph) : String := Id.run do
   let mut t := s!"sources = {tarr g.sources}\n"
-  for (name, mode, depfile, restat) in ruleSpecs do
+  for (name, mode, depfile, restat, wrapped) in ruleSpecs do
     t := t ++ s!"\n[[rule]]\nname = {tstr name}\ncommand = {tstr (ruleCmd mode)}\n"
     if depfile then t := t ++ "depfile = true\n"
     if restat then t := t ++ "restat = true\n"
+    if restat && !wrapped then t := t ++ "restat-cmp = false\n"
   for e in g.edges do
     t := t ++ s!"\n[[build]]\nrule = {tstr e.rule}\nouts = {tarr e.outs}\n"
     for (k, v) in [("implicit-outs", e.implicitOuts), ("ins", e.ins), ("implicit-ins", e.implicitIns),
                    ("order-only", e.orderOnly)] do
       if !v.isEmpty then t := t ++ s!"{k} = {tarr v}\n"
-    t := t ++ "vars = { " ++ ", ".intercalate (e.vars.map fun (k, v) => s!"{k} = {tstr v}") ++ " }\n"
+    let vars := e.vars.filter (·.1 != cmpOutsVar)
+    t := t ++ "vars = { " ++ ", ".intercalate (vars.map fun (k, v) => s!"{k} = {tstr v}") ++ " }\n"
   t
 
 /-! ## Running the model -/

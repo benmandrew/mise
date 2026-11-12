@@ -20,7 +20,8 @@ cflags = "-O2 -Wall"
 [[rule]]
 name = "cc"
 command = "cc $cflags -c $in -o $out"
-description = "CC $out"  # optional; also `depfile = true`, `restat = true`
+description = "CC $out"  # optional; also `depfile = true`, `restat = true`,
+                         # and `restat-cmp = false` to skip the restat wrapper
 
 [[build]]
 rule = "cc"
@@ -366,9 +367,15 @@ def decode (t : Table) (ps : Params) : Build Unit := do
   for r in ← optTables t "rule" do
     let name ← reqStr "rule" r "name"
     let what := s!"rule {name}"
-    checkKeys what r ["name", "command", "description", "depfile", "restat"]
+    checkKeys what r ["name", "command", "description", "depfile", "restat", "restat-cmp"]
+    let restat ← optBool what r "restat"
+    let restatCmp ← match find? r "restat-cmp" with
+      | some _ => do
+        unless restat do throw s!"{what}: restat-cmp: needs restat = true"
+        optBool what r "restat-cmp"
+      | none => pure true
     let rr ← rule name (← reqStr what r "command") (← optStr what r "description" "")
-      (← optBool what r "depfile") (← optBool what r "restat")
+      (← optBool what r "depfile") restat restatCmp
     rules := rules ++ [(name, rr)]
   for b in ← optTables t "build" do
     let outs ← optStrs "build" b "outs"

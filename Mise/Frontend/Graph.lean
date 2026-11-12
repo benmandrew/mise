@@ -131,6 +131,12 @@ structure Sem (V : Type) where
   only when its new contents would be identical. -/
   keep_eq : ∀ a b, keep a b = true → a = b := by intro a b h; simp at h
 
+/-- The semantics of a build whose `restat` commands go through the DSL's
+`cmp` wrapper (`cmpWrap`): an output is left untouched exactly when its
+contents are equal, so `keep_eq` holds by construction. -/
+def Sem.withCmp {V : Type} [DecidableEq V] (sem : Sem V) : Sem V :=
+  { sem with keep := fun a b => decide (a = b), keep_eq := fun _ _ h => of_decide_eq_true h }
+
 /-- A command as a task returning all its outputs. A static command fetches
 its explicit and implicit inputs in order. -/
 def cmdTask {V : Type} (sem : Sem V) (dyn : Bool) (cmd : String) (ins : List Path) : Task Path V (List V) :=

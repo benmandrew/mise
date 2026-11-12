@@ -95,4 +95,29 @@ def base : String := "sources = [\"a.c\"]\n[[rule]]\nname = \"cc\"\ncommand = \"
 #guard rejects base [("cflags", "-O0")] (msg := "no such parameter")
 #guard rejects "sources = [\"a.c\"" (msg := "expected ',' or ']'")
 
+/-! The `cmp` wrapper on `restat` rules. -/
+
+/-- The commands of a description's edges. -/
+def cmds (text : String) : List String := match load text with
+  | .ok g => g.1.edges.map g.1.cmd
+  | .error _ => []
+
+def has (s t : String) : Bool := (s.splitOn t).length > 1
+
+def restatBase (rule edge : String) : String :=
+  "sources = [\"a.c\"]\n[[rule]]\nname = \"gen\"\ncommand = \"gen $in $out\"\nrestat = true\n" ++ rule ++
+    "[[build]]\nrule = \"gen\"\nouts = [\"a.h\"]\nins = [\"a.c\"]\n" ++ edge
+
+#guard match cmds (restatBase "" "") with
+  | [c] => c.startsWith "set -- a.h ; " && has c "; if ( gen a.c a.h ); then " && has c "cmp -s"
+  | _ => false
+#guard cmds (restatBase "restat-cmp = false\n" "") == ["gen a.c a.h"]
+#guard cmds (restatBase "restat-cmp = true\n" "") == cmds (restatBase "" "")
+#guard rejects (base ++ "restat-cmp = false\n") (msg := "restat-cmp: needs restat = true")
+-- Implicit outputs reach the wrapper through `mise_iouts`, shell-quoted.
+#guard match cmds (restatBase "" "implicit-outs = [\"b c.h\"]\n") with
+  | [c] => c.startsWith "set -- a.h 'b c.h'; "
+  | _ => false
+#guard rejects (restatBase "" "vars = { mise_iouts = \"x\" }\n") (msg := "set by the restat wrapper")
+
 end MiseTest.Toml

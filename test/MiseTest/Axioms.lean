@@ -69,3 +69,7 @@ fails if any theorem depends on an axiom outside the standard three. -/
 #print axioms Mise.Headline.rebuild_minimal
 #print axioms Mise.Headline.restat_cutoff
 #print axioms Mise.Headline.any_order
+#print axioms Mise.Model.wrapRun_content
+#print axioms Mise.Model.wrapRun_kept_iff
+#print axioms Mise.Model.wrapRun_fail
+#print axioms Mise.Model.run_withCmp

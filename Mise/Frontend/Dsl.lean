@@ -17,6 +17,11 @@ inside `source` and `edge` only give earlier, clearer error messages.
 
 Commands and descriptions are written in Ninja syntax: `$in`, `$out`,
 `${name}` for an edge variable, and `$$` for a dollar sign.
+
+A `restat` rule's command is wrapped by `cmpWrap` unless the rule asks
+otherwise, so that it leaves an output untouched exactly when `cmp` finds
+its contents unchanged. `Mise.Model.run_withCmp` relates the wrapper to the
+model.
 -/
 
 namespace Mise.Frontend
@@ -32,6 +37,8 @@ structure Handle where
 structure RuleRef where
   private mk ::
   name : String
+  /-- The command is wrapped by `cmpWrap`. -/
+  cmp : Bool := false
   deriving Repr, Inhabited
 
 abbrev Build := StateT Graph (Except String)
@@ -60,23 +67,61 @@ def parseValue (what s : String) : Build EvalString :=
   | some e => pure e
   | none => throw s!"{what}: cannot parse {repr s} as a Ninja value"
 
-/-- Declare a rule. -/
+/-- The edge variable that holds a `cmpWrap` edge's implicit outputs,
+shell-quoted. `edge` sets it, and a build may not set it itself. -/
+def cmpOutsVar : String := "mise_iouts"
+
+/-- Wrap a `restat` command, written in Ninja syntax, so that it leaves an
+output untouched exactly when its contents would not change. The wrapper
+runs in `/bin/sh` and, for each output (`$out`, then `${mise_iouts}`):
+
+1. moves an existing output `f` to `f.mise-old`;
+2. runs the command in a subshell;
+3. if the command succeeded and wrote every output, moves `f.mise-old`
+   back over `f` when `cmp` finds them equal, which restores the old file
+   and its mtime, and deletes `f.mise-old` otherwise;
+4. if the command failed or left an output missing, deletes what it wrote
+   and moves every `f.mise-old` back, then exits with a nonzero status.
+
+So a success leaves each output holding what the command wrote, untouched
+when that equals the old contents, and a failure leaves the outputs as they
+were. A missing output counts as a failure, so a wrapped command always
+produces every output, as the model assumes. The command must not contain
+a shell comment, which would hide the closing parenthesis. `Mise.Model.wrapRun`
+is the model of this script. -/
+def cmpWrap (command : String) : String :=
+  "set -- $out ${" ++ cmpOutsVar ++ "}; " ++
+  "for f; do rm -f \"$$f.mise-old\"; if [ -e \"$$f\" ]; then mv -f \"$$f\" \"$$f.mise-old\"; fi; done; " ++
+  "if ( " ++ command ++ " ); then s=0; for f; do if [ ! -e \"$$f\" ]; then " ++
+  "echo \"mise: $$f was not written\" >&2; s=1; fi; done; else s=$$?; fi; " ++
+  "for f; do if [ $$s != 0 ]; then rm -f \"$$f\"; " ++
+  "if [ -e \"$$f.mise-old\" ]; then mv -f \"$$f.mise-old\" \"$$f\"; fi; " ++
+  "elif [ -e \"$$f.mise-old\" ] && cmp -s \"$$f\" \"$$f.mise-old\"; then mv -f \"$$f.mise-old\" \"$$f\"; " ++
+  "else rm -f \"$$f.mise-old\"; fi; done; exit $$s"
+
+/-- Declare a rule. A `restat` rule's command is wrapped by `cmpWrap`
+unless `restatCmp := false`, for a command that already leaves unchanged
+outputs untouched and is trusted to do so correctly (`Sem.keep_eq`). -/
 def rule (name command : String) (description : String := "") (depfile : Bool := false)
-    (restat : Bool := false) : Build RuleRef := do
-  let cmd ← parseValue s!"rule {name}: command" command
+    (restat : Bool := false) (restatCmp : Bool := true) : Build RuleRef := do
+  let wrap := restat && restatCmp
+  let cmd ← parseValue s!"rule {name}: command" (if wrap then cmpWrap command else command)
   let desc ← parseValue s!"rule {name}: description" description
   let r : GRule := { name, command := cmd, description := desc, depfile, restat }
   let g ← get
   require r.ok s!"rule {name}: invalid name, empty command, or a reserved variable in the command"
   require (!g.ruleNames.contains name) s!"rule {name}: already declared"
   set { g with rules := g.rules ++ [r] }
-  pure ⟨name⟩
+  pure ⟨name, wrap⟩
 
 /-- Add an edge. Returns handles to the explicit outputs, then the implicit
 outputs. -/
 def edge (r : RuleRef) (outs : List Path) (ins : List Handle := []) (implicitIns : List Handle := [])
     (orderOnly : List Handle := []) (implicitOuts : List Path := [])
     (vars : List (String × String) := []) : Build (List Handle) := do
+  require (!r.cmp || vars.all (·.1 != cmpOutsVar))
+    s!"edge {repr outs}: the variable {cmpOutsVar} is set by the restat wrapper"
+  let vars := if r.cmp && !implicitOuts.isEmpty then vars ++ [(cmpOutsVar, shellList " " implicitOuts)] else vars
   let e : GEdge := { rule := r.name, outs, implicitOuts, ins := ins.map (·.path),
                      implicitIns := implicitIns.map (·.path), orderOnly := orderOnly.map (·.path), vars }
   let g ← get
