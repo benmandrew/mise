@@ -31,11 +31,43 @@ defaults:
     shell: bash
 
 jobs:
+  # Decide which jobs run: each runs only when a file it depends on changed
+  # since the last commit on which it succeeded, in this branch's history
+  # or, for a pull request, the base branch's. .github/scripts/affected.py
+  # lists each job's dependencies. A skipped job counts as passed for a
+  # required check.
+  changed:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      proofs: ${{ steps.check.outputs.proofs }}
+      ninja: ${{ steps.check.outputs.ninja }}
+      extras: ${{ steps.check.outputs.extras }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          EVENT: ${{ github.event_name }}
+          SHA: ${{ github.sha }}
+          BRANCH: ${{ github.head_ref || github.ref_name }}
+          BASE_BRANCH: ${{ github.base_ref }}
+        run: python3 .github/scripts/affected.py ci.yml proofs ninja extras
+
   # Build, no sorry/admit, axioms of the headline theorems, docs/trusted.md
   # up to date. The proofs do not depend on the Ninja release, so they run
   # once. This is the only job that saves the Lake cache, since it builds
   # every target. Local time: 7 to 13 s, from an empty .lake.
   proofs:
+    needs: changed
+    if: needs.changed.outputs.proofs == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -54,6 +86,8 @@ jobs:
   # times: 48 s on 1.12.1 and 52 s on 1.13.2.
   ninja:
     name: ninja ${{ matrix.release }} (${{ matrix.os }})
+    needs: changed
+    if: needs.changed.outputs.ninja == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -93,6 +127,8 @@ jobs:
   # kind in place of 2,500. Local times: 2 s, 2 s, 1 s and 5 s.
   extras:
     name: restat-cmp, wrap-outputs, stage4-hello, sugar, toml-diff
+    needs: changed
+    if: needs.changed.outputs.extras == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:

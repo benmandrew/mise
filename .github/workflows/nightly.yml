@@ -1,7 +1,7 @@
-# The heavy harnesses, once a day and on demand. A scheduled run does the
-# work only when main has moved since the last successful nightly run; a
-# run from workflow_dispatch always does it. See docs/testing.md for each
-# harness and its arguments.
+# The heavy harnesses, once a day and on demand. In a scheduled run each
+# job runs only when a file it depends on changed since the last commit on
+# which it succeeded; a run from workflow_dispatch runs every job. See
+# docs/testing.md for each harness and its arguments.
 #
 # Jobs run on ubuntu-latest, the main platform. macOS also runs the
 # priority jobs (500 random graphs, and the matrix on the latest release),
@@ -29,45 +29,49 @@ defaults:
     shell: bash
 
 jobs:
-  # Decide whether to run. The first run, with no earlier success, runs.
-  # A failed nightly does not count, so the next night tries the same
-  # commit again.
+  # Decide which jobs run: each runs only when a file it depends on changed
+  # since the last commit on main on which it succeeded (see
+  # .github/scripts/affected.py for each job's dependencies). A job with no
+  # earlier success runs, and a failed job does not count, so the next
+  # night tries it again. A run started by hand runs every job.
   changed:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
       actions: read
+      contents: read
     outputs:
-      run: ${{ steps.check.outputs.run }}
+      fuzz: ${{ steps.check.outputs.fuzz }}
+      props: ${{ steps.check.outputs.props }}
+      conf-sandbox: ${{ steps.check.outputs.conf-sandbox }}
+      conf-depfiles: ${{ steps.check.outputs.conf-depfiles }}
+      conf-determinism: ${{ steps.check.outputs.conf-determinism }}
+      toml-diff: ${{ steps.check.outputs.toml-diff }}
+      parser-fuzz: ${{ steps.check.outputs.parser-fuzz }}
+      mutants: ${{ steps.check.outputs.mutants }}
+      ninja: ${{ steps.check.outputs.ninja }}
+      mtime-faults: ${{ steps.check.outputs.mtime-faults }}
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
       - id: check
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           EVENT: ${{ github.event_name }}
           SHA: ${{ github.sha }}
+          BRANCH: ${{ github.ref_name }}
         run: |
-          set -euo pipefail
-          if [ "$EVENT" = workflow_dispatch ]; then
-            run=true why="started by hand"
-          else
-            last=$(gh run list --workflow nightly.yml --branch main --status success \
-              --limit 1 --json headSha --jq '.[0].headSha // ""')
-            if [ -z "$last" ]; then
-              run=true why="no earlier successful nightly"
-            elif [ "$last" = "$SHA" ]; then
-              run=false why="main is still at $SHA, the last successful nightly"
-            else
-              run=true why="main moved from $last to $SHA"
-            fi
-          fi
-          echo "run=$run: $why"
-          echo "run=$run" >>"$GITHUB_OUTPUT"
+          all=()
+          [ "$EVENT" = workflow_dispatch ] && all=(--all)
+          python3 .github/scripts/affected.py "${all[@]}" nightly.yml fuzz props conf-sandbox conf-depfiles conf-determinism toml-diff parser-fuzz mutants ninja mtime-faults
 
   # 500 random graphs (59 seconds on 8 cores, per docs/testing.md).
   fuzz:
     needs: changed
-    if: needs.changed.outputs.run == 'true'
+    if: needs.changed.outputs.fuzz == 'true'
     name: fuzz (${{ matrix.os }})
     strategy:
       fail-fast: false
@@ -93,7 +97,7 @@ jobs:
   # Every ordered triple of edit kinds (80 seconds on 8 cores).
   props:
     needs: changed
-    if: needs.changed.outputs.run == 'true'
+    if: needs.changed.outputs.props == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -109,7 +113,7 @@ jobs:
   # store's programs, is unverified until the first run.
   conf-sandbox:
     needs: changed
-    if: needs.changed.outputs.run == 'true'
+    if: needs.changed.outputs.conf-sandbox == 'true'
     runs-on: macos-latest
     timeout-minutes: 30
     steps:
@@ -122,7 +126,7 @@ jobs:
 
   conf-depfiles:
     needs: changed
-    if: needs.changed.outputs.run == 'true'
+    if: needs.changed.outputs.conf-depfiles == 'true'
     runs-on: macos-latest
     timeout-minutes: 30
     steps:
@@ -135,7 +139,7 @@ jobs:
 
   conf-determinism:
     needs: changed
-    if: needs.changed.outputs.run == 'true'
+    if: needs.changed.outputs.conf-determinism == 'true'
     runs-on: macos-latest
     timeout-minutes: 20
     steps:
@@ -149,7 +153,7 @@ jobs:
   # 2,500 documents of each kind (16 seconds on 8 cores).
   toml-diff:
     needs: changed
-    if: needs.changed.outputs.run == 'true'
+    if: needs.changed.outputs.toml-diff == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -166,7 +170,7 @@ jobs:
   # the first run.
   parser-fuzz:
     needs: changed
-    if: needs.changed.outputs.run == 'true'
+    if: needs.changed.outputs.parser-fuzz == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -189,7 +193,7 @@ jobs:
   # About 15 minutes locally on 2 workers; the runner has 3.
   mutants:
     needs: changed
-    if: needs.changed.outputs.run == 'true'
+    if: needs.changed.outputs.mutants == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -211,7 +215,7 @@ jobs:
   ninja:
     name: ninja ${{ matrix.release }} (${{ matrix.os }})
     needs: changed
-    if: needs.changed.outputs.run == 'true'
+    if: needs.changed.outputs.ninja == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -245,7 +249,7 @@ jobs:
   # image is unverified. libfaketime adds the clock-skew fault.
   mtime-faults:
     needs: changed
-    if: needs.changed.outputs.run == 'true'
+    if: needs.changed.outputs.mtime-faults == 'true'
     runs-on: macos-latest
     continue-on-error: true
     timeout-minutes: 20
