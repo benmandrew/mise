@@ -78,9 +78,9 @@ JOBS = {
         "exes": ["mise", "fuzzgen", "difftest"],
     },
     "extras": {
-        "names": r"restat-cmp, .*",
-        "paths": ["test/restat-cmp.sh", "test/wrap-outputs.sh", "test/stage4-hello.sh",
-                  "test/sugar.sh", "test/toml-diff.sh", "test/toml_diff.py", "examples/*"],
+        "names": r"command wrapper and TOML front end",
+        "paths": ["test/restat-cmp.sh", "test/wrap-outputs.sh", "test/sugar.sh",
+                  "test/toml-diff.sh", "test/toml_diff.py"],
         "exes": ["mise", "tomljson"],
     },
     "fuzz": {"names": r"fuzz \(.*\)", "paths": FUZZ, "exes": ["mise", "fuzzgen"]},
