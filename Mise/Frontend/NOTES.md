@@ -5,7 +5,7 @@
 - `Eval.lean` models Ninja's variable evaluation (`manifest_parser.cc`, `eval_env.cc`, `EdgeEnv` in `graph.cc`). `Manifest.elab` reads a manifest into `EdgeInfo` records; `EdgeInfo.command` is the evaluated command.
 - `Graph.lean` defines `GRule`, `GEdge`, `Graph`, `Graph.Valid`, `Graph.spec sem` (the DSL's meaning), `emit`, and `denote sem` (a manifest's meaning through `Manifest.elab`).
 - `Emit.lean` holds the proofs; `Dsl.lean` is the builder (`source`, `rule`, `edge`, `edge1`, `defaults`, and `Build.graph`, which returns a `ValidGraph`).
-- `Toml.lean` parses a subset of TOML and calls the same builder functions, so it adds no checks and no proofs. The parser is hand-written so that the binary does not link Lean's compiler: with `Lake.Toml` it was 103 MB and each start took 23 ms longer. `test/MiseTest/Toml.lean` compares it with Lake's parser on accepted inputs and checks its error cases, `test/toml-diff.sh` compares it with Python's `tomllib` on random documents, and the shell tests run the examples' `mise.toml` files through `mise`. There is no print-then-parse theorem for the value tree. The parser's recursive functions are `partial def`s, which proofs cannot unfold, so a theorem would first need a total rewrite of the parser with termination measures.
+- `Toml.lean` parses a subset of TOML and calls the same builder functions, so it adds no checks and no proofs. Its conveniences expand before the builder runs: `source-globs` become `source` calls, a `foreach` build becomes one `edge` per match, a `%` input of another build becomes the list of matching paths, the builds are sorted so that every input comes from an earlier edge, and `[aliases]` are flattened into `alias` calls. `Glob.lean` matches glob patterns and lists the files they match; `decode` itself is pure, and `Main.lean` passes it the expanded patterns. The parser is hand-written so that the binary does not link Lean's compiler: with `Lake.Toml` it was 103 MB and each start took 23 ms longer. `test/MiseTest/Toml.lean` compares it with Lake's parser on accepted inputs and checks its error cases, `test/toml-diff.sh` compares it with Python's `tomllib` on random documents, and the shell tests run the examples' `mise.toml` files through `mise`. There is no print-then-parse theorem for the value tree. The parser's recursive functions are `partial def`s, which proofs cannot unfold, so a theorem would first need a total rewrite of the parser with termination measures.
 
 Commands are abstract, collected in `Sem V`: `sem.exec cmd vs` gives one content per output, from the explicit and implicit inputs in order. Stages 6 and 7 add `sem.dyn` and `sem.keep`; `Sem.withCmp` sets `keep` to equality, the semantics of the command wrapper below. A missing entry reads as `default`, so `V` needs `Inhabited`.
 
@@ -30,7 +30,8 @@ Ninja rejects cyclic rule variables; the model uses fuel of the binding count pl
 - outputs are distinct, not sources, and new;
 - inputs are sources or earlier outputs;
 - edge variables have distinct names outside `reserved` and newline-free values;
-- default targets are edge outputs;
+- aliases have distinct names that are valid paths, neither sources nor edge outputs, and a nonempty list of targets, each a valid path that is a source or an edge output (`aliasesOK`);
+- default targets are edge outputs or aliases;
 - an edge whose rule has a depfile has one explicit output, since the emitted `depfile = ${out}.d` names one file only then (`depfileOutsOK`).
 
 `reserved` holds `in`, `out`, `in_newline`, `ninja_required_version` (`versionVar`) and the rule keys. `Handle` and `RuleRef` have private constructors, so a description names only what it declared.
@@ -39,10 +40,15 @@ Ninja rejects cyclic rule variables; the model uses fuel of the binding count pl
 
 `emit` puts `versionStmt`, the top-level binding `ninja_required_version = 1.12.1`, before the rules. The version is `ninjaMinVersion`, the oldest supported release; Ninja 1.11.1 and older refuse the manifest with "incompatible with build file ninja_required_version". The binding is the whole file scope, `emitFile`. A template or edge reference to it would read `1.12.1` where `GEdge.look` gives the empty string, so the name is in `reserved`; with it reserved, every lookup the proofs make misses the file scope, as it did when the scope was empty (`emitFile_get`). The models read it as an ordinary binding and leave out Ninja's version check, which runs when Ninja reads the line and changes no edge.
 
+## Aliases
+
+`alias` declares a name for a set of targets, and `emit` writes it as `build NAME: phony TARGETS` after the edges. `denote` and the model's `Manifest.medges` read only `Elab.cmdEdges`, the edges whose rule is not `phony`, so an alias changes neither the meaning of the manifest nor the edges the model runs. That is exact for the aliases `Graph.check` allows. Ninja runs no command for a `phony` edge and logs nothing for it, and its output's dirtiness matters only to edges that read it, of which there are none, since an edge reads only sources and earlier outputs. An alias with no targets would differ: Ninja treats its missing output as always dirty. `aliasesOK` rejects it. Building an alias builds a subset of the edges, which `Reach` already covers as a partial build.
+
 ## Theorems
 
 - `emit_wellFormed`: `(emit g).WellFormed` for valid `g`, so `parse_print` applies.
-- `denote_emit` (headline): `denote sem (emit g) = g.spec sem` for valid `g` and any `sem`, via `command_emit`.
+- `denote_emit` (headline): `denote sem (emit g) = g.spec sem` for valid `g` and any `sem`, via `command_emit` and `cmdEdges_emit`.
+- `cmdEdges_emit`: the emitted edges that run a command are the graph's own edges, since every alias is a `phony` edge and no rule of a valid graph is called `phony`.
 - `isDyn_emit`, `isRestat_emit`: the evaluated `deps` and `restat` bindings match the rule's flags, emitted by `emitRule` as `depfile = ${out}.d`, `deps = gcc` and `restat = 1`.
 - `emitAcyclic`: an `Acyclic` structure for `denote sem (emit g)` given `Graph.DynOK`, with edge positions as ranks; `emit_acyclic` states existence.
 
@@ -62,7 +68,7 @@ Ninja rejects cyclic rule variables; the model uses fuel of the binding count pl
 ## Deviations from the plan
 
 - `emitAcyclic` is a definition because Stage 2 made `Acyclic` data.
-- The DSL emits no `phony` edges and no top-level bindings other than the version binding; `denote` gives a phony edge the empty command, unlike Ninja.
+- The DSL emits `phony` edges only for aliases, after every other edge, and no top-level bindings other than the version binding.
 - `GRule` carries a description that no meaning uses.
 - `Graph.spec` uses `GEdge.look`, with Ninja's shell quoting because the build log compares command strings.
 

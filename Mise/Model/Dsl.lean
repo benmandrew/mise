@@ -20,7 +20,7 @@ def gEdge (g : Graph) (e : GEdge) : MEdge :=
 
 theorem medges_emit (g : Graph) (hg : g.Valid) : (emit g).medges = g.edges.map (gEdge g) := by
   unfold Manifest.medges
-  rw [(elab_emit g).1, (elab_emit g).2, List.map_map]
+  rw [(elab_emit g).1, cmdEdges_emit g hg, List.map_map]
   refine List.map_congr_left fun e he => ?_
   simp only [Function.comp, toMEdge, gEdge, command_emit g hg e he, isDyn_emit g hg e he,
     isRestat_emit g hg e he]

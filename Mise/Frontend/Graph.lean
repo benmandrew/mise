@@ -77,14 +77,23 @@ def look (e : GEdge) (v : String) : String :=
 
 end GEdge
 
+/-- A name for a set of targets, emitted as a `phony` edge. Building the
+name builds the targets. No edge reads it, and no command runs for it.
+Gloss: aliases -/
+structure GAlias where
+  name : Path
+  targets : List Path
+  deriving DecidableEq, Repr, Inhabited
+
 /-- A build as the DSL describes it: declared sources, rules, edges in the
-order they were added, and default targets.
+order they were added, aliases, and default targets.
 Gloss: graphs
 Gloss.one: graph -/
 structure Graph where
   sources : List Path := []
   rules : List GRule := []
   edges : List GEdge := []
+  aliases : List GAlias := []
   defaults : List Path := []
   deriving Repr, Inhabited
 
@@ -133,14 +142,25 @@ def depfileOutsOK (rules : List GRule) (e : GEdge) : Bool :=
   | some r => !r.depfile || e.outs.length == 1
   | none => true
 
+/-- The aliases are acceptable: their names are distinct valid paths that are
+neither sources nor edge outputs, and each alias has at least one target,
+every target a valid path that is a source or an edge output. So no edge
+reads an alias, since an edge reads only sources and earlier outputs. -/
+def aliasesOK (srcs outs : List Path) (as : List GAlias) : Bool :=
+  nodupB (as.map (·.name)) && as.all fun a =>
+    validPath a.name && !srcs.contains a.name && !outs.contains a.name && !a.targets.isEmpty &&
+      a.targets.all fun t => validPath t && (srcs.contains t || outs.contains t)
+
 /-- The validity check: rule names are distinct, every rule is acceptable
 (`GRule.ok`), every edge is acceptable after the ones before it
-(`edgesOK`), every default target is an output of some edge, and every
-edge whose rule has a depfile has one explicit output
-(`depfileOutsOK`). -/
+(`edgesOK`), the aliases are acceptable (`aliasesOK`), every default target
+is an edge output or an alias, and every edge whose rule has a depfile has
+one explicit output (`depfileOutsOK`). -/
 def Graph.check (g : Graph) : Bool :=
   nodupB g.ruleNames && g.rules.all GRule.ok && edgesOK g.ruleNames g.sources [] g.edges &&
-    (g.defaults.all fun d => g.edges.any (·.allOuts.contains d)) && g.edges.all (depfileOutsOK g.rules)
+    aliasesOK g.sources (g.edges.flatMap GEdge.allOuts) g.aliases &&
+    (g.defaults.all fun d => g.edges.any (·.allOuts.contains d) || g.aliases.any (·.name == d)) &&
+    g.edges.all (depfileOutsOK g.rules)
 
 /-- Every input is a declared source or an output of an earlier edge, every
 output has one producer, every name and path can be written in Ninja, and
@@ -260,25 +280,31 @@ def emitEdge (e : GEdge) : Edge :=
     implicitIns := e.implicitIns, orderOnly := e.orderOnly,
     bindings := e.vars.map fun b => (b.1, litVal b.2) }
 
+/-- An alias as a Ninja `phony` edge: the alias is the one explicit output,
+and the targets are the explicit inputs. -/
+def emitAlias (a : GAlias) : Edge := { outs := [a.name], rule := "phony", ins := a.targets }
+
 /-- The first statement of every emitted manifest. -/
 def versionStmt : Stmt := .binding versionVar [.lit ninjaMinVersion]
 
 /-- The manifest `mise` writes for a graph: the version statement
-(`versionStmt`), the rules, then the edges in order, then a `default`
-statement if the graph has default targets.
+(`versionStmt`), the rules, then the edges in order, then the aliases as
+`phony` edges, then a `default` statement if the graph has default targets.
 Gloss: the manifest for {g} -/
 def emit (g : Graph) : Manifest :=
   ⟨versionStmt :: (g.rules.map (Stmt.rule ∘ emitRule) ++ g.edges.map (Stmt.edge ∘ emitEdge) ++
+    g.aliases.map (Stmt.edge ∘ emitAlias) ++
     (if g.defaults.isEmpty then [] else [.default g.defaults]))⟩
 
 /-- The meaning of a manifest under the Ninja evaluation model: each output
 is computed by its edge's evaluated command, which is static or reads a
-depfile according to the edge's `deps` binding. Paths no edge produces are
-sources.
+depfile according to the edge's `deps` binding. `phony` edges run no
+command and are left out (`Elab.cmdEdges`), so paths no other edge produces
+are sources.
 Gloss: the meaning of {m} -/
 def denote (sem : Sem V) (m : Manifest) : BuildSpec Path V where
-  isSource k := (findOut (·.edge.allOuts) k m.elab.edges).isNone
-  task k := match findOut (·.edge.allOuts) k m.elab.edges with
+  isSource k := (findOut (·.edge.allOuts) k m.elab.cmdEdges).isNone
+  task k := match findOut (·.edge.allOuts) k m.elab.cmdEdges with
     | some (_, c) => outTask (cmdTask sem (c.isDyn m.elab.file) (c.command m.elab.file)
         (c.edge.ins ++ c.edge.implicitIns)) (c.edge.allOuts.idxOf k)
     | none => .pure default

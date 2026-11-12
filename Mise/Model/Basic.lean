@@ -56,8 +56,9 @@ def toMEdge (file : Scope) (c : EdgeInfo) : MEdge :=
 end Mise.Model
 
 namespace Mise.Syntax.Manifest
-/-- The manifest's edges as the model sees them, in manifest order. -/
-def medges (m : Manifest) : List Mise.Model.MEdge := m.elab.edges.map (Mise.Model.toMEdge m.elab.file)
+/-- The manifest's edges as the model sees them, in manifest order. `phony`
+edges run no command, so the model leaves them out. -/
+def medges (m : Manifest) : List Mise.Model.MEdge := m.elab.cmdEdges.map (Mise.Model.toMEdge m.elab.file)
 end Mise.Syntax.Manifest
 
 namespace Mise.Model

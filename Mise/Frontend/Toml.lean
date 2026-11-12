@@ -1,4 +1,6 @@
 import Mise.Frontend.Dsl
+import Mise.Frontend.Glob
+import Std.Data.HashMap
 
 /-!
 # TOML build descriptions
@@ -11,8 +13,9 @@ the resulting graph, so this file is outside the proofs: a mistake here can
 give the wrong build, never an unsound one.
 
 ```toml
-sources = ["main.c", "greet.h"]
-defaults = ["build/hello"]
+sources = ["greet.h"]
+source-globs = ["src/*.c"]   # files matching a glob are sources too
+defaults = ["build/hello"]   # outputs or aliases
 
 [params]                 # defaults, overridden by `mise build --set cflags=...`
 cflags = "-O2 -Wall"
@@ -30,10 +33,25 @@ ins = ["main.c"]
 implicit-ins = ["greet.h"]   # also `implicit-outs`, `order-only`
 params = ["cflags"]          # edge variables bound to parameters
 vars = { opt = "-g" }        # edge variables with literal values
+
+[[build]]                    # one build per source or output matching foreach
+rule = "cc"
+foreach = "src/%.c"          # `%` matches a nonempty stem
+outs = ["build/%.o"]         # `%` in a path is replaced by the stem
+ins = ["src/%.c"]
+
+[aliases]                    # `phony` edges: `ninja all` builds the targets
+all = ["build/hello", "build/main.o"]
 ```
 
-Inputs and defaults name declared sources or outputs of earlier `[[build]]`
-entries. Unknown keys are errors.
+Inputs name sources or outputs of any `[[build]]`, in any order: `decode`
+sorts the builds so that each comes after the builds it reads, and rejects
+a cycle. An alias names sources, outputs or other aliases, flattened into a
+list of paths. In a build without `foreach`, and in an alias, a path with
+`%` stands for every source and output that matches it. Unknown keys are errors.
+
+`decode` is pure. The caller expands each `source-globs` pattern with
+`Glob.expand` and passes the results in.
 
 The parser is written here so that the `mise` binary does not link Lean's
 compiler: importing `Lake.Toml` made it 103 MB and added 23 ms to every
@@ -356,13 +374,112 @@ def params (t : Table) (ps : Params) : Build Params := do
     unless (defs.lookup k).isSome do throw s!"--set {k}: no such parameter in [params]"
   pure (defs.map fun (k, d) => (k, ps.get k d))
 
-/-- Read a build description. -/
-def decode (t : Table) (ps : Params) : Build Unit := do
-  checkKeys "mise.toml" t ["sources", "defaults", "params", "rule", "build"]
+/-- A string or an array of strings. -/
+def strOrStrs (what : String) : Value → Build (List String)
+  | .str s => pure [s]
+  | v => asStrs what v
+
+/-- The `source-globs` patterns of a description, for the caller to expand. -/
+def globPatterns (t : Table) : Except String (List String) :=
+  match find? t "source-globs" with
+  | some v => ((asStrs "source-globs" v).run' {})
+  | none => pure []
+
+/-- A `[[build]]` with its paths as strings, before handles are made. -/
+structure Decl where
+  what : String
+  rule : String
+  outs : List Path
+  implicitOuts : List Path
+  ins : List Path
+  implicitIns : List Path
+  orderOnly : List Path
+  vars : List (String × String)
+  deriving Inhabited
+
+/-- The input lists of a build, with their keys. -/
+def Decl.inLists (d : Decl) : List (String × List Path) :=
+  [("ins", d.ins), ("implicit-ins", d.implicitIns), ("order-only", d.orderOnly)]
+
+/-- The stem a `foreach` pattern with one `%` gives a path, if it matches. -/
+def stemOf (pre suf p : String) : Option String :=
+  if p.startsWith pre && p.endsWith suf && p.length > pre.length + suf.length then
+    some ((p.drop pre.length).dropEnd suf.length).toString
+  else none
+
+/-- Replace every `%` in a path by the stem. -/
+def subst (stem p : String) : String := stem.intercalate (p.splitOn "%")
+
+/-- Order the builds so that each comes after the builds that produce its
+inputs, keeping file order where it already does. -/
+partial def sortDecls (ds : Array Decl) (srcs : Std.HashMap Path Unit) : Except String (List Decl) := do
+  let mut prod : Std.HashMap Path Nat := {}
+  for h : i in [:ds.size] do
+    for o in ds[i].outs ++ ds[i].implicitOuts do
+      unless prod.contains o do prod := prod.insert o i
+  let mut deps : Array (List Nat) := #[]
+  for d in ds do
+    let mut js : List Nat := []
+    for (k, ps) in d.inLists do
+      for p in ps do
+        if srcs.contains p then continue
+        match prod.get? p with
+        | some j => js := js ++ [j]
+        | none => throw s!"{d.what}: {k}: {repr p} is not a source or a build output"
+    deps := deps.push js
+  -- 0 unvisited, 1 on the stack, 2 done
+  let rec visit (stack : List Nat) (i : Nat) (st : Array Nat × Array Nat) :
+      Except String (Array Nat × Array Nat) := do
+    let (mark, out) := st
+    match mark[i]! with
+    | 2 => pure st
+    | 1 =>
+      let cyc := (i :: (stack.takeWhile (· != i)).reverse ++ [i]).map fun j => ds[j]!.what
+      throw s!"cycle: {" -> ".intercalate cyc}"
+    | _ =>
+      let mut st := (mark.set! i 1, out)
+      for j in deps[i]! do st ← visit (i :: stack) j st
+      pure (st.1.set! i 2, st.2.push i)
+  let mut st := (Array.replicate ds.size 0, #[])
+  for i in [:ds.size] do st ← visit [] i st
+  pure (st.2.toList.map fun i => ds[i]!)
+
+/-- Flatten the aliases: each name maps to the paths it builds, with other
+aliases replaced by their paths, without repeats. -/
+partial def flattenAliases (as : List (String × List String)) : Except String (List (String × List String)) :=
+  as.mapM fun (n, _) => do pure (n, ← go [n] n)
+where
+  go (stack : List String) (n : String) : Except String (List String) := do
+    let ts := (as.lookup n).getD []
+    let mut out : List String := []
+    for t in ts do
+      if (as.lookup t).isSome then
+        if stack.contains t then
+          throw s!"aliases: cycle: {" -> ".intercalate ((t :: stack).reverse)}"
+        for p in ← go (t :: stack) t do
+          unless out.contains p do out := out ++ [p]
+      else unless out.contains t do out := out ++ [t]
+    pure out
+
+/-- Read a build description. `globs` gives the files each `source-globs`
+pattern matches. -/
+def decode (t : Table) (ps : Params) (globs : List (String × List Path) := []) : Build Unit := do
+  checkKeys "mise.toml" t ["sources", "source-globs", "defaults", "params", "rule", "build", "aliases"]
   let prm ← params t ps
-  let mut known : List (Path × Handle) := []
+  let mut known : Std.HashMap Path Handle := {}
+  let mut srcs : Std.HashMap Path Unit := {}
   for p in ← optStrs "mise.toml" t "sources" do
-    known := known ++ [(p, ← source p)]
+    known := known.insert p (← source p)
+    srcs := srcs.insert p ()
+  for pat in ← optStrs "mise.toml" t "source-globs" do
+    if let .error e := Glob.components pat then throw s!"source-globs: {e}"
+    let some fs := globs.lookup pat | throw s!"source-globs: {repr pat} was not expanded"
+    let fs := fs.filter (!·.endsWith asideSuffix)
+    if fs.isEmpty then throw s!"source-globs: {repr pat} matches no file"
+    for p in fs do
+      unless srcs.contains p do
+        known := known.insert p (← source p)
+        srcs := srcs.insert p ()
   let mut rules : List (String × RuleRef) := []
   for r in ← optTables t "rule" do
     let name ← reqStr "rule" r "name"
@@ -374,16 +491,14 @@ def decode (t : Table) (ps : Params) : Build Unit := do
     let rr ← rule name (← reqStr what r "command") (← optStr what r "description" "")
       (← optBool what r "depfile") (← optBool what r "restat") wrap
     rules := rules ++ [(name, rr)]
+  -- Read every build; a `foreach` build is a template for later.
+  let mut raw : Array (Decl ⊕ (String × List String × Decl)) := #[]
   for b in ← optTables t "build" do
     let outs ← optStrs "build" b "outs"
     let what := s!"build {repr outs}"
-    checkKeys what b ["rule", "outs", "implicit-outs", "ins", "implicit-ins", "order-only", "vars", "params"]
+    checkKeys what b ["rule", "outs", "implicit-outs", "ins", "implicit-ins", "order-only", "vars", "params", "foreach"]
     let rn ← reqStr what b "rule"
-    let some r := rules.lookup rn | throw s!"{what}: no rule named {repr rn}"
-    let handles (k : String) : Build (List Handle) := do
-      (← optStrs what b k).mapM fun p => match known.lookup p with
-        | some h => pure h
-        | none => throw s!"{what}: {k}: {repr p} is not a source or an output of an earlier build"
+    unless (rules.lookup rn).isSome do throw s!"{what}: no rule named {repr rn}"
     let vars ← match find? b "vars" with
       | some v => do
         let vt ← asTable s!"{what}: vars" v
@@ -392,17 +507,106 @@ def decode (t : Table) (ps : Params) : Build Unit := do
     let pvars ← (← optStrs what b "params").mapM fun k => match prm.lookup k with
       | some v => pure (k, v)
       | none => throw s!"{what}: params: no parameter {repr k} in [params]"
-    let implicitOuts ← optStrs what b "implicit-outs"
-    let hs ← edge r outs (← handles "ins") (← handles "implicit-ins") (← handles "order-only") implicitOuts
-      (vars ++ pvars)
-    known := known ++ (outs ++ implicitOuts).zip hs
-  let ds ← (← optStrs "mise.toml" t "defaults").mapM fun p => match known.lookup p with
-    | some h => pure h
-    | none => throw s!"defaults: {repr p} is not a source or a build output"
-  defaults ds
+    let d : Decl := { what, rule := rn, outs, implicitOuts := ← optStrs what b "implicit-outs",
+                      ins := ← optStrs what b "ins", implicitIns := ← optStrs what b "implicit-ins",
+                      orderOnly := ← optStrs what b "order-only", vars := vars ++ pvars }
+    match find? b "foreach" with
+    | none => raw := raw.push (.inl d)
+    | some v =>
+      let pats ← strOrStrs s!"{what}: foreach" v
+      if pats.isEmpty then throw s!"{what}: foreach: no patterns"
+      for p in pats do
+        unless (p.splitOn "%").length == 2 do throw s!"{what}: foreach: {repr p} must contain one %"
+      unless (d.outs ++ d.implicitOuts).any (·.contains '%') do
+        throw s!"{what}: foreach: no output contains %"
+      raw := raw.push (.inr (what, pats, d))
+  -- Expand each `foreach` build over the sources, the outputs of plain
+  -- builds, and the outputs of earlier `foreach` builds.
+  let mut avail : Array Path := srcs.keys.toArray.qsort (· < ·)
+  for r in raw do
+    if let .inl d := r then avail := avail ++ (d.outs ++ d.implicitOuts).toArray
+  let mut decls : Array (Bool × Decl) := #[]
+  for r in raw do
+    match r with
+    | .inl d => decls := decls.push (true, d)
+    | .inr (what, pats, d) =>
+      let mut stems : List String := []
+      for pat in pats do
+        let pre := (pat.splitOn "%").headD ""
+        let suf := (pat.splitOn "%").getLastD ""
+        for p in avail do
+          if let some s := stemOf pre suf p then
+            unless stems.contains s do stems := stems ++ [s]
+      if stems.isEmpty then throw s!"{what}: foreach: no source or output matches {repr pats}"
+      for s in stems do
+        let f := (·.map (subst s))
+        let i := { d with what := s!"build {repr (f d.outs)}", outs := f d.outs, implicitOuts := f d.implicitOuts,
+                          ins := f d.ins, implicitIns := f d.implicitIns, orderOnly := f d.orderOnly }
+        decls := decls.push (false, i)
+        avail := avail ++ (i.outs ++ i.implicitOuts).toArray
+  -- In a build without `foreach`, and in an alias, a path with `%` stands
+  -- for every source or output that matches it, in path order, the build's
+  -- own outputs excepted.
+  let all := (avail.qsort (· < ·)).toList
+  let expandPct (what : String) (own ps : List Path) : Build (List Path) := do
+    let mut out : List Path := []
+    for p in ps do
+      if !p.contains '%' then out := out ++ [p]; continue
+      let parts := p.splitOn "%"
+      unless parts.length == 2 do throw s!"{what}: {repr p} must contain one %"
+      let ms := all.filter fun q => (stemOf (parts.headD "") (parts.getLastD "") q).isSome && !own.contains q
+      if ms.isEmpty then throw s!"{what}: no source or output matches {repr p}"
+      for q in ms do unless out.contains q do out := out ++ [q]
+    pure out
+  let mut plainDecls : Array Decl := #[]
+  for (plain, d) in decls do
+    if plain then
+      let ex (k : String) (ps : List Path) : Build (List Path) :=
+        expandPct s!"{d.what}: {k}" (d.outs ++ d.implicitOuts) ps
+      plainDecls := plainDecls.push { d with ins := ← ex "ins" d.ins, implicitIns := ← ex "implicit-ins" d.implicitIns,
+                                             orderOnly := ← ex "order-only" d.orderOnly }
+    else plainDecls := plainDecls.push d
+  let sorted ← match sortDecls plainDecls srcs with
+    | .ok l => pure l
+    | .error e => throw e
+  for d in sorted do
+    let some r := rules.lookup d.rule | throw s!"{d.what}: no rule named {repr d.rule}"
+    let handles (k : String) (ps : List Path) : Build (List Handle) :=
+      ps.mapM fun p => match known.get? p with
+        | some h => pure h
+        | none => throw s!"{d.what}: {k}: {repr p} is not a source or a build output"
+    let hs ← edge r d.outs (← handles "ins" d.ins) (← handles "implicit-ins" d.implicitIns)
+      (← handles "order-only" d.orderOnly) d.implicitOuts d.vars
+    for (p, h) in (d.outs ++ d.implicitOuts).zip hs do known := known.insert p h
+  -- Aliases.
+  let araw ← match find? t "aliases" with
+    | some v => do
+      let atbl ← asTable "aliases" v
+      atbl.mapM fun (k, v) => do pure (k, ← expandPct s!"aliases: {k}" [] (← asStrs s!"aliases: {k}" v))
+    | none => pure []
+  let flat ← match flattenAliases araw with
+    | .ok l => pure l
+    | .error e => throw e
+  let mut aliasRefs : List (String × AliasRef) := []
+  for (n, ts) in flat do
+    let hs ← ts.mapM fun p => match known.get? p with
+      | some h => pure h
+      | none => throw s!"aliases: {n}: {repr p} is not a source, a build output or an alias"
+    aliasRefs := aliasRefs ++ [(n, ← alias n hs)]
+  for p in ← optStrs "mise.toml" t "defaults" do
+    match aliasRefs.lookup p, known.get? p with
+    | some a, _ => defaults [] [a]
+    | none, some h =>
+      if srcs.contains p then throw s!"defaults: {repr p} is a source"
+      defaults [h]
+    | none, none => throw s!"defaults: {repr p} is not a build output or an alias"
 
-/-- Read and check a TOML build description. -/
-def load (text : String) (ps : Params := []) : Except String ValidGraph := do
-  (decode (← parse text) ps).graph
+/-- Read and check a TOML build description, with the files each
+`source-globs` pattern matches. -/
+def loadWith (text : String) (ps : Params) (globs : List (String × List Path)) : Except String ValidGraph := do
+  (decode (← parse text) ps globs).graph
+
+/-- Read and check a TOML build description that has no `source-globs`. -/
+def load (text : String) (ps : Params := []) : Except String ValidGraph := loadWith text ps []
 
 end Mise.Frontend.Toml

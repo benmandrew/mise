@@ -77,4 +77,37 @@ def rejects (b : Build Unit) : Bool := match b.graph with
   let r ← rule "r" "touch $out"
   let _ ← edge1 r "a.mise-old"
 
+/-! Aliases: `phony` edges after the edges, which the Ninja model leaves out. -/
+
+def withAlias : Graph := match (do
+    let a ← source "a.c"
+    let r ← rule "cc" "cc -c $in -o $out"
+    let o ← edge1 r "a.o" [a]
+    let al ← alias "objs" [o, a]
+    defaults [] [al]).graph with
+  | .ok g => g.1
+  | .error _ => {}
+
+#guard decide withAlias.Valid
+#guard decide (emit withAlias).WellFormed
+#guard parse (print (emit withAlias)) == some (emit withAlias)
+#guard (emit withAlias).elab.edges.length == 2
+#guard (emit withAlias).elab.cmdEdges.length == 1
+#guard (emit withAlias).commands.map (·.2) == withAlias.edges.map withAlias.cmd
+#guard rejects do
+  let a ← source "a.c"
+  let _ ← alias "a.c" [a]
+#guard rejects do
+  let _ ← alias "x" []
+#guard rejects do
+  let a ← source "a.c"
+  let _ ← alias "x" [a]
+  let _ ← source "x"
+-- `Graph.check` rejects what the builder would, for graphs made directly.
+#guard !decide ({ withAlias with aliases := [⟨"a.o", ["a.c"]⟩] } : Graph).Valid
+#guard !decide ({ withAlias with aliases := [⟨"x", []⟩] } : Graph).Valid
+#guard !decide ({ withAlias with aliases := [⟨"x", ["b.c"]⟩] } : Graph).Valid
+#guard !decide ({ withAlias with aliases := [⟨"x", ["a.c"]⟩, ⟨"x", ["a.o"]⟩] } : Graph).Valid
+#guard !decide ({ withAlias with defaults := ["y"] } : Graph).Valid
+
 end MiseTest.Stage4

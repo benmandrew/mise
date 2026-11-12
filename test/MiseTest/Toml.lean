@@ -134,4 +134,104 @@ def plainBase (rule edge : String) : String :=
 #guard rejects (plainBase "" "vars = { mise_iouts = \"x\" }\n") (msg := "set by the command wrapper")
 #guard cmds (plainBase "wrap = false\n" "vars = { mise_iouts = \"x\" }\n") == ["gen a.c a.h"]
 
+/-! `foreach`, any order, `source-globs` and aliases. -/
+
+/-- The emitted manifest of a description, or the error. -/
+def ninjaOf (text : String) (globs : List (String × List Mise.Syntax.Path) := []) : String :=
+  match loadWith text [] globs with
+  | .ok g => g.ninja
+  | .error e => "error: " ++ e
+
+def rules2 : String :=
+  "[[rule]]\nname = \"cc\"\ncommand = \"cc -c $in -o $out\"\n[[rule]]\nname = \"ld\"\ncommand = \"cc $in -o $out\"\n"
+
+def explicitBuild : String :=
+  "sources = [\"a.c\", \"b.c\", \"x.h\"]\n" ++ rules2 ++
+  "[[build]]\nrule = \"cc\"\nouts = [\"o/a.o\"]\nins = [\"a.c\"]\nimplicit-ins = [\"x.h\"]\n" ++
+  "[[build]]\nrule = \"cc\"\nouts = [\"o/b.o\"]\nins = [\"b.c\"]\nimplicit-ins = [\"x.h\"]\n" ++
+  "[[build]]\nrule = \"ld\"\nouts = [\"app\"]\nins = [\"o/a.o\", \"o/b.o\"]\n"
+
+-- A `foreach` build expands to one build per match, in path order, and the
+-- link may come first in the file.
+#guard ninjaOf ("sources = [\"a.c\", \"b.c\", \"x.h\"]\n" ++ rules2 ++
+  "[[build]]\nrule = \"ld\"\nouts = [\"app\"]\nins = [\"o/a.o\", \"o/b.o\"]\n" ++
+  "[[build]]\nrule = \"cc\"\nforeach = \"%.c\"\nouts = [\"o/%.o\"]\nins = [\"%.c\"]\nimplicit-ins = [\"x.h\"]\n")
+  == ninjaOf explicitBuild
+-- Builds out of order are sorted; builds in order keep their order.
+#guard ninjaOf ("sources = [\"a.c\", \"b.c\", \"x.h\"]\n" ++ rules2 ++
+  "[[build]]\nrule = \"ld\"\nouts = [\"app\"]\nins = [\"o/a.o\", \"o/b.o\"]\n" ++
+  "[[build]]\nrule = \"cc\"\nouts = [\"o/a.o\"]\nins = [\"a.c\"]\nimplicit-ins = [\"x.h\"]\n" ++
+  "[[build]]\nrule = \"cc\"\nouts = [\"o/b.o\"]\nins = [\"b.c\"]\nimplicit-ins = [\"x.h\"]\n")
+  == ninjaOf explicitBuild
+-- `source-globs` adds the files the caller found, skipping repeats.
+#guard ninjaOf ("sources = [\"x.h\"]\nsource-globs = [\"*.c\", \"a.*\"]\n" ++ rules2 ++
+  "[[build]]\nrule = \"cc\"\nforeach = \"%.c\"\nouts = [\"o/%.o\"]\nins = [\"%.c\"]\nimplicit-ins = [\"x.h\"]\n" ++
+  "[[build]]\nrule = \"ld\"\nouts = [\"app\"]\nins = [\"o/a.o\", \"o/b.o\"]\n")
+  [("*.c", ["a.c", "b.c"]), ("a.*", ["a.c", "a.c.mise-old"])]
+  == ninjaOf ("sources = [\"x.h\", \"a.c\", \"b.c\"]\n" ++ rules2 ++
+  "[[build]]\nrule = \"cc\"\nouts = [\"o/a.o\"]\nins = [\"a.c\"]\nimplicit-ins = [\"x.h\"]\n" ++
+  "[[build]]\nrule = \"cc\"\nouts = [\"o/b.o\"]\nins = [\"b.c\"]\nimplicit-ins = [\"x.h\"]\n" ++
+  "[[build]]\nrule = \"ld\"\nouts = [\"app\"]\nins = [\"o/a.o\", \"o/b.o\"]\n")
+-- A `foreach` build matches the outputs of plain builds and of earlier
+-- `foreach` builds.
+#guard has (ninjaOf ("sources = [\"a.y\"]\n" ++ rules2 ++
+  "[[build]]\nrule = \"cc\"\nforeach = \"g/%.c\"\nouts = [\"o/%.o\"]\nins = [\"g/%.c\"]\n" ++
+  "[[build]]\nrule = \"cc\"\nouts = [\"g/a.c\"]\nins = [\"a.y\"]\n"))
+  "build o/a.o: cc g/a.c\n"
+#guard has (ninjaOf ("sources = [\"a.y\"]\n" ++ rules2 ++
+  "[[build]]\nrule = \"cc\"\nforeach = \"%.y\"\nouts = [\"g/%.c\"]\nins = [\"%.y\"]\n" ++
+  "[[build]]\nrule = \"cc\"\nforeach = [\"g/%.c\"]\nouts = [\"o/%.o\"]\nins = [\"g/%.c\"]\n"))
+  "build o/a.o: cc g/a.c\n"
+-- In a build without `foreach`, a `%` input stands for every match.
+#guard ninjaOf ("sources = [\"a.c\", \"b.c\", \"x.h\"]\n" ++ rules2 ++
+  "[[build]]\nrule = \"ld\"\nouts = [\"app\"]\nins = [\"o/%.o\"]\n" ++
+  "[[build]]\nrule = \"cc\"\nforeach = \"%.c\"\nouts = [\"o/%.o\"]\nins = [\"%.c\"]\nimplicit-ins = [\"x.h\"]\n")
+  == ninjaOf explicitBuild
+#guard rejects (base ++ "[[build]]\nrule = \"cc\"\nouts = [\"x\"]\nins = [\"%.h\"]\n") (msg := "no source or output matches")
+#guard rejects (base ++ "[[build]]\nrule = \"cc\"\nouts = [\"x\"]\nins = [\"%%.c\"]\n") (msg := "must contain one %")
+-- The build's own outputs are not inputs.
+#guard has (ninjaOf (base ++ "[[build]]\nrule = \"cc\"\nouts = [\"b.c\"]\nins = [\"%.c\"]\n")) "build b.c: cc a.c\n"
+#guard rejects (base ++ "[[build]]\nrule = \"cc\"\nforeach = \"%.h\"\nouts = [\"%.o\"]\nins = [\"%.h\"]\n") (msg := "no source or output matches")
+#guard rejects (base ++ "[[build]]\nrule = \"cc\"\nforeach = \"a.c\"\nouts = [\"%.o\"]\n") (msg := "must contain one %")
+#guard rejects (base ++ "[[build]]\nrule = \"cc\"\nforeach = \"%.c\"\nouts = [\"a.o\"]\n") (msg := "no output contains %")
+#guard rejects (base ++ "[[build]]\nrule = \"cc\"\nouts = [\"x\"]\nins = [\"y\"]\n" ++
+  "[[build]]\nrule = \"cc\"\nouts = [\"y\"]\nins = [\"x\"]\n") (msg := "cycle: build [\"x\"] -> build [\"y\"] -> build [\"x\"]")
+#guard rejects ("source-globs = [\"*.c\"]\n" ++ rules2) (msg := "was not expanded")
+#guard (loadWith ("source-globs = [\"*.c\"]\n" ++ rules2) [] [("*.c", [])]) matches .error _
+#guard rejects ("source-globs = [\"../*.c\"]\n" ++ rules2) (msg := "no . or .. components")
+-- Aliases become `phony` edges after the builds; an alias of an alias is
+-- flattened; a default may name an alias.
+#guard has (ninjaOf ("defaults = [\"all\"]\n" ++ explicitBuild ++ "[aliases]\nobjs = [\"o/a.o\", \"o/b.o\"]\nall = [\"app\", \"objs\", \"o/a.o\"]\n"))
+  "build objs: phony o/a.o o/b.o\nbuild all: phony app o/a.o o/b.o\ndefault all\n"
+-- Defaults keep their order.
+#guard has (ninjaOf ("defaults = [\"o/b.o\", \"all\", \"app\"]\n" ++ explicitBuild ++ "[aliases]\nall = [\"app\"]\n"))
+  "default o/b.o all app\n"
+-- An alias target with `%` stands for every match.
+#guard has (ninjaOf (explicitBuild ++ "[aliases]\nobjs = [\"o/%.o\"]\n")) "build objs: phony o/a.o o/b.o\n"
+#guard rejects (explicitBuild ++ "[aliases]\nobjs = [\"q/%.o\"]\n") (msg := "aliases: objs: no source or output matches")
+#guard rejects (explicitBuild ++ "[aliases]\nx = [\"y\"]\ny = [\"x\"]\n") (msg := "aliases: cycle: x -> y -> x")
+#guard rejects (explicitBuild ++ "[aliases]\nx = []\n") (msg := "no targets")
+#guard rejects (explicitBuild ++ "[aliases]\napp = [\"o/a.o\"]\n") (msg := "already declared")
+#guard rejects (explicitBuild ++ "[aliases]\nx = [\"nope\"]\n") (msg := "is not a source, a build output or an alias")
+#guard rejects ("defaults = [\"a.c\"]\n" ++ explicitBuild) (msg := "is a source")
+-- An edge cannot read an alias.
+#guard rejects (explicitBuild ++ "[[build]]\nrule = \"ld\"\nouts = [\"z\"]\nins = [\"all\"]\n[aliases]\nall = [\"app\"]\n")
+  (msg := "is not a source or a build output")
+
+/-! The glob matcher. -/
+
+#guard Glob.matches "*.c" "a.c"
+#guard !Glob.matches "*.c" "src/a.c"
+#guard !Glob.matches "*.c" ".a.c"
+#guard Glob.matches ".*.c" ".a.c"
+#guard Glob.matches "src/**/*.c" "src/a.c"
+#guard Glob.matches "src/**/*.c" "src/x/y/a.c"
+#guard !Glob.matches "src/**/*.c" "src/.x/a.c"
+#guard Glob.matches "a?.h" "ab.h"
+#guard !Glob.matches "a?.h" "a.h"
+#guard Glob.matches "**/x" "x"
+#guard (Glob.components "a/**") matches .error _
+#guard (Glob.components "a**/b") matches .error _
+#guard (Glob.components "/a") matches .error _
+
 end MiseTest.Toml

@@ -6,8 +6,8 @@ import Mise.Syntax.Parse
 # Stage 4: the build DSL
 
 A build description is a `Build` action. `source` declares a source file,
-`rule` declares a rule, and `edge` adds an edge and returns handles to its
-outputs. A `Handle` can only be made by `source` or `edge`, so every input
+`rule` declares a rule, `edge` adds an edge and returns handles to its
+outputs, and `alias` names a set of targets. A `Handle` can only be made by `source` or `edge`, so every input
 names a declared source or an output of an earlier edge.
 
 `Build.graph` runs the description and then decides `Graph.Valid`, so a
@@ -48,7 +48,7 @@ abbrev Build := StateT Graph (Except String)
 abbrev ValidGraph := { g : Graph // g.Valid }
 
 private def known (g : Graph) (p : Path) : Bool :=
-  g.sources.contains p || g.edges.any (·.allOuts.contains p)
+  g.sources.contains p || g.edges.any (·.allOuts.contains p) || g.aliases.any (·.name == p)
 
 /-- The suffix of the path an old output is moved to while its command
 runs. No source or output may end with it. -/
@@ -165,9 +165,27 @@ abbrev Params := List (String × String)
 
 def Params.get (ps : Params) (k : String) (d : String) : String := (ps.lookup k).getD d
 
-/-- Set the targets `ninja` builds when given none. -/
-def defaults (hs : List Handle) : Build Unit :=
-  modify fun g => { g with defaults := g.defaults ++ hs.map (·.path) }
+/-- A declared alias. Only the builder can make one, and it is not a
+`Handle`, so no edge can read it. -/
+structure AliasRef where
+  private mk ::
+  name : Path
+  deriving Repr, Inhabited
+
+/-- Declare an alias: a name for a nonempty set of targets, emitted as a
+`phony` edge, so that `ninja NAME` builds the targets. No command runs for
+it. -/
+def alias (name : Path) (targets : List Handle) : Build AliasRef := do
+  let g ← get
+  require (validPath name) s!"alias {repr name}: not a valid canonical path"
+  require (!known g name) s!"alias {repr name}: already declared"
+  require (!targets.isEmpty) s!"alias {repr name}: no targets"
+  set { g with aliases := g.aliases ++ [({ name, targets := targets.map Handle.path } : GAlias)] }
+  pure ⟨name⟩
+
+/-- Set the targets `ninja` builds when given none: outputs, then aliases. -/
+def defaults (hs : List Handle) (as : List AliasRef := []) : Build Unit :=
+  modify fun g => { g with defaults := g.defaults ++ hs.map (·.path) ++ as.map (·.name) }
 
 /-- Run a build description and check the result. -/
 def Build.graph (b : Build Unit) : Except String ValidGraph := do

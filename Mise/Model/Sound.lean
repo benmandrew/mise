@@ -653,8 +653,8 @@ theorem denote_eq (m : Manifest) : denote sem m = specOf sem m.medges := by
   unfold denote specOf Manifest.medges
   simp only [findOut_map, outs_toMEdge]
   congr 1
-  · funext k; cases findOut _ k m.elab.edges <;> rfl
-  · funext k; cases findOut _ k m.elab.edges <;> rfl
+  · funext k; cases findOut _ k m.elab.cmdEdges <;> rfl
+  · funext k; cases findOut _ k m.elab.cmdEdges <;> rfl
 
 /-! ## Theorems -/
 

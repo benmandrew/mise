@@ -193,13 +193,72 @@ theorem edges_ok (names : List String) (srcs : List Path) (es : List GEdge) (c :
     refine ⟨emitEdge_ok c names srcs e hR hn h.1, ih _ (by simpa [Ctx.add] using hR) ?_⟩
     simpa [Ctx.add, emitEdge, Edge.allOuts, GEdge.allOuts] using h.2
 
+theorem aliasesOK_parts {srcs outs : List Path} {as : List GAlias} (h : aliasesOK srcs outs as = true) :
+    nodupB (as.map (·.name)) = true ∧ ∀ a ∈ as, validPath a.name = true ∧ a.name ∉ srcs ∧ a.name ∉ outs ∧
+      a.targets ≠ [] ∧ ∀ t ∈ a.targets, validPath t = true ∧ (t ∈ srcs ∨ t ∈ outs) := by
+  simp only [aliasesOK, Bool.and_eq_true, List.all_eq_true, Bool.not_eq_true', Bool.or_eq_true,
+    List.isEmpty_eq_false_iff, List.contains_iff_mem] at h
+  refine ⟨h.1, fun a ha => ?_⟩
+  obtain ⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h5⟩ := h.2 a ha
+  refine ⟨h1, ?_, ?_, h4, h5⟩
+  · simpa using h2
+  · simpa using h3
+
+theorem aliases_fold (c : Ctx) (as : List GAlias) :
+    (as.map (Stmt.edge ∘ emitAlias)).foldl Ctx.add c =
+      { c with outs := c.outs ++ as.map (·.name), known := c.known ++ as.flatMap fun a => a.name :: a.targets } := by
+  induction as generalizing c with
+  | nil => simp
+  | cons a as ih =>
+    simp only [List.map_cons, List.foldl_cons, Function.comp, ih, List.flatMap_cons]
+    simp [Ctx.add, emitAlias, Edge.allPaths, Edge.allOuts, Edge.allIns, List.append_assoc]
+
+theorem aliases_ok' (as : List GAlias) (c : Ctx) (hp : c.rules.contains "phony" = true)
+    (hnd : nodupB (as.map (·.name)) = true)
+    (hok : ∀ a ∈ as, validPath a.name = true ∧ ∀ t ∈ a.targets, validPath t = true)
+    (hc : ∀ a ∈ as, a.name ∉ c.outs) : stmtsOK c (as.map (Stmt.edge ∘ emitAlias)) = true := by
+  induction as generalizing c with
+  | nil => rfl
+  | cons a as ih =>
+    simp only [List.map_cons, nodupB_cons, Bool.and_eq_true, Bool.not_eq_true'] at hnd
+    obtain ⟨h1, h5⟩ := hok a (by simp)
+    simp only [List.map_cons, stmtsOK, Function.comp, Bool.and_eq_true]
+    refine ⟨?_, ih _ (by simpa [Ctx.add] using hp) hnd.2 (fun a' ha' => hok a' (by simp [ha'])) ?_⟩
+    · have hv : validIdent "phony" = true := by decide
+      have hn : c.outs.contains a.name = false := by
+        cases hm : c.outs.contains a.name
+        · rfl
+        · exact absurd (List.contains_iff_mem.mp hm) (hc a (by simp))
+      simp only [Stmt.ok, emitAlias, hv, hp, Bool.true_and, Bool.and_eq_true, List.all_eq_true,
+        Edge.allPaths, Edge.allOuts, Edge.allIns, List.append_nil, List.mem_cons, List.mem_append,
+        List.isEmpty_cons, Bool.not_false, List.mem_nil_iff, or_false, forall_eq, hn, Bool.not_false]
+      and_intros
+      · rintro p (rfl | hp')
+        · exact h1
+        · exact h5 p hp'
+      all_goals first | decide | simp | simp [nodupB]
+    · intro a' ha'
+      simp only [Ctx.add, emitAlias, Edge.allOuts, List.append_nil, List.mem_append, List.mem_singleton]
+      rintro (ho | ho)
+      · exact hc a' (by simp [ha']) ho
+      · have : a.name ∈ as.map (·.name) := ho ▸ List.mem_map_of_mem ha'
+        simp_all
+
+theorem aliases_ok (srcs outs : List Path) (as : List GAlias) (c : Ctx)
+    (hp : c.rules.contains "phony" = true) (hc : ∀ o, o ∈ c.outs → o ∈ outs)
+    (h : aliasesOK srcs outs as = true) : stmtsOK c (as.map (Stmt.edge ∘ emitAlias)) = true := by
+  obtain ⟨hnd, hok⟩ := aliasesOK_parts h
+  exact aliases_ok' as c hp hnd (fun a ha => ⟨(hok a ha).1, fun t ht => ((hok a ha).2.2.2.2 t ht).1⟩)
+    fun a ha ho => (hok a ha).2.2.1 (hc _ ho)
+
 theorem Graph.check_parts {g : Graph} (hg : g.Valid) :
     nodupB g.ruleNames = true ∧ (∀ r ∈ g.rules, r.ok = true) ∧
     edgesOK g.ruleNames g.sources [] g.edges = true ∧
-    (∀ d ∈ g.defaults, ∃ e ∈ g.edges, d ∈ e.allOuts) := by
+    aliasesOK g.sources (g.edges.flatMap GEdge.allOuts) g.aliases = true ∧
+    (∀ d ∈ g.defaults, (∃ e ∈ g.edges, d ∈ e.allOuts) ∨ ∃ a ∈ g.aliases, a.name = d) := by
   simp only [Graph.Valid, Graph.check, Bool.and_eq_true, List.all_eq_true, List.any_eq_true,
-    List.contains_iff_mem] at hg
-  exact ⟨hg.1.1.1.1, hg.1.1.1.2, hg.1.1.2, hg.1.2⟩
+    List.contains_iff_mem, Bool.or_eq_true, beq_iff_eq] at hg
+  exact ⟨hg.1.1.1.1.1, hg.1.1.1.1.2, hg.1.1.1.2, hg.1.1.2, hg.1.2⟩
 
 theorem GRule.ok_name {r : GRule} (h : r.ok = true) : validIdent r.name = true ∧ r.name ≠ "phony" := by
   simp only [GRule.ok, Bool.and_eq_true, bne_iff_ne, ne_eq] at h
@@ -213,32 +272,36 @@ theorem versionStmt_add (c : Ctx) : c.add versionStmt = c := rfl
 
 /-- A valid graph emits a well-formed manifest. -/
 theorem emit_wellFormed (g : Graph) (hg : g.Valid) : (emit g).WellFormed := by
-  obtain ⟨hnd, hok, hedges, hdef⟩ := Graph.check_parts hg
+  obtain ⟨hnd, hok, hedges, hal, hdef⟩ := Graph.check_parts hg
   have hnames : ∀ n ∈ g.ruleNames, ∃ r ∈ g.rules, r.name = n := by simp [Graph.ruleNames]
   unfold Manifest.WellFormed emit
   rw [stmtsOK, versionStmt_ok, Bool.true_and, versionStmt_add]
-  simp only [stmtsOK_append, Bool.and_eq_true, List.foldl_append, rules_fold, edges_fold]
-  refine ⟨⟨?_, ?_⟩, ?_⟩
+  simp only [stmtsOK_append, Bool.and_eq_true, List.foldl_append, rules_fold, edges_fold, aliases_fold]
+  refine ⟨⟨⟨?_, ?_⟩, ?_⟩, ?_⟩
   · refine rules_ok g.rules {} hnd (by simpa using hok) fun r hr => ?_
     simpa [eq_comm] using (GRule.ok_name (hok r hr)).2
   · refine edges_ok g.ruleNames g.sources g.edges _ (fun n hn => by simp [Graph.ruleNames] at hn ⊢; simp_all [Graph.ruleNames]) ?_ (by simpa using hedges)
     intro n hn
     obtain ⟨r, hr, rfl⟩ := hnames n hn
     exact (GRule.ok_name (hok r hr)).1
+  · exact aliases_ok g.sources _ g.aliases _ (by simp) (fun o ho => by simpa using ho) hal
   · split
     · rfl
     · rename_i hne
+      obtain ⟨-, hak⟩ := aliasesOK_parts hal
       simp only [stmtsOK, Stmt.ok, Bool.and_true, Bool.and_eq_true, List.all_eq_true, hne,
         Bool.not_false, Bool.true_and, List.contains_iff_mem]
       constructor
       · intro d hd
-        obtain ⟨e, he, hde⟩ := hdef d hd
-        obtain ⟨q, hq⟩ := edgesOK_mem hedges he
-        exact (GEdge.ok_parts hq).2.2.1 d (by simp [hde])
+        rcases hdef d hd with ⟨e, he, hde⟩ | ⟨a, ha, rfl⟩
+        · obtain ⟨q, hq⟩ := edgesOK_mem hedges he
+          exact (GEdge.ok_parts hq).2.2.1 d (by simp [hde])
+        · exact (hak a ha).1
       · intro d hd
-        obtain ⟨e, he, hde⟩ := hdef d hd
-        simp only [List.nil_append, List.mem_flatMap, List.mem_append]
-        exact ⟨e, he, .inl hde⟩
+        simp only [List.nil_append, List.mem_flatMap, List.mem_append, List.mem_cons]
+        rcases hdef d hd with ⟨e, he, hde⟩ | ⟨a, ha, rfl⟩
+        · exact .inl ⟨e, he, .inl hde⟩
+        · exact .inr ⟨a, ha, .inl rfl⟩
 
 /-! ## Elaborating the emitted manifest -/
 
@@ -265,12 +328,43 @@ theorem emitFile_get {v : String} (hv : v ≠ versionVar) : emitFile.get v = non
   have : (versionVar == v) = false := by simpa using Ne.symm hv
   simp [emitFile, Scope.get, this]
 
+theorem elab_aliasStmts (st : Elab) (as : List GAlias) :
+    (as.map (Stmt.edge ∘ emitAlias)).foldl Elab.step st =
+      { st with edges := st.edges ++ as.map (edgeInfo st.rules st.file ∘ emitAlias) } := by
+  induction as generalizing st with
+  | nil => simp
+  | cons a as ih => simp [Elab.step, ih]
+
 theorem elab_emit (g : Graph) :
     (emit g).elab.file = emitFile ∧
-      (emit g).elab.edges = g.edges.map (edgeInfo (emitRules g) emitFile ∘ emitEdge) := by
+      (emit g).elab.edges = g.edges.map (edgeInfo (emitRules g) emitFile ∘ emitEdge) ++
+        g.aliases.map (edgeInfo (emitRules g) emitFile ∘ emitAlias) := by
   unfold Manifest.elab emit
-  simp only [List.foldl_cons, List.foldl_append, elab_ruleStmts, elab_edgeStmts]
+  simp only [List.foldl_cons, List.foldl_append, elab_ruleStmts, elab_edgeStmts, elab_aliasStmts]
   split <;> simp [Elab.step, emitRules, versionStmt, emitFile, evalWith]
+
+/-- The rule of every edge of a valid graph is a declared rule, so not
+`phony`. -/
+theorem rule_ne_phony {g : Graph} (hg : g.Valid) {e : GEdge} (he : e ∈ g.edges) : e.rule ≠ "phony" := by
+  obtain ⟨_, hok, hedges, _⟩ := Graph.check_parts hg
+  obtain ⟨q, hq⟩ := edgesOK_mem hedges he
+  obtain ⟨h1, -⟩ := GEdge.ok_parts hq
+  simp only [Graph.ruleNames, List.contains_iff_mem, List.mem_map] at h1
+  obtain ⟨r, hr, hrn⟩ := h1
+  exact hrn ▸ (GRule.ok_name (hok r hr)).2
+
+/-- Ninja runs a command for exactly the emitted edges of the graph's own
+edges: the aliases are `phony`. -/
+theorem cmdEdges_emit (g : Graph) (hg : g.Valid) :
+    (emit g).elab.cmdEdges = g.edges.map (edgeInfo (emitRules g) emitFile ∘ emitEdge) := by
+  rw [Elab.cmdEdges, (elab_emit g).2, List.filter_append]
+  have h2 : (g.aliases.map (edgeInfo (emitRules g) emitFile ∘ emitAlias)).filter
+      (·.edge.rule != "phony") = [] := by
+    simp [List.filter_eq_nil_iff, edgeInfo, emitAlias]
+  rw [h2, List.append_nil, List.filter_eq_self]
+  intro c hc
+  obtain ⟨e, he, rfl⟩ := List.mem_map.mp hc
+  simpa [edgeInfo, emitEdge] using rule_ne_phony hg he
 
 /-! ## Commands -/
 
@@ -490,7 +584,8 @@ variable {V : Type} [Inhabited V]
 the graph's own meaning. -/
 theorem denote_emit (sem : Sem V) (g : Graph) (hg : g.Valid) :
     denote sem (emit g) = g.spec sem := by
-  obtain ⟨hfile, hedges⟩ := elab_emit g
+  have hfile := (elab_emit g).1
+  have hedges := cmdEdges_emit g hg
   unfold denote Graph.spec
   simp only [hfile, hedges, findOut_map, outs_emit]
   congr 1

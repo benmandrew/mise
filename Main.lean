@@ -30,13 +30,26 @@ def parseOpts : List String → Except String Opts
     pure { o with dirs := a :: o.dirs }
   | [] => pure {}
 
+/-- Read and check `DIR/mise.toml`, expanding its `source-globs` in `DIR`.
+Returns the graph, or the exit code on error. -/
+def loadDir (dir : System.FilePath) (ps : Params) : IO (Except UInt32 ValidGraph) := do
+  let file := dir / "mise.toml"
+  let text ← try IO.FS.readFile file catch e => IO.eprintln s!"mise: {e}"; return .error 2
+  let pats := (Toml.parse text >>= Toml.globPatterns).toOption.getD []
+  let mut globs := []
+  for p in pats do
+    match ← (Glob.expand dir p).toBaseIO with
+    | .ok fs => globs := globs ++ [(p, fs)]
+    | .error _ => pure ()
+  match Toml.loadWith text ps globs with
+  | .error e => IO.eprintln s!"mise: {file}: {e}"; return .error 1
+  | .ok g => return .ok g
+
 /-- Write `DIR/build.ninja` from `DIR/mise.toml`, leaving the file alone when
 its contents would not change. Returns the graph, or the exit code on error. -/
 def generate (dir : System.FilePath) (ps : Params) : IO (Except UInt32 ValidGraph) := do
-  let file := dir / "mise.toml"
-  let text ← try IO.FS.readFile file catch e => IO.eprintln s!"mise: {e}"; return .error 2
-  match Toml.load text ps with
-  | .error e => IO.eprintln s!"mise: {file}: {e}"; return .error 1
+  match ← loadDir dir ps with
+  | .error c => return .error c
   | .ok g =>
     let out := dir / "build.ninja"
     let old ← try some <$> IO.FS.readFile out catch _ => pure none
@@ -64,10 +77,8 @@ def main (args : List String) : IO UInt32 := do
     unless ninjaArgs.isEmpty do IO.eprintln usage; return 2
     if opts.commands then
       -- The command the DSL means for each edge, to compare with `ninja -t commands`.
-      let file := dir / "mise.toml"
-      let text ← try IO.FS.readFile file catch e => IO.eprintln s!"mise: {e}"; return 2
-      match Toml.load text opts.params with
-      | .error e => IO.eprintln s!"mise: {file}: {e}"; return 1
+      match ← loadDir dir opts.params with
+      | .error c => return c
       | .ok g => for e in g.1.edges do IO.println (g.1.cmd e)
       return 0
     match ← generate dir opts.params with

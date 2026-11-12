@@ -117,10 +117,17 @@ def Elab.step (st : Elab) : Stmt → Elab
 state that knows only the `phony` rule. -/
 def Manifest.elab (m : Manifest) : Elab := m.stmts.foldl Elab.step {}
 
-/-- Every edge with its evaluated command, in manifest order. -/
+/-- The edges that run a command, in manifest order: every edge whose rule
+is not `phony`. Ninja runs no command for a `phony` edge and records
+nothing for it in the build log.
+Gloss: the edges of {st} that run a command -/
+def Elab.cmdEdges (st : Elab) : List EdgeInfo := st.edges.filter (·.edge.rule != "phony")
+
+/-- Every edge that runs a command, with its evaluated command, in manifest
+order. -/
 def Manifest.commands (m : Manifest) : List (Edge × String) :=
   let st := m.elab
-  st.edges.map fun c => (c.edge, c.command st.file)
+  st.cmdEdges.map fun c => (c.edge, c.command st.file)
 
 end Mise.Syntax
 

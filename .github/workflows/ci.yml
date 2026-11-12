@@ -92,7 +92,7 @@ jobs:
   # example, and the TOML parser against tomllib on 250 documents of each
   # kind in place of 2,500. Local times: 2 s, 2 s, 1 s and 5 s.
   extras:
-    name: restat-cmp, wrap-outputs, stage4-hello, toml-diff
+    name: restat-cmp, wrap-outputs, stage4-hello, sugar, toml-diff
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -106,5 +106,7 @@ jobs:
         run: nix develop -c test/wrap-outputs.sh
       - name: test/stage4-hello.sh
         run: nix develop -c test/stage4-hello.sh
+      - name: test/sugar.sh
+        run: nix develop -c test/sugar.sh
       - name: test/toml-diff.sh 250
         run: nix develop -c test/toml-diff.sh 250

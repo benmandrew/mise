@@ -9,9 +9,19 @@
       "description": "Files that exist before the build.",
       "$ref": "#/definitions/paths"
     },
+    "source-globs": {
+      "description": "Glob patterns for more sources: `*` and `?` within a path component, and `**` as a whole component for any number of directories. A wildcard does not match a leading `.`. Each pattern must match at least one file.",
+      "type": "array",
+      "items": { "type": "string" }
+    },
     "defaults": {
-      "description": "Targets built when Ninja is given none. Each names a source or a build output.",
+      "description": "Targets built when Ninja is given none. Each names a build output or an alias.",
       "$ref": "#/definitions/paths"
+    },
+    "aliases": {
+      "description": "Names for sets of targets, emitted as Ninja `phony` edges: `mise build -- NAME` builds the targets. A target is a source, a build output or another alias; a target with `%` stands for every source and output that matches it. No build may read an alias.",
+      "type": "object",
+      "additionalProperties": { "$ref": "#/definitions/paths" }
     },
     "params": {
       "description": "Parameter defaults, overridden by `mise build --set name=value`.",
@@ -58,7 +68,7 @@
       }
     },
     "build": {
-      "description": "Build steps, in order. A step's inputs can name only sources and outputs of earlier steps.",
+      "description": "Build steps, in any order. A step's inputs name sources and outputs of other steps; mise sorts the steps and rejects a cycle.",
       "type": "array",
       "items": {
         "description": "A build step, emitted as a Ninja `build` edge.",
@@ -70,6 +80,13 @@
             "description": "The name of a rule in [[rule]].",
             "type": "string"
           },
+          "foreach": {
+            "description": "A pattern with one `%`, or a list of them. The step stands for one step per source or output that matches, with `%` in its paths replaced by the matched stem. It matches sources, outputs of steps without `foreach`, and outputs of earlier `foreach` steps.",
+            "oneOf": [
+              { "type": "string" },
+              { "type": "array", "items": { "type": "string" } }
+            ]
+          },
           "outs": {
             "description": "The files the command writes, passed as `$out`.",
             "$ref": "#/definitions/paths"
@@ -79,11 +96,11 @@
             "$ref": "#/definitions/paths"
           },
           "ins": {
-            "description": "The inputs, passed as `$in`. Each names a source or an output of an earlier build.",
+            "description": "The inputs, passed as `$in`. Each names a source or a build output. In a step without `foreach`, an input with `%` stands for every source and output that matches it, in path order.",
             "$ref": "#/definitions/paths"
           },
           "implicit-ins": {
-            "description": "Further inputs, not passed as `$in`. A change to one rebuilds the step. Each names a source or an output of an earlier build.",
+            "description": "Further inputs, not passed as `$in`. A change to one rebuilds the step. Each names a source or a build output, and `%` works as in `ins`.",
             "$ref": "#/definitions/paths"
           },
           "order-only": {

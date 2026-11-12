@@ -18,7 +18,7 @@ the model predicts what real Ninja must do. Each step lists the files to
 write (sources and `mise.toml`), to delete (products, `.ninja_log`,
 `.ninja_deps`) and to age (products whose mtime goes back to the distant
 past), the `build.ninja` that `mise gen` must produce, how to
-build (every edge, some targets, or with one edge failing), the edges the
+build (every edge, some targets or aliases, or with one edge failing), the edges the
 model runs, and the contents of every output the case has had afterwards.
 
 Edits that touch a source, delete both logs, or build some targets or with
@@ -177,9 +177,32 @@ structure Case where
   /-- How many edges `addEdge` has made, which names the next one. -/
   fresh : Nat := 0
 
-def Case.graph (c : Case) : Graph := { sources := c.srcs.map (·.path), rules, edges := c.edges.map withIouts }
+/-- Aliases derived from the edges, so that every edit keeps them valid:
+`al-even` builds the first outputs of the even-numbered edges, and `al-odd`
+those of the odd-numbered edges and the first source. An alias with no
+targets is left out. -/
+def aliasesOf (srcs : List Path) (es : List GEdge) : List GAlias :=
+  let firsts := es.zipIdx.map fun (e, i) => (e.outs.headD "", i)
+  let even := (firsts.filter (·.2 % 2 == 0)).map (·.1)
+  let odd := (firsts.filter (·.2 % 2 == 1)).map (·.1) ++ srcs.take 1
+  [({ name := "al-even", targets := even } : GAlias), { name := "al-odd", targets := odd }].filter
+    (!·.targets.isEmpty)
+
+def Case.graph (c : Case) : Graph :=
+  { sources := c.srcs.map (·.path), rules, edges := c.edges.map withIouts,
+    aliases := aliasesOf (c.srcs.map (·.path)) c.edges }
 
 def products (g : Graph) : List Path := g.edges.flatMap (·.allOuts)
+
+/-- What `ninja` may be asked to build: products and aliases. -/
+def targetsOf (g : Graph) : List Path := products g ++ g.aliases.map (·.name)
+
+/-- The paths a list of targets builds, with each alias replaced by its
+targets. -/
+def expandTargets (g : Graph) (ts : List Path) : List Path :=
+  ts.flatMap fun t => match g.aliases.find? (·.name == t) with
+    | some a => a.targets
+    | none => [t]
 
 /-- `k` distinct elements of `xs`, in random order. -/
 def sample {α} [Inhabited α] (k : Nat) (xs : List α) : GenM (List α) := do
@@ -376,6 +399,9 @@ def tomlOf (g : Graph) : String := Id.run do
       if !v.isEmpty then t := t ++ s!"{k} = {tarr v}\n"
     let vars := e.vars.filter (·.1 != wrapOutsVar)
     t := t ++ "vars = { " ++ ", ".intercalate (vars.map fun (k, v) => s!"{k} = {tstr v}") ++ " }\n"
+  unless g.aliases.isEmpty do
+    t := t ++ "\n[aliases]\n"
+    for a in g.aliases do t := t ++ s!"{tstr a.name} = {tarr a.targets}\n"
   t
 
 /-! ## Running the model -/
@@ -524,8 +550,8 @@ def step (strict : Bool) (sd : StepD) (old : Option Case) (c : Case) (known : Li
   let st := if delDeps then { st with deps := fun _ => none } else st
   let es := (emit g).medges
   let fail := sd.fail.filter fun f => es.any (·.outs.headD "" == f)
-  let targets := sd.targets.filter (products g).contains
-  let visit := if targets.isEmpty then es else closure es targets
+  let targets := sd.targets.filter (targetsOf g).contains
+  let visit := if targets.isEmpty then es else closure es (expandTargets g targets)
   let (st', ran, tried, failed) ← match fail, sd.stop, sd.finished with
     | some f, true, some fin => do
       let (st', ran, failed, left) ← stopTrace f fin sd.tried es [] st
@@ -541,7 +567,7 @@ def step (strict : Bool) (sd : StepD) (old : Option Case) (c : Case) (known : Li
   let st' := flatten known st'
   if strict then
     if !failed then
-      unless (buildTrace sem (if targets.isEmpty then es else closure es targets) st').2.isEmpty do
+      unless (buildTrace sem visit st').2.isEmpty do
         throw "the model is not idempotent"
     for e in es do
       if e.dyn then
@@ -580,7 +606,7 @@ def genSteps (o : Opts) (c0 : Case) (n : Nat) : GenM (List StepD) := do
     -- tries a failing edge, and finishes edges before a stop, that the model
     -- finds clean; those cases build fully instead.
     if i + 1 == n || r ≥ 4 || c.edges.isEmpty || (o.nowrap && r ≥ 2) then pure ()
-    else if r < 2 then sd := { sd with targets := ← sample (1 + (← rand 2)) (products c.graph) }
+    else if r < 2 then sd := { sd with targets := ← sample (1 + (← rand 2)) (targetsOf c.graph) }
     else
       -- Ninja schedules an edge with readers early, so a stop there leaves
       -- more edges unstarted.

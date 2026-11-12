@@ -537,8 +537,9 @@ def bad_case(name, mode, edit_toml):
 
 
 def undeclared_header(t):
-    """hello-c: main.c includes greet.h, but the edge no longer declares it."""
-    return t.replace('ins = ["main.c"]\nimplicit-ins = ["greet.h"]\n', 'ins = ["main.c"]\n', 1)
+    """hello-c: main.c and greet.c include greet.h, but their edges no longer
+    declare it."""
+    return t.replace('ins = ["%.c"]\nimplicit-ins = ["greet.h"]\n', 'ins = ["%.c"]\n', 1)
 
 
 def generated_not_input(t):
