@@ -39,6 +39,9 @@
   show heading.where(level: 1): set text(size: 12pt)
   show heading.where(level: 1): set block(above: 2.2em, below: 1em)
   show heading.where(level: 2): set text(size: 1.2 * body-size)
+  // The size is set here, not in the heading's body, so the contents list
+  // shows theorem names at the size of the text around them.
+  show heading.where(level: 2): it => code-at(1.2 * body-size, it)
   show heading.where(level: 2): set block(above: 2em, below: 0.4em)
   align(center, text(size: 16pt, weight: "bold")[What `mise` proves])
   v(-0.2em)
@@ -54,7 +57,7 @@
   body
   parbreak()
   how-to-read
-  outline(depth: 1, indent: auto)
+  outline(depth: 2, indent: auto)
 }
 
 #let part-sub(body) = block(above: 1em, below: 0.5em, text(weight: "bold", body + ":"))
@@ -66,7 +69,7 @@
 #let source(url, body) = link(url, raw(body))
 
 #let theorem-heading(name, file, line, url) = {
-  heading(level: 2, code-at(1.2 * body-size, raw(name)))
+  heading(level: 2, raw(name))
   block(above: 0.3em, below: 0.8em, sticky: true, grey(source(url, file + ":" + str(line))))
 }
 
