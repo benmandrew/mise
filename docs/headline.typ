@@ -4,12 +4,12 @@
 #show: doc
 
 #intro[
-#"Each theorem in ";#raw("Mise/Headline.lean");#" restates a result proved elsewhere, and Lean checks every proof. Except for ";#raw("restat_cutoff");#", which is about model edges and names no graph, each theorem is stated for the graph ";#raw("g");#" that a user writes in the ";#emph[#"domain-specific language";];#" (DSL). A theorem means only what the definitions in its statement mean. So ";#raw("docs/headline.pdf");#" shows the core theorems with those definitions, and ";#raw("docs/trusted.md");#" lists every definition the theorems rest on.";
+#raw("mise");#" is a Lean 4 front end for Ninja. A user describes a build in a ";#emph[#"domain-specific language";];#" (DSL), and ";#raw("mise");#" writes it out as a Ninja manifest. The theorems show that the manifest means the build the user described, and that Ninja, as modelled in Lean, runs it correctly. One run leaves correct contents, and a second run does nothing. A run executes only the edges it must, and any parallel order gives the same result. Lean checks every proof, but a theorem means only what the definitions in its statement mean, so those definitions follow the theorems.";
 ]
 
 = Core theorems
 
-#theorem-heading("meaning", "Mise/Headline.lean", 70, "https://github.com/benmandrew/mise/blob/main/Mise/Headline.lean#L70-L76")
+#theorem-heading("meaning", "Mise/Headline.lean", 71, "https://github.com/benmandrew/mise/blob/main/Mise/Headline.lean#L71-L77")
 
 #"For a valid graph, the parser model reads the text that ";#raw("mise");#" writes as the manifest that ";#raw("mise");#" emitted. Read through the model of Ninja's variable evaluation, that manifest means the build the DSL describes (";#raw("Graph.spec");#").";
 
@@ -24,7 +24,7 @@
 - #link(label("def:Mise.Frontend.denote"))[#"the meaning of ";];#link(label("def:Mise.Frontend.emit"))[#"the manifest for ";];#raw("g");#" equals ";#link(label("def:Mise.Frontend.Graph.spec"))[#"the specification of ";];#raw("g");#".";
 ]
 
-#theorem-heading("build_correct", "Mise/Headline.lean", 90, "https://github.com/benmandrew/mise/blob/main/Mise/Headline.lean#L90-L98")
+#theorem-heading("build_correct", "Mise/Headline.lean", 91, "https://github.com/benmandrew/mise/blob/main/Mise/Headline.lean#L91-L99")
 
 #"Take a valid graph whose ";#emph[#"depfile";];#" commands read only allowed inputs. From any reachable state, one ";#raw("ninja");#" run leaves contents that are correct for the current sources.";
 
@@ -40,7 +40,7 @@
 - #link(label("def:Mise.Model.St.content"))[#"the contents of ";];#link(label("def:Mise.Headline.build"))[#"the state after building ";];#raw("g");#link(label("def:Mise.Headline.build"))[#" from ";];#raw("st");#link(label("def:Mise.BuildSpec.Correct"))[#" is a correct result of ";];#link(label("def:Mise.Frontend.Graph.spec"))[#"the specification of ";];#raw("g");#link(label("def:Mise.BuildSpec.Correct"))[#" when the sources are ";];#link(label("def:Mise.Model.St.content"))[#"the contents of ";];#raw("st");#".";
 ]
 
-#theorem-heading("rebuild_noop", "Mise/Headline.lean", 100, "https://github.com/benmandrew/mise/blob/main/Mise/Headline.lean#L100-L110")
+#theorem-heading("rebuild_noop", "Mise/Headline.lean", 101, "https://github.com/benmandrew/mise/blob/main/Mise/Headline.lean#L101-L111")
 
 #"Take a valid graph whose depfile commands read only allowed inputs. After one ";#raw("ninja");#" run from any reachable state, a second run executes no edge and leaves the state unchanged.";
 
@@ -58,7 +58,7 @@
 - #link(label("def:Mise.Headline.build"))[#"the state after building ";];#raw("g");#link(label("def:Mise.Headline.build"))[#" from ";];#raw("st₁");#" equals ";#raw("st₁");#".";
 ]
 
-#theorem-heading("rebuild_minimal", "Mise/Headline.lean", 117, "https://github.com/benmandrew/mise/blob/main/Mise/Headline.lean#L117-L139")
+#theorem-heading("rebuild_minimal", "Mise/Headline.lean", 118, "https://github.com/benmandrew/mise/blob/main/Mise/Headline.lean#L118-L140")
 
 #"Take a valid graph whose depfile commands read only allowed inputs and a reachable state. Build, apply ";#raw("edits");#" to sources, and build again. Every edge ";#raw("e");#" that the second build runs has a reason: an input ";#raw("p");#" that Ninja checks for ";#raw("e");#" in the state the first build left. When the second build reaches ";#raw("e");#", the modification time (mtime) of ";#raw("p");#" is later than the clock at the end of the first build. And ";#raw("p");#" is either a path in ";#raw("edits");#" or an output of an edge that ran earlier in the second build. So an edge does not run when no edit and no earlier edge touched its checked inputs. A ";#raw("restat");#" edge that kept its output did not touch that output.";
 
@@ -77,7 +77,7 @@
 - #"there are ";#raw("before");#" and ";#raw("after");#" among ";#"lists of ";#link(label("def:Mise.Model.MEdge"))[#"edges";];#" such that ";#"both ";#link(label("def:Mise.Headline.edges"))[#"the manifest edges of ";];#raw("g");#" equals ";#raw("before");#" followed by ";#raw("e");#" followed by ";#raw("after");#" and ";#"there is ";#raw("p");#" among ";#link(label("def:Mise.Syntax.Path"))[#"paths";];#" such that ";#"all of: ";#link(label("def:Mise.Headline.Checks"))[#"Ninja checks input ";];#raw("p");#link(label("def:Mise.Headline.Checks"))[#" of ";];#raw("e");#link(label("def:Mise.Headline.Checks"))[#" in ";];#raw("st₁");#", ";#link(label("def:Mise.Model.St"))[#"the clock of ";];#raw("st₁");#" is less than ";#link(label("def:Mise.Model.St.mtime"))[#"the mtime of ";];#raw("p");#link(label("def:Mise.Model.St.mtime"))[#" in ";];#link(label("def:Mise.Model.buildTrace"))[#"the state after visiting ";];#raw("before");#link(label("def:Mise.Model.buildTrace"))[#" from ";];#raw("st₂");#", and ";#"either ";#raw("p");#" is in ";#"(";#"the list of ";#"the first component of ";#raw("x");#" for each ";#"pair";#" ";#raw("x");#" in ";#raw("edits");#")";#", or ";#"there is ";#"an ";#link(label("def:Mise.Model.MEdge"))[#"edge";];#" ";#raw("e'");#" in ";#link(label("def:Mise.Model.buildTrace"))[#"the edges run by visiting ";];#raw("before");#link(label("def:Mise.Model.buildTrace"))[#" from ";];#raw("st₂");#" such that ";#raw("p");#" is in ";#link(label("def:Mise.Model.MEdge"))[#"the outputs of ";];#raw("e'");#".";
 ]
 
-#theorem-heading("any_order", "Mise/Headline.lean", 150, "https://github.com/benmandrew/mise/blob/main/Mise/Headline.lean#L150-L161")
+#theorem-heading("any_order", "Mise/Headline.lean", 151, "https://github.com/benmandrew/mise/blob/main/Mise/Headline.lean#L151-L162")
 
 #"Take a valid graph whose depfile commands read only allowed inputs and a reachable state. Running the edges in any valid ";#raw("order");#" leaves contents that are correct for the current sources. It runs the same edges as a run in manifest order, up to order, so each at most once (";#raw("ran_nodup");#").";
 
@@ -409,37 +409,37 @@
 
 #file-heading("Mise/Headline.lean")
 
-#def-head("Headline.edges", "def:Mise.Headline.edges", "Mise/Headline.lean", 25, 28, "https://github.com/benmandrew/mise/blob/main/Mise/Headline.lean#L25-L28")[
+#def-head("Headline.edges", "def:Mise.Headline.edges", "Mise/Headline.lean", 26, 29, "https://github.com/benmandrew/mise/blob/main/Mise/Headline.lean#L26-L29")[
 #"The edges of the manifest that ";#raw("mise");#" emits for ";#raw("g");#", in the model's form and in manifest order (";#raw("Manifest.medges");#"). ";#raw("phony");#" edges are left out.";
 ]
 #raw(lang: "lean", block: true, "abbrev edges (g : Graph) : List MEdge := (emit g).medges")
 
-#def-head("Headline.Reachable", "def:Mise.Headline.Reachable", "Mise/Headline.lean", 30, 37, "https://github.com/benmandrew/mise/blob/main/Mise/Headline.lean#L30-L37")[
+#def-head("Headline.Reachable", "def:Mise.Headline.Reachable", "Mise/Headline.lean", 31, 38, "https://github.com/benmandrew/mise/blob/main/Mise/Headline.lean#L31-L38")[
 #raw("st");#" can arise from a start state through any sequence of source edits and edge visits (";#raw("Reach");#"). The start state has empty build and deps logs, and no mtime or log time in it is later than its clock. An edit changes a path that no edge in ";#raw("edges g");#" writes. A visit to an edge in ";#raw("edges g");#" runs it if it is dirty and otherwise changes nothing, as Ninja does. Full builds, builds of some targets and interrupted builds are all such sequences.";
 ]
 #raw(lang: "lean", block: true, "abbrev Reachable (g : Graph) (st : St V) : Prop := Reach sem (edges g) st")
 
-#def-head("Headline.build", "def:Mise.Headline.build", "Mise/Headline.lean", 39, 42, "https://github.com/benmandrew/mise/blob/main/Mise/Headline.lean#L39-L42")[
+#def-head("Headline.build", "def:Mise.Headline.build", "Mise/Headline.lean", 40, 43, "https://github.com/benmandrew/mise/blob/main/Mise/Headline.lean#L40-L43")[
 #"The state after one modelled ";#raw("ninja");#" run from ";#raw("st");#" on the manifest emitted for ";#raw("g");#".";
 ]
 #raw(lang: "lean", block: true, "abbrev build (g : Graph) (st : St V) : St V := ninjaBuild sem (emit g) st")
 
-#def-head("Headline.ran", "def:Mise.Headline.ran", "Mise/Headline.lean", 44, 47, "https://github.com/benmandrew/mise/blob/main/Mise/Headline.lean#L44-L47")[
+#def-head("Headline.ran", "def:Mise.Headline.ran", "Mise/Headline.lean", 45, 48, "https://github.com/benmandrew/mise/blob/main/Mise/Headline.lean#L45-L48")[
 #"The edges that one modelled ";#raw("ninja");#" run from ";#raw("st");#" executes, in the order it runs them.";
 ]
 #raw(lang: "lean", block: true, "abbrev ran (g : Graph) (st : St V) : List MEdge := (buildTrace sem (edges g) st).2")
 
-#def-head("Headline.IsSource", "def:Mise.Headline.IsSource", "Mise/Headline.lean", 49, 52, "https://github.com/benmandrew/mise/blob/main/Mise/Headline.lean#L49-L52")[
+#def-head("Headline.IsSource", "def:Mise.Headline.IsSource", "Mise/Headline.lean", 50, 53, "https://github.com/benmandrew/mise/blob/main/Mise/Headline.lean#L50-L53")[
 #"No edge in ";#raw("edges g");#" writes ";#raw("p");#". That list leaves out ";#raw("phony");#" edges, so in a valid graph an alias name also counts as a source.";
 ]
 #raw(lang: "lean", block: true, "abbrev IsSource (g : Graph) (p : Path) : Prop := ∀ e ∈ edges g, p ∉ e.outs")
 
-#def-head("Headline.ValidOrder", "def:Mise.Headline.ValidOrder", "Mise/Headline.lean", 54, 58, "https://github.com/benmandrew/mise/blob/main/Mise/Headline.lean#L54-L58")[
+#def-head("Headline.ValidOrder", "def:Mise.Headline.ValidOrder", "Mise/Headline.lean", 55, 59, "https://github.com/benmandrew/mise/blob/main/Mise/Headline.lean#L55-L59")[
 #raw("es");#" is an order in which a parallel Ninja could run the edges. It is a permutation of ";#raw("edges g");#" in which no edge reads an output of itself or of a later edge, order-only inputs included, and no two edges share an output.";
 ]
 #raw(lang: "lean", block: true, "abbrev ValidOrder (g : Graph) (es : List MEdge) : Prop := es.Perm (edges g) ∧ Sched es")
 
-#def-head("Headline.Checks", "def:Mise.Headline.Checks", "Mise/Headline.lean", 60, 66, "https://github.com/benmandrew/mise/blob/main/Mise/Headline.lean#L60-L66")[
+#def-head("Headline.Checks", "def:Mise.Headline.Checks", "Mise/Headline.lean", 61, 67, "https://github.com/benmandrew/mise/blob/main/Mise/Headline.lean#L61-L67")[
 #raw("p");#" is an input that Ninja checks for some output of ";#raw("e");#" in state ";#raw("st");#": an explicit or implicit input of ";#raw("e");#", or, for a depfile edge, a path in that output's deps log entry. A depfile output with no deps entry has no checked inputs.";
 ]
 #raw(lang: "lean", block: true, "abbrev Checks (st : St V) (e : MEdge) (p : Path) : Prop :=\n  ∃ o ∈ e.outs, ∃ D, st.effIns e o = some D ∧ p ∈ D")

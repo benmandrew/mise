@@ -199,10 +199,10 @@ Read in this order: each file uses only the ones above it.
 | `Model.settle` | `Mise/Model/Cmp.lean:145`–157 | 13 |
 | `Model.script` | `Mise/Model/Cmp.lean:159`–168 | 10 |
 | `Model.St.runWrapped` | `Mise/Model/Cmp.lean:376`–383 | 8 |
-| `Headline.edges` | `Mise/Headline.lean:25`–28 | 4 |
-| `Headline.Reachable` | `Mise/Headline.lean:30`–37 | 8 |
-| `Headline.build` | `Mise/Headline.lean:39`–42 | 4 |
-| `Headline.ran` | `Mise/Headline.lean:44`–47 | 4 |
-| `Headline.IsSource` | `Mise/Headline.lean:49`–52 | 4 |
-| `Headline.ValidOrder` | `Mise/Headline.lean:54`–58 | 5 |
-| `Headline.Checks` | `Mise/Headline.lean:60`–66 | 7 |
+| `Headline.edges` | `Mise/Headline.lean:26`–29 | 4 |
+| `Headline.Reachable` | `Mise/Headline.lean:31`–38 | 8 |
+| `Headline.build` | `Mise/Headline.lean:40`–43 | 4 |
+| `Headline.ran` | `Mise/Headline.lean:45`–48 | 4 |
+| `Headline.IsSource` | `Mise/Headline.lean:50`–53 | 4 |
+| `Headline.ValidOrder` | `Mise/Headline.lean:55`–59 | 5 |
+| `Headline.Checks` | `Mise/Headline.lean:61`–67 | 7 |

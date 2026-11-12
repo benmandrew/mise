@@ -6,13 +6,14 @@ import Mise.Syntax.RoundTrip
 /-!
 # Headline theorems, restated for reading
 
-Each theorem in `Mise/Headline.lean` restates a result proved elsewhere, and Lean checks
-every proof. Except for `restat_cutoff`, which is about model edges and names
-no graph, each theorem is stated for the graph `g` that a user writes in the
-*domain-specific language* (DSL). A theorem means only what the definitions
-in its statement mean. So `docs/headline.pdf` shows the core theorems with
-those definitions, and `docs/trusted.md` lists every definition the theorems
-rest on.
+`mise` is a Lean 4 front end for Ninja. A user describes a build in a
+*domain-specific language* (DSL), and `mise` writes it out as a Ninja manifest.
+The theorems show that the manifest means the build the user described, and
+that Ninja, as modelled in Lean, runs it correctly. One run leaves correct
+contents, and a second run does nothing. A run executes only the edges it
+must, and any parallel order gives the same result. Lean checks every proof,
+but a theorem means only what the definitions in its statement mean, so those
+definitions follow the theorems.
 -/
 
 namespace Mise.Headline
