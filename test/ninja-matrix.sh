@@ -81,7 +81,8 @@ fail=0
 d=$out/refuse
 rm -rf "$d"
 mkdir -p "$d"
-cp examples/hello-c/mise.toml "$d/"
+# `mise gen` expands the source globs, so the sources come too.
+cp examples/hello-c/mise.toml examples/hello-c/*.c examples/hello-c/*.h "$d/"
 .lake/build/bin/mise gen "$d" >/dev/null
 # The first line is the printer's comment; the binding is the first statement.
 min=$(sed -n '2s/^ninja_required_version = //p' "$d/build.ninja")
