@@ -416,7 +416,6 @@ open Trusted in
   let mut noTemplate : NameSet := {}
   let mut omits : NameSet := {}
   let mut noSingular : NameSet := {}
-  let mut used : Std.HashSet (Name × Gloss.Which) := {}
   let ileanPath : System.FilePath := ".lake/build/lib/lean/Mise/Headline.ilean"
   let ilean ← match Json.parse (← IO.FS.readFile ileanPath) with
     | .ok j => pure j
@@ -449,7 +448,6 @@ open Trusted in
     noTemplate := s.missing.foldl (·.insert ·) noTemplate
     omits := s.omits.foldl (·.insert ·) omits
     noSingular := s.noSingular.foldl (·.insert ·) noSingular
-    used := s.used.fold (·.insert ·) used
     let ph := tPhrase (fun n => let o := owner env n; if shown.contains o then some o else none)
     typ := typ ++ s!"#theorem-heading({tq (shortThm t)}, {tq (modPath m)}, {a.line}, {sourceUrl (modPath m) a.line b.line})\n\n"
     typ := typ ++ mdBlocks doc ++ s!"\n#lean-linked({parts})\n\n#english[\n"
@@ -487,12 +485,7 @@ open Trusted in
       let src := dropDoc (slice ls a b)
       let doc := (← liftCoreM (findDocString? env d)).getD ""
       let g := Gloss.Glosses.parse doc
-      -- Only the templates the English of a core theorem uses: the others
-      -- would repeat the docstring with nothing to check them against.
-      let gl := [(Gloss.Which.main, g.main), (.fst, g.fst), (.snd, g.snd), (.fn, g.fn),
-        (.one, g.one)].filterMap fun (w, t?) =>
-          if used.contains (d, w) then t?.map fun t => s!"({tq w.key}, {tq t})" else none
-      typ := typ ++ s!"#def-head({tq (short d)}, {defLabel d}, {tq (modPath m)}, {a.line}, {b.line}, {sourceUrl (modPath m) a.line b.line}, ({", ".intercalate gl}{if gl.length == 1 then "," else ""}))[\n"
+      typ := typ ++ s!"#def-head({tq (short d)}, {defLabel d}, {tq (modPath m)}, {a.line}, {b.line}, {sourceUrl (modPath m) a.line b.line})[\n"
       typ := typ ++ (if g.rest.isEmpty then "#no-doc\n" else mdBlocks g.rest) ++ "]\n"
       typ := typ ++ s!"#raw(lang: \"lean\", block: true, {tq src})\n\n"
   for n in sortNames noTemplate do
