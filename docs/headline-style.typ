@@ -48,13 +48,13 @@
   set enum(spacing: 0.65em)
   show: lean-code
   show link: set text(fill: rgb("#1f4e9c"))
-  set heading(numbering: "1.1")
-  show heading.where(level: 1): set text(size: 12pt)
+  set heading(numbering: "1.1.")
+  show heading.where(level: 1): set text(size: 13pt)
   show heading.where(level: 1): set block(above: 2.2em, below: 1em)
-  show heading.where(level: 2): set text(size: 1.2 * body-size)
+  show heading.where(level: 2): set text(size: 1.1 * body-size)
   // The size is set here, not in the heading's body, so the contents list
   // shows theorem names at the size of the text around them.
-  show heading.where(level: 2): it => code-at(1.2 * body-size, it)
+  show heading.where(level: 2): it => code-at(1.1 * body-size, it)
   show heading.where(level: 2): set block(above: 2em, below: 0.4em)
   show heading.where(level: 3): set text(size: body-size)
   show heading.where(level: 3): set block(above: 1.6em, below: 0.45em)
