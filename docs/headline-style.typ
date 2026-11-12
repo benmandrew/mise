@@ -57,7 +57,12 @@
   body
   parbreak()
   how-to-read
-  outline(depth: 2, indent: auto)
+  // Fixed line edges, so a line of smaller code text takes the same height
+  // as a line of body text and the entries are evenly spaced.
+  {
+    set text(top-edge: 0.8 * body-size, bottom-edge: -0.25 * body-size)
+    outline(depth: 2, indent: auto)
+  }
 }
 
 #let part-sub(body) = block(above: 1em, below: 0.5em, text(weight: "bold", body + ":"))
