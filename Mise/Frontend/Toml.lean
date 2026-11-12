@@ -94,11 +94,16 @@ def expect (c : Char) : P Unit := do
 partial def ws : P Unit := do
   if (← peek) == some ' ' || (← peek) == some '\t' then discard next; ws
 
-/-- Skip a comment, up to the end of the line. -/
+/-- A control character other than tab: not allowed in strings or comments. -/
+def isCtrl (c : Char) : Bool := (c.toNat < 0x20 && c != '\t') || c.toNat == 0x7f
+
+/-- Skip a comment, up to the end of the line. A carriage return may only
+start a CRLF line ending. -/
 partial def comment : P Unit := do
   match ← peek with
   | some '\n' | none => pure ()
-  | some _ => discard next; comment
+  | some '\r' => if (← peek2) == some '\n' then pure () else fail "control character in a comment"
+  | some c => if isCtrl c then fail "control character in a comment" else discard next; comment
 
 /-- Skip whitespace, newlines and comments. -/
 partial def wsnl : P Unit := do
@@ -117,8 +122,6 @@ def lineEnd : P Unit := do
   | some '\n' => discard next
   | some '\r' => discard next; expect '\n'
   | some _ => fail "expected the end of the line"
-
-def isCtrl (c : Char) : Bool := (c.toNat < 0x20 && c != '\t') || c.toNat == 0x7f
 
 def hexDigit? (c : Char) : Option Nat :=
   if c.isDigit then some (c.toNat - '0'.toNat)

@@ -43,6 +43,7 @@ def agrees (text : String) : IO Unit := do
 #eval agrees "[[rule]]\nname = \"a\"\n[[rule]]\nname = \"b\"\n[other]\n[[rule]]\nname = \"c\"\n"
 #eval agrees "a = 1\r\nb = \"x\" # trailing\r\n"
 #eval agrees "x = \"#not a comment\"\n"
+#eval agrees "#\ttab and \u00e9 in a comment\r\na = 1 #\t\r\n"
 
 /-- Rejected, with `msg` in the error. -/
 def rejectsParse (text msg : String) : Bool := match parse text with
@@ -71,6 +72,12 @@ def rejectsParse (text msg : String) : Bool := match parse text with
 #guard rejectsParse "t = [1]\n[[t]]" "\"t\" is already defined"
 #guard rejectsParse "[[t]]\n[t]" "\"t\" is already defined"
 #guard rejectsParse "a =" "expected a value"
+-- Found by `test/toml-diff.sh`: TOML forbids control characters other than
+-- tab in comments, as in strings, and `tomllib` rejects them.
+#guard rejectsParse "# a\x01b\n" "1:4: control character in a comment"
+#guard rejectsParse "a = 1 # \x7f\n" "control character in a comment"
+#guard rejectsParse "a = [1, # x\ry\n 2]" "control character in a comment"
+#guard rejectsParse "a = 1 # x\r" "control character in a comment"
 
 /-- A build description rejected, with `msg` in the error. -/
 def rejects (text : String) (ps : Params := []) (msg : String) : Bool := match load text ps with
