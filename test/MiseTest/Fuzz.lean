@@ -10,7 +10,8 @@ import MiseTest.Rng
 `DIR/<i>.json`, and `test/fuzz.py` replays them against real Ninja. `OPTS`
 is a comma-separated list of `Opts` flags: `absent`, and `nowrap` with it.
 `lake exe fuzzgen expect IN OUT` reads a case description from `IN` and
-writes its case to `OUT`.
+writes its case to `OUT`. `lake exe fuzzgen bytes IN OUT [OPTS]` writes the
+case that the bytes of `IN` choose (`GenM.runBytes`) to `OUT`.
 
 A case is a random valid graph and a sequence of steps. Every edge runs the
 helper `test/fz.c`, and `sem` below computes the same contents and reads, so
@@ -646,16 +647,17 @@ def runCase (strict : Bool) (c0 : Case) (steps : List StepD) : Except String Jso
   pure (Json.mkObj [("desc", toJson desc), ("steps", Json.arr js)])
 
 def seeded (seed i : Nat) : Rng := Id.run do
-  let mut g : Rng := ⟨(seed * 1000003 + i * 7919 + 1).toUInt64⟩
+  let mut g : Rng := .ofSeed (seed * 1000003 + i * 7919 + 1).toUInt64
   for _ in [0:4] do g := g.next.2
   g
 
-def genOne (o : Opts) (seed i : Nat) : Case × List StepD :=
-  let gen : GenM (Case × List StepD) := do
-    let c ← genCase o
-    let n := 3 + (← rand 6)
-    pure (c, ← genSteps o c n)
-  (gen.run (seeded seed i)).1
+/-- A case and its steps. -/
+def genFull (o : Opts) : GenM (Case × List StepD) := do
+  let c ← genCase o
+  let n := 3 + (← rand 6)
+  pure (c, ← genSteps o c n)
+
+def genOne (o : Opts) (seed i : Nat) : Case × List StepD := ((genFull o).run (seeded seed i)).1
 
 end MiseTest.Fuzz
 
@@ -671,6 +673,17 @@ def main (args : List String) : IO UInt32 := do
     match runCase strict { srcs := d.srcs, edges := d.edges.map (·.toEdge) } d.steps with
     | .error e => IO.eprintln s!"{src}: {e}"; return 1
     | .ok j => IO.FS.writeFile dst j.compress; return 0
+  let write (dst : String) (o : Opts) (c : Case) (steps : List StepD) : IO Bool := do
+    match runCase strict c steps with
+    | .error e => IO.eprintln s!"{dst}: {e}"; return false
+    -- Under `nowrap` an output can go missing, which `fuzz.py` then allows
+    -- as `--missing-ok` describes.
+    | .ok j => IO.FS.writeFile dst (j.setObjVal! "missingOk" (toJson (o.absent && o.nowrap))).compress; return true
+  -- One case from the bytes of a file, for a fuzzer that steers the choices.
+  if let "bytes" :: src :: dst :: rest := args then
+    let o := match rest with | [f] => Opts.parse f | _ => {}
+    let (c, steps) := (genFull o).runBytes (← IO.FS.readBinFile src)
+    return if ← write dst o c steps then 0 else 1
   let (dir, n, seed, o) := match args with
     | [d, n, s] => (d, n.toNat!, s.toNat!, ({} : Opts))
     | [d, n, s, f] => (d, n.toNat!, s.toNat!, Opts.parse f)
@@ -678,9 +691,5 @@ def main (args : List String) : IO UInt32 := do
   IO.FS.createDirAll dir
   for i in [0:n] do
     let (c, steps) := genOne o seed i
-    match runCase strict c steps with
-    | .error e => IO.eprintln s!"case {i}: {e}"; return 1
-    -- Under `nowrap` an output can go missing, which `fuzz.py` then allows
-    -- as `--missing-ok` describes.
-    | .ok j => IO.FS.writeFile s!"{dir}/{i}.json" (j.setObjVal! "missingOk" (toJson (o.absent && o.nowrap))).compress
+    unless ← write s!"{dir}/{i}.json" o c steps do return 1
   return 0

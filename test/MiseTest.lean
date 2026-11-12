@@ -6,5 +6,6 @@ import MiseTest.Stage5
 import MiseTest.Stage6
 import MiseTest.Stage7
 import MiseTest.Toml
+import MiseTest.Bytes
 import MiseTest.Axioms
 import MiseTest.Gloss
