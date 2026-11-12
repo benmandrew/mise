@@ -13,9 +13,9 @@ Tested against Ninja `1.13.2` (Homebrew, macOS arm64).
 
 - identifiers, literals and paths use only characters Ninja can lex, and literals are never adjacent;
 - paths are canonical, so `CanonicalizePath` leaves them unchanged;
-- top-level variable names are not keywords;
+- top-level variable names are not keywords, and no top-level or edge variable is `pool` or `dyndep` (`parseTimeKeys`);
 - rule names are new and not `phony`, rule keys are in the supported subset, and the last `command` binding is nonempty;
-- an edge's rule is defined earlier, and it has at least one explicit output, with outputs distinct and not produced by an earlier edge;
+- an edge's rule is defined earlier, and it has at least one explicit output, with outputs distinct, not produced by an earlier edge and not among its own inputs;
 - `default` targets are nonempty and each was mentioned by an earlier edge.
 
 ## Theorems
@@ -38,11 +38,12 @@ The model agrees with Ninja on every input it accepts. It rejects some inputs Ni
 - `$`-newline continuations and `\r\n` line endings;
 - variable references inside paths;
 - non-canonical paths;
-- `pool`, `include`, `subninja`, `|@` validations, and rule keys outside the subset such as `rspfile`.
+- `pool`, `include`, `subninja`, `|@` validations, and rule keys outside the subset such as `rspfile`;
+- `pool` and `dyndep` as variables (`parseTimeKeys`), which Ninja reads while it parses an edge.
 
 The model does not evaluate variables, and accepts any `deps` value because Ninja checks it only at build time.
 
-The differential test found two behaviours that are now modelled: Ninja rejects an empty last `command` binding but accepts `${v}` with an empty `v`, and `-t query` lists a consuming edge once per occurrence of an input.
+The differential test found two behaviours that are now modelled: Ninja rejects an empty last `command` binding but accepts `${v}` with an empty `v`, and `-t query` lists a consuming edge once per occurrence of an input. The parser fuzzer (`test/parser-fuzz.sh`) found four more, all accepted by the model before. Ninja rejects a nonempty manifest whose last line has no newline. It reads a NUL byte in a comment as the end of the input. It rejects an edge whose `pool` variable names no declared pool. It drops a phony edge's own output from its inputs.
 
 ## Tests
 

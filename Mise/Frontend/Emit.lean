@@ -154,22 +154,33 @@ theorem rules_ok (rs : List GRule) (c : Ctx) (hnd : nodupB (rs.map (·.name)) = 
 theorem emitEdge_ok (c : Ctx) (names : List String) (srcs : List Path) (e : GEdge)
     (hR : ∀ n ∈ names, c.rules.contains n = true) (hn : ∀ n ∈ names, validIdent n = true)
     (he : e.ok names srcs c.outs = true) : (Stmt.edge (emitEdge e)).ok c = true := by
-  obtain ⟨h1, h2, h3, h4, h5, _, h7⟩ := GEdge.ok_parts he
+  obtain ⟨h1, h2, h3, h4, h5, h6, h7⟩ := GEdge.ok_parts he
   have hr : e.rule ∈ names := by simpa using h1
   simp only [varsOK, Bool.and_eq_true, List.all_eq_true] at h7
   simp only [Stmt.ok, Bool.and_eq_true, List.all_eq_true, Bool.not_eq_true']
-  refine ⟨⟨⟨⟨⟨⟨hn _ hr, hR _ hr⟩, ?_⟩, h3⟩, h4⟩, fun o ho => (h5 o ho).1⟩, ?_⟩
+  refine ⟨⟨⟨⟨⟨⟨⟨hn _ hr, hR _ hr⟩, ?_⟩, h3⟩, h4⟩, fun o ho => (h5 o ho).1⟩, ?_⟩, ?_⟩
   · simpa [emitEdge] using h2
   · intro b hb
     simp only [emitEdge, List.mem_map] at hb
     obtain ⟨⟨k, v⟩, hkv, rfl⟩ := hb
     have := h7.2 _ hkv
     simp only [Bool.not_eq_true'] at this
-    simp only [validBinding, this.1.1, Bool.true_and, litVal]
+    have hpt : parseTimeKeys.contains k = false := by
+      have h := this.1.2
+      simp only [reserved, List.contains_append, Bool.or_eq_false_iff] at h
+      exact h.2
+    simp only [validBinding, this.1.1, hpt, Bool.true_and, Bool.not_false, Bool.and_true, litVal]
     split
-    · rfl
+    · simp [validEval, noAdjLits]
     · rename_i hv
       simpa [validEval, Seg.valid, validLit, hv, noAdjLits] using this.2
+  · -- Inputs are sources or earlier outputs, which no output is.
+    intro i hi
+    have hi' : i ∈ e.allIns := by simpa [emitEdge, Edge.allIns, GEdge.allIns] using hi
+    cases hm : (emitEdge e).allOuts.contains i
+    · rfl
+    · have ho : i ∈ e.allOuts := by simpa [emitEdge, Edge.allOuts, GEdge.allOuts] using hm
+      have := h5 i ho; have := h6 i hi'; simp_all
 
 theorem edges_fold (c : Ctx) (es : List GEdge) :
     (es.map (Stmt.edge ∘ emitEdge)).foldl Ctx.add c =
@@ -215,13 +226,13 @@ theorem aliases_fold (c : Ctx) (as : List GAlias) :
 
 theorem aliases_ok' (as : List GAlias) (c : Ctx) (hp : c.rules.contains "phony" = true)
     (hnd : nodupB (as.map (·.name)) = true)
-    (hok : ∀ a ∈ as, validPath a.name = true ∧ ∀ t ∈ a.targets, validPath t = true)
+    (hok : ∀ a ∈ as, validPath a.name = true ∧ (∀ t ∈ a.targets, validPath t = true) ∧ a.name ∉ a.targets)
     (hc : ∀ a ∈ as, a.name ∉ c.outs) : stmtsOK c (as.map (Stmt.edge ∘ emitAlias)) = true := by
   induction as generalizing c with
   | nil => rfl
   | cons a as ih =>
     simp only [List.map_cons, nodupB_cons, Bool.and_eq_true, Bool.not_eq_true'] at hnd
-    obtain ⟨h1, h5⟩ := hok a (by simp)
+    obtain ⟨h1, h5, hself⟩ := hok a (by simp)
     simp only [List.map_cons, stmtsOK, Function.comp, Bool.and_eq_true]
     refine ⟨?_, ih _ (by simpa [Ctx.add] using hp) hnd.2 (fun a' ha' => hok a' (by simp [ha'])) ?_⟩
     · have hv : validIdent "phony" = true := by decide
@@ -236,7 +247,7 @@ theorem aliases_ok' (as : List GAlias) (c : Ctx) (hp : c.rules.contains "phony" 
       · rintro p (rfl | hp')
         · exact h1
         · exact h5 p hp'
-      all_goals first | decide | simp | simp [nodupB]
+      all_goals first | decide | (simp; intro t ht h; subst h; exact hself ht) | simp | simp [nodupB]
     · intro a' ha'
       simp only [Ctx.add, emitAlias, Edge.allOuts, List.append_nil, List.mem_append, List.mem_singleton]
       rintro (ho | ho)
@@ -248,8 +259,13 @@ theorem aliases_ok (srcs outs : List Path) (as : List GAlias) (c : Ctx)
     (hp : c.rules.contains "phony" = true) (hc : ∀ o, o ∈ c.outs → o ∈ outs)
     (h : aliasesOK srcs outs as = true) : stmtsOK c (as.map (Stmt.edge ∘ emitAlias)) = true := by
   obtain ⟨hnd, hok⟩ := aliasesOK_parts h
-  exact aliases_ok' as c hp hnd (fun a ha => ⟨(hok a ha).1, fun t ht => ((hok a ha).2.2.2.2 t ht).1⟩)
+  refine aliases_ok' as c hp hnd (fun a ha => ⟨(hok a ha).1, fun t ht => ((hok a ha).2.2.2.2 t ht).1, ?_⟩)
     fun a ha ho => (hok a ha).2.2.1 (hc _ ho)
+  -- Targets are sources or edge outputs, which an alias name is not.
+  intro ht
+  rcases ((hok a ha).2.2.2.2 _ ht).2 with h | h
+  · exact (hok a ha).2.1 h
+  · exact (hok a ha).2.2.1 h
 
 theorem Graph.check_parts {g : Graph} (hg : g.Valid) :
     nodupB g.ruleNames = true ∧ (∀ r ∈ g.rules, r.ok = true) ∧

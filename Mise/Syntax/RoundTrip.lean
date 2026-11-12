@@ -657,7 +657,7 @@ theorem printStmt_head (s : Stmt) (c : Ctx) (hok : s.ok c = true) :
   cases s with
   | binding k v =>
     simp only [Stmt.ok, Bool.and_eq_true] at hok
-    obtain ⟨d, r, hdr, h1, h2⟩ := ident_head hok.1.1
+    obtain ⟨d, r, hdr, h1, h2⟩ := ident_head hok.1.1.1
     refine ⟨_, _, rfl, ?_⟩
     simp only [bindingLine, Bool.false_eq_true, ite_false, List.nil_append, hdr, List.cons_append]
     exact classify_top _ h1 h2
@@ -676,7 +676,7 @@ theorem stmt_step (s : Stmt) (c : Ctx) (acc : List Stmt) (hok : s.ok c = true)
     simp only [printStmt, List.cons.injEq, List.nil_eq] at hpr
     obtain ⟨rfl, rfl⟩ := hpr
     exact parseLines_top _ _ _ _ _ _ _ _ hcl
-      (parseHeader_binding k v hok'.1.1 hok'.1.2 hok'.2) (takeBlock_headOK L hL) rfl hok
+      (parseHeader_binding k v hok'.1.1.1 hok'.1.1.2 hok'.2) (takeBlock_headOK L hL) rfl hok
   | rule r =>
     have hok' := hok
     simp only [Stmt.ok, Bool.and_eq_true] at hok'
@@ -694,15 +694,20 @@ theorem stmt_step (s : Stmt) (c : Ctx) (acc : List Stmt) (hok : s.ok c = true)
   | edge e =>
     have hok' := hok
     simp only [Stmt.ok, Bool.and_eq_true, Bool.not_eq_true'] at hok'
+    replace hok' := hok'.1
     simp only [printStmt, List.cons.injEq] at hpr
     obtain ⟨rfl, rfl⟩ := hpr
     have hne : e.outs ≠ [] := by
       have := hok'.1.1.1.1.2; intro h; rw [h] at this; simp at this
+    have hbs : e.bindings.all validBinding = true := by
+      have := hok'.2
+      simp only [List.all_eq_true, Bool.and_eq_true] at this ⊢
+      intro b hb; exact (this b hb).1
     simp only [printStmt, List.cons_append]
     exact parseLines_top _ _ _ _ _ _ _ _ hcl
       (parseHeader_edge e hok'.1.1.1.1.1.1 hne hok'.1.1.1.2)
-      (takeBlock_bindings e.bindings hok'.2 L hL)
-      (by simp [finishStmt, mapM_parseLet e.bindings hok'.2]) hok
+      (takeBlock_bindings e.bindings hbs L hL)
+      (by simp [finishStmt, mapM_parseLet e.bindings hbs]) hok
   | default ps =>
     have hok' := hok
     simp only [Stmt.ok, Bool.and_eq_true, Bool.not_eq_true'] at hok'
@@ -862,6 +867,7 @@ theorem nl_printStmt (s : Stmt) (c : Ctx) (hok : s.ok c = true) : ∀ l ∈ prin
       · simp at hl
   | edge e =>
     simp only [Stmt.ok, Bool.and_eq_true] at hok
+    replace hok := hok.1
     have hp := hok.1.1.1.2
     simp only [Edge.allPaths, Edge.allOuts, Edge.allIns, List.all_append, Bool.and_eq_true] at hp
     simp only [printStmt, List.mem_cons]
@@ -870,7 +876,10 @@ theorem nl_printStmt (s : Stmt) (c : Ctx) (hok : s.ok c = true) : ∀ l ∈ prin
       exact ⟨⟨⟨⟨⟨⟨⟨by decide, nl_pathList _ hp.1.1⟩, nl_pathSection _ _ (by decide) hp.1.2⟩, by decide⟩,
         nl_ident _ hok.1.1.1.1.1.1⟩, nl_pathList _ hp.2.1.1⟩, nl_pathSection _ _ (by decide) hp.2.1.2⟩,
         nl_pathSection _ _ (by decide) hp.2.2⟩
-    · exact hbs _ hok.2 l hl
+    · refine hbs _ ?_ l hl
+      have := hok.2
+      simp only [List.all_eq_true, Bool.and_eq_true] at this ⊢
+      exact fun b hb => (this b hb).1
   | default ps =>
     simp only [Stmt.ok, Bool.and_eq_true] at hok
     simp only [printStmt, List.mem_singleton, forall_eq, List.mem_append, not_or]
@@ -889,6 +898,13 @@ theorem nl_stmts (ss : List Stmt) (c : Ctx) (h : stmtsOK c ss = true) :
 
 /-! ## The round trip -/
 
+/-- Text made of lines that each end in a newline ends in a newline. -/
+theorem getLast?_flatMap_nl : ∀ (l : List Char) (ls : List (List Char)),
+    ((l :: ls).flatMap (· ++ ['\n'])).getLast? = some '\n'
+  | l, [] => by simp
+  | l, l' :: ls => by
+    rw [List.flatMap_cons, List.getLast?_append, getLast?_flatMap_nl l' ls]; rfl
+
 /-- **Headline (Stage 3).** Printing a well-formed manifest and parsing the
 result with the parser model gives the manifest back. -/
 theorem parse_print (m : Manifest) (h : m.WellFormed) : parse (print m) = some m := by
@@ -899,7 +915,7 @@ theorem parse_print (m : Manifest) (h : m.WellFormed) : parse (print m) = some m
   simp only [parse, print, String.toList_ofList, parseChars, printChars]
   rw [splitLines_join _ hnl, printLines, List.cons_append,
     parseLines_comment _ _ _ _ (by decide), parseLines_print _ _ _ h]
-  rfl
+  rw [getLast?_flatMap_nl]; rfl
 
 end Mise.Syntax
 

@@ -96,7 +96,13 @@ def keywords : List (List Char) :=
 
 /-- Rule variables in the supported subset. -/
 def ruleKeys : List String :=
-  ["command", "description", "depfile", "deps", "restat", "generator", "dyndep"]
+  ["command", "description", "depfile", "deps", "restat", "generator"]
+
+/-- Variables Ninja reads while it parses an edge: `pool` must name a
+declared pool and `dyndep` one of the edge's inputs. Both are outside the
+subset, so no edge binding and no top-level binding may set them (a rule
+cannot either, since neither is in `ruleKeys`). -/
+def parseTimeKeys : List String := ["pool", "dyndep"]
 
 /-! ## Validity -/
 
@@ -173,7 +179,7 @@ def Ctx.add (c : Ctx) : Stmt → Ctx
 
 /-- One statement is acceptable after the statements summarised by `c`. -/
 def Stmt.ok (c : Ctx) : Stmt → Bool
-  | .binding k v => validIdent k && !keywords.contains k.toList && validEval v
+  | .binding k v => validIdent k && !keywords.contains k.toList && !parseTimeKeys.contains k && validEval v
   | .rule r =>
     validIdent r.name && !c.rules.contains r.name &&
     r.bindings.all (fun b => validBinding b && ruleKeys.contains b.1) &&
@@ -183,7 +189,9 @@ def Stmt.ok (c : Ctx) : Stmt → Bool
     validIdent e.rule && c.rules.contains e.rule && !e.outs.isEmpty &&
     e.allPaths.all validPath && nodupB e.allOuts &&
     e.allOuts.all (fun o => !c.outs.contains o) &&
-    e.bindings.all validBinding
+    e.bindings.all (fun b => validBinding b && !parseTimeKeys.contains b.1) &&
+    -- Ninja drops a phony edge's own output from its inputs (`phonycycle`).
+    e.allIns.all (fun i => !e.allOuts.contains i)
   | .default ps => !ps.isEmpty && ps.all validPath && ps.all c.known.contains
 
 def stmtsOK : Ctx → List Stmt → Bool

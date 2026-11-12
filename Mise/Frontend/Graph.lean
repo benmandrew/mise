@@ -28,9 +28,10 @@ def ninjaMinVersion : String := "1.12.1"
 def versionVar : String := "ninja_required_version"
 
 /-- Names a template or an edge may not use as a variable of its own. Edge
-bindings with these names would change what Ninja runs, and a template
-reference to `versionVar` would read the emitted top-level binding. -/
-def reserved : List String := ["in", "out", "in_newline", versionVar] ++ ruleKeys
+bindings with these names would change what Ninja runs or fail to parse
+(`parseTimeKeys`), and a template reference to `versionVar` would read the
+emitted top-level binding. -/
+def reserved : List String := ["in", "out", "in_newline", versionVar] ++ ruleKeys ++ parseTimeKeys
 
 /-- A rule. The command and description are Ninja values. `${in}` and
 `${out}` stand for the edge's explicit inputs and outputs, and any other

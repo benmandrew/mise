@@ -7,8 +7,9 @@ A model of Ninja's lexer and manifest parser, restricted to the subset in
 `Mise.Syntax.Ast`. It is a specification artefact: it exists so that the
 printer can be proved correct against it, and it is tested against real Ninja.
 
-The input is split into lines first. Ninja's `$`-newline line continuation is
-outside the model, and so is a `\r\n` line ending: both make `parse` fail.
+The input is split into lines first, and must end in a newline unless it is
+empty. Ninja's `$`-newline line continuation is outside the model, and so is
+a `\r\n` line ending: both make `parse` fail.
 -/
 
 namespace Mise.Syntax
@@ -208,12 +209,13 @@ inductive LineKind where
   deriving DecidableEq
 
 /-- The `LineKind` of a line. An indented line keeps its text after the
-leading spaces. -/
+leading spaces. Ninja's lexer reads a NUL as the end of the input, so a
+comment holding one counts as a top-level line, which no header parses. -/
 def classify (l : List Char) : LineKind :=
   match eatSpaces l with
   | [] => .blank
   | c :: r =>
-    if c = '#' then .comment
+    if c = '#' then (if r.contains '\x00' then .top else .comment)
     else if l.head? = some ' ' then .indented (c :: r)
     else .top
 
@@ -278,9 +280,11 @@ def splitLines : List Char → List (List Char)
       | [] => [[c]]
 
 /-- Parse a whole manifest, starting from the context that knows only the
-`phony` rule; `none` if any line fails. -/
+`phony` rule; `none` if any line fails, or if a nonempty text does not end
+in a newline, which Ninja rejects as an unexpected end of file. -/
 def parseChars (cs : List Char) : Option Manifest :=
-  (parseLines (splitLines cs) {} []).map Manifest.mk
+  if cs.getLast?.all (· == '\n') then (parseLines (splitLines cs) {} []).map Manifest.mk
+  else none
 
 /-- The parser model: the manifest the text describes, or `none` when the
 model rejects the text.

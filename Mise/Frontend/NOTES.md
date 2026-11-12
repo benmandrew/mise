@@ -34,7 +34,7 @@ Ninja rejects cyclic rule variables; the model uses fuel of the binding count pl
 - default targets are edge outputs or aliases;
 - an edge whose rule has a depfile has one explicit output, since the emitted `depfile = ${out}.d` names one file only then (`depfileOutsOK`).
 
-`reserved` holds `in`, `out`, `in_newline`, `ninja_required_version` (`versionVar`) and the rule keys. `Handle` and `RuleRef` have private constructors, so a description names only what it declared.
+`reserved` holds `in`, `out`, `in_newline`, `ninja_required_version` (`versionVar`), the rule keys, and `pool` and `dyndep` (`parseTimeKeys`), which Ninja reads while it parses an edge. `Handle` and `RuleRef` have private constructors, so a description names only what it declared.
 
 ## The version binding
 
