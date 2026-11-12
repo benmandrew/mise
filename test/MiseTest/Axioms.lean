@@ -60,3 +60,12 @@ fails if any theorem depends on an axiom outside the standard three. -/
 #print axioms Mise.Model.dsl_same_edges
 #print axioms Mise.Model.trace_nodup_sched
 #print axioms Mise.Frontend.isRestat_emit
+-- Mise/Headline.lean: readable restatements
+#print axioms Mise.Headline.meaning
+#print axioms Mise.Headline.correct_unique
+#print axioms Mise.Headline.build_correct
+#print axioms Mise.Headline.rebuild_noop
+#print axioms Mise.Headline.ran_nodup
+#print axioms Mise.Headline.rebuild_minimal
+#print axioms Mise.Headline.restat_cutoff
+#print axioms Mise.Headline.any_order

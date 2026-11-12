@@ -1,0 +1,138 @@
+import Lean
+import Mise
+open Lean Meta Elab Command
+
+/-!
+Lists the definitions a reader must trust for each theorem in
+`Mise.Headline`. Run with `lake env lean test/MiseTest/Trusted.lean`;
+`scripts/trusted.sh` writes the output to `docs/trusted.md`.
+
+The walk starts from a theorem's statement and follows every `Mise`
+constant it mentions, through the types and bodies of definitions and the
+constructors of inductive types. It does not enter theorems, because Lean
+checks their proofs; proofs inside a definition are abstracted into
+auxiliary theorems when the definition is compiled, so it skips those too.
+Constants outside `Mise` (Lean's core library) are not listed.
+-/
+
+namespace Trusted
+
+def isMise (n : Name) : Bool := n.getRoot == `Mise
+
+/-- Auxiliary constants a reader would not look up by name. -/
+def isAux (env : Environment) (n : Name) : Bool :=
+  n.isInternalDetail || isAuxRecursor env n || isNoConfusion env n ||
+    isMatcherCore env n || isRecCore env n
+
+/-- Generated helpers: `ctorIdx`, and derived `Repr` instances, which
+affect printing only. -/
+def isGenerated (n : Name) : Bool :=
+  n.components.any fun c => c == `ctorIdx || c.toString.startsWith "instRepr"
+
+/-- The declaration a reader looks up for constant `n`: constructors and
+projections map to their type, and a constant with an auxiliary prefix (such
+as `Task.brecOn.go`) maps to the owner of that prefix. -/
+partial def owner (env : Environment) (n : Name) : Name :=
+  let pre := (List.range (n.getNumParts + 1)).filterMap fun i =>
+    let p := (n.components.take i).foldl (· ++ ·) Name.anonymous
+    if i > 0 && isAux env p then some p else none
+  match pre.head? with
+  | some p => owner env p.getPrefix
+  | none =>
+    if n.components.getLast? == some `ctorIdx then n.getPrefix
+    else match env.find? n with
+      | some (.ctorInfo c) => c.induct
+      | _ => match env.getProjectionFnInfo? n with
+        | some info => info.ctorName.getPrefix
+        | none => n
+
+/-- Every `Mise` constant reachable from `e`, outside proofs. -/
+partial def reach (env : Environment) (start : Array Name) : NameSet := Id.run do
+  let mut seen : NameSet := {}
+  let mut todo := start
+  while h : todo.size > 0 do
+    let n := todo.back
+    todo := todo.pop
+    if seen.contains n || !isMise n then continue
+    seen := seen.insert n
+    let next : Array Name := match env.find? n with
+      | some (.defnInfo d) => d.type.getUsedConstants ++ d.value.getUsedConstants
+      | some (.opaqueInfo d) => d.type.getUsedConstants ++ d.value.getUsedConstants
+      | some (.inductInfo i) => i.type.getUsedConstants ++ i.ctors.toArray
+      | some (.ctorInfo c) => c.type.getUsedConstants.push c.induct
+      | some (.recInfo r) => r.type.getUsedConstants
+      | some (.axiomInfo a) => a.type.getUsedConstants
+      | _ => #[]
+    todo := todo ++ next
+  return seen
+
+/-- The trusted declarations of theorem `thm`, by owner. -/
+def trustedOf (env : Environment) (thm : Name) : NameSet :=
+  match env.find? thm with
+  | some (.thmInfo t) =>
+    (reach env t.type.getUsedConstants).foldl (fun s n =>
+      match env.find? n with
+      | some (.thmInfo _) => s
+      | _ => if isGenerated n then s else s.insert (owner env n)) {}
+  | _ => {}
+
+/-- Module, its position in import order (dependencies first), and lines. -/
+def location (n : Name) : CommandElabM (String × Nat × Nat × Nat) := do
+  let env ← getEnv
+  let (mod, idx) := match env.getModuleIdxFor? n with
+    | some i => (env.header.moduleNames[i.toNat]!.toString, i.toNat)
+    | none => ("?", 0)
+  let r ← liftCoreM (findDeclarationRanges? n)
+  match r with
+  | some r => return (mod, idx, r.range.pos.line, r.range.endPos.line)
+  | none => return (mod, idx, 0, 0)
+
+def modPath (mod : String) : String := mod.replace "." "/" ++ ".lean"
+
+def sortNames (s : NameSet) : Array Name :=
+  s.toArray.qsort (fun a b => a.toString < b.toString)
+
+end Trusted
+
+open Trusted in
+#eval show CommandElabM Unit from do
+  let env ← getEnv
+  let thms := sortNames <| env.constants.fold (init := {}) fun s n ci =>
+    match ci with
+    | .thmInfo _ => if (`Mise.Headline).isPrefixOf n && !n.isInternalDetail then s.insert n else s
+    | _ => s
+  -- Owners of every theorem, with locations.
+  let mut all : NameSet := {}
+  let mut perThm : Array (Name × Array Name) := #[]
+  for t in thms do
+    let ds := sortNames (trustedOf env t)
+    perThm := perThm.push (t, ds)
+    all := ds.foldl (·.insert ·) all
+  let mut rows : Array (Nat × String × Nat × Nat × Name) := #[]
+  for d in all.toArray do
+    let (m, i, a, b) ← location d
+    rows := rows.push (i, m, a, b, d)
+  rows := rows.qsort fun x y => x.1 < y.1 || (x.1 == y.1 && x.2.2.1 < y.2.2.1)
+  let sorted := rows.map fun (_, m, a, b, d) => (m, a, b, d)
+  let total := sorted.foldl (fun acc r => acc + (r.2.2.1 - r.2.1 + 1)) 0
+  let mods := (sorted.map (·.1)).toList.eraseDups
+  let mut out := "# Trusted definitions\n\n"
+  out := out ++ "Generated by `scripts/trusted.sh` from `test/MiseTest/Trusted.lean`; do not edit. `scripts/check.sh` fails if this file is out of date.\n\n"
+  out := out ++ s!"The theorems in `Mise/Headline.lean` are checked by Lean, so their meaning rests on the statements and on the definitions below. The list follows every `Mise` constant a statement mentions, through definitions and inductive types but not into proofs. Lean's core library is not listed. There are {sorted.size} declarations, {total} lines in all, across {mods.length} files.\n\n"
+  let short (t : Name) := (t.replacePrefix `Mise.Headline .anonymous).toString
+  let sets := perThm.map fun (t, ds) => (t, ds.foldl (fun (acc : NameSet) d => acc.insert d) {})
+  out := out ++ "## By theorem\n\nThe number of declarations each theorem depends on, by file. A blank cell means none.\n\n"
+  out := out ++ "| File | " ++ " | ".intercalate (perThm.toList.map fun (t, _) => s!"`{short t}`") ++ " |\n"
+  out := out ++ "|---|" ++ String.join (perThm.toList.map fun _ => "---|") ++ "\n"
+  for m in mods do
+    let ds := sorted.filter (·.1 == m) |>.map (·.2.2.2)
+    let cells := sets.toList.map fun (_, set) =>
+      let k := (ds.filter set.contains).size
+      if k == 0 then "" else toString k
+    out := out ++ s!"| `{modPath m}` | " ++ " | ".intercalate cells ++ " |\n"
+  let totals := perThm.toList.map fun (_, ds) => toString ds.size
+  out := out ++ "| **Total** | " ++ " | ".intercalate totals ++ " |\n"
+  out := out ++ "\n## By file\n\nRead in this order: each file uses only the ones above it.\n\n| Declaration | Lines | Size |\n|---|---|---|\n"
+  for (m, a, b, d) in sorted do
+    out := out ++ s!"| `{d.replacePrefix `Mise .anonymous}` | `{modPath m}:{a}`–{b} | {b - a + 1} |\n"
+  IO.print out

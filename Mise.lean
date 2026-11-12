@@ -14,3 +14,4 @@ import Mise.Model.Sound
 import Mise.Model.Dsl
 import Mise.Model.Minimal
 import Mise.Model.Parallel
+import Mise.Headline

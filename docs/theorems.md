@@ -1,5 +1,7 @@
 # Theorems
 
+To check what is proved, start with `Mise/Headline.lean`. It restates the end-to-end results in terms of the DSL graph a user writes, and each proof applies a theorem from the table below. Lean checks the proofs, so the reader's work is to confirm that each statement says what its docstring says, and that the definitions it uses mean what their names suggest. [trusted.md](trusted.md) lists those definitions with their sizes, in an order where each file uses only the ones before it. `scripts/trusted.sh` generates the list from the statements, and `scripts/check.sh` fails if it is out of date.
+
 The library has one directory per stage, each with a `NOTES.md` giving its definitions, assumptions and deviations from Ninja. `test/MiseTest/Axioms.lean` lists the headline theorems, and `scripts/check.sh` fails unless each depends only on `propext`, `Classical.choice` and `Quot.sound`. There are no `axiom` declarations.
 
 | Stage | Directory | Headline theorems |
