@@ -15,9 +15,17 @@ writes its case to `OUT`.
 A case is a random valid graph and a sequence of steps. Every edge runs the
 helper `test/fz.c`, and `sem` below computes the same contents and reads, so
 the model predicts what real Ninja must do. Each step lists the files to
-write (sources and `mise.toml`), the `build.ninja` that `mise gen` must
-produce, the edges the model's `buildTrace` runs, and every product's
-contents afterwards.
+write (sources and `mise.toml`) and to delete (products, `.ninja_log`,
+`.ninja_deps`), the `build.ninja` that `mise gen` must produce, how to
+build (every edge, some targets, or with one edge failing), the edges the
+model runs, and the contents of every output the case has had afterwards.
+
+Edits that touch a source, delete both logs, or build some targets or with
+a failure stay within `Reach`. Deleting one log keeps `Inv`, since every
+edge that used it becomes dirty, and so does removing an edge that nothing
+reads, though no theorem states either. Deleting a product or adding an
+edge goes outside what the theorems cover, so there the harness tests only
+the model's dirtiness rule against Ninja.
 
 Depfile commands read only their own private main source, shared headers,
 their declared inputs, and generated files named as order-only inputs. That
@@ -140,11 +148,31 @@ def Src.text (s : Src) : String :=
   s!"{s.path} v{s.version}\n" ++ String.join (s.includes.map fun p => s!"include {p}\n") ++
     String.join ((List.range s.comments).map fun k => s!"# note {k}\n")
 
+/-- `GEdge` with JSON instances. -/
+structure EdgeD where
+  rule : String
+  outs : List Path
+  implicitOuts : List Path
+  ins : List Path
+  implicitIns : List Path
+  orderOnly : List Path
+  vars : List (String × String)
+  deriving ToJson, FromJson
+
+def EdgeD.ofEdge (e : GEdge) : EdgeD := ⟨e.rule, e.outs, e.implicitOuts, e.ins, e.implicitIns, e.orderOnly, e.vars⟩
+def EdgeD.toEdge (e : EdgeD) : GEdge := ⟨e.rule, e.outs, e.implicitOuts, e.ins, e.implicitIns, e.orderOnly, e.vars⟩
+
 structure Case where
   srcs : List Src
   edges : List GEdge
+  /-- Edges removed by `rmEdge`, which `addEdge` may put back. -/
+  removed : List GEdge := []
+  /-- How many edges `addEdge` has made, which names the next one. -/
+  fresh : Nat := 0
 
 def Case.graph (c : Case) : Graph := { sources := c.srcs.map (·.path), rules, edges := c.edges.map withIouts }
+
+def products (g : Graph) : List Path := g.edges.flatMap (·.allOuts)
 
 /-- `k` distinct elements of `xs`, in random order. -/
 def sample {α} [Inhabited α] (k : Nat) (xs : List α) : GenM (List α) := do
@@ -160,6 +188,19 @@ def sample {α} [Inhabited α] (k : Nat) (xs : List α) : GenM (List α) := do
 def edgeVars (tag : String) (iouts imps : List Path) : List (String × String) :=
   [("tag", tag)] ++ (if iouts.isEmpty then [] else [("iout", " ".intercalate iouts)]) ++
     (if imps.isEmpty then [] else [("imp", " ".intercalate imps)])
+
+def without (xs avoid : List Path) : List Path := xs.filter fun x => !avoid.contains x
+
+/-- A static edge named `name` that reads from `pool`, with order-only
+inputs from `gens`. -/
+def genStatic (name : String) (rule : String) (pool gens : List Path) : GenM GEdge := do
+  let ins ← sample (1 + (← rand 3)) pool
+  let imp ← sample (← rand 2) (without pool ins)
+  let oo ← sample (← rand 2) (without gens (ins ++ imp))
+  let outs := (List.range (1 + (← rand 2))).map fun k => s!"out/{name}_{k}"
+  let iouts := if ← chance 1 3 then [s!"out/{name}_i"] else []
+  pure { rule, outs, implicitOuts := iouts, ins, implicitIns := imp, orderOnly := oo,
+         vars := edgeVars "t0" iouts imp }
 
 /-- Generator options. `absent` gives half the `restat` edges a command that
 leaves out some outputs (`test/fz.c`, mode `x`), which the model cannot
@@ -185,12 +226,11 @@ def genCase (o : Opts) : GenM Case := do
   for i in [0:ne] do
     let restat ← chance 1 2
     let skip ← if o.absent && restat then chance 1 2 else pure false
-    let fresh (xs : List Path) (avoid : List Path) := xs.filter fun x => !avoid.contains x
     if ← chance 2 5 then
       let main := s!"src/m{i}.c"
       let extra ← sample (← rand 2) gens
-      let imp ← sample (← rand 2) (fresh (plains.map (·.path) ++ hs ++ gens) extra)
-      let oo ← sample (← rand 3) (fresh gens (extra ++ imp))
+      let imp ← sample (← rand 2) (without (plains.map (·.path) ++ hs ++ gens) extra)
+      let oo ← sample (← rand 3) (without gens (extra ++ imp))
       let allowed := hs ++ oo
       mains := mains ++ [{ path := main, allowed, includes := ← sample (← rand 3) allowed }]
       -- One explicit output, as `Graph.check` demands of depfile edges.
@@ -202,30 +242,37 @@ def genCase (o : Opts) : GenM Case := do
                            vars := edgeVars "t0" iouts imp }]
       gens := gens ++ outs ++ iouts
     else
-      let pool := plains.map (·.path) ++ hs ++ gens
-      let ins ← sample (1 + (← rand 3)) pool
-      let imp ← sample (← rand 2) (fresh pool ins)
-      let oo ← sample (← rand 2) (fresh gens (ins ++ imp))
-      let outs := (List.range (1 + (← rand 2))).map fun k => s!"out/e{i}_{k}"
-      let iouts := if ← chance 1 3 then [s!"out/e{i}_i"] else []
-      edges := edges ++ [{ rule := if skip then "stx" else if restat then (if i % 2 == 0 then "stw" else "str")
-                                   else "st",
-                           outs, implicitOuts := iouts, ins,
-                           implicitIns := imp, orderOnly := oo, vars := edgeVars "t0" iouts imp }]
-      gens := gens ++ outs ++ iouts
+      let rule := if skip then "stx" else if restat then (if i % 2 == 0 then "stw" else "str") else "st"
+      let e ← genStatic s!"e{i}" rule (plains.map (·.path) ++ hs ++ gens) gens
+      edges := edges ++ [e]
+      gens := gens ++ e.allOuts
   pure { srcs := plains ++ headers ++ mains, edges }
 
 /-! ## Edits -/
 
 /-- An edit names its source by path and its edge by first output, so it
 still means the same after the shrinker drops other edits or edges. An edit
-whose source or edge is gone does nothing. -/
+whose source or edge is gone, or that would make the graph invalid, does
+nothing. -/
 inductive Edit where
   | bump (src : Path)
   | comment (src : Path)
   | addInc (src : Path) (p : Path)
   | rmInc (src : Path) (p : Path)
   | retag (out : Path)
+  /-- Write a source again with the same contents, so only its mtime changes. -/
+  | touch (src : Path)
+  /-- Delete a product. -/
+  | delOut (out : Path)
+  /-- Delete `.ninja_log`. -/
+  | delLog
+  /-- Delete `.ninja_deps`. -/
+  | delDeps
+  /-- Remove the edge with this first output, when no edge reads its outputs.
+  The outputs stay on disk. -/
+  | rmEdge (out : Path)
+  /-- Append an edge, when its inputs exist and its outputs are new. -/
+  | addEdge (e : EdgeD)
   deriving Inhabited, ToJson, FromJson
 
 def Edit.describe : Edit → String
@@ -234,6 +281,12 @@ def Edit.describe : Edit → String
   | .addInc s p => s!"include {p} in {s}"
   | .rmInc s p => s!"drop include {p} from {s}"
   | .retag o => s!"retag {o}"
+  | .touch s => s!"touch {s}"
+  | .delOut o => s!"delete {o}"
+  | .delLog => "delete .ninja_log"
+  | .delDeps => "delete .ninja_deps"
+  | .rmEdge o => s!"remove edge {o}"
+  | .addEdge e => s!"add edge {e.outs.headD ""}"
 
 def bumpTag (vs : List (String × String)) : List (String × String) :=
   vs.map fun (k, v) => if k == "tag" then (k, "t" ++ toString ((String.ofList (v.toList.drop 1)).toNat! + 1)) else (k, v)
@@ -241,21 +294,50 @@ def bumpTag (vs : List (String × String)) : List (String × String) :=
 def Case.modSrc (c : Case) (p : Path) (f : Src → Src) : Case :=
   { c with srcs := c.srcs.map fun s => if s.path == p then f s else s }
 
+/-- Whether another edge reads one of the edge's outputs. -/
+def Case.read (c : Case) (e : GEdge) : Bool :=
+  c.edges.any fun g => g != e && g.allIns.any e.allOuts.contains
+
+/-- Whether `e` can be appended: its inputs exist and its outputs are new. -/
+def Case.canAdd (c : Case) (e : GEdge) : Bool :=
+  let used := c.srcs.map (·.path) ++ products c.graph
+  e.allIns.all used.contains && e.allOuts.all (!used.contains ·)
+
 def Case.apply (c : Case) : Edit → Case
   | .bump p => c.modSrc p fun s => { s with version := s.version + 1 }
   | .comment p => c.modSrc p fun s => { s with comments := s.comments + 1 }
   | .addInc p q => c.modSrc p fun s => { s with includes := s.includes ++ [q] }
   | .rmInc p q => c.modSrc p fun s => { s with includes := s.includes.erase q }
   | .retag o => { c with edges := c.edges.map fun g => if g.outs.headD "" == o then { g with vars := bumpTag g.vars } else g }
+  | .touch _ | .delOut _ | .delLog | .delDeps => c
+  | .rmEdge o => match c.edges.find? (·.outs.headD "" == o) with
+    | some e => if c.read e then c else { c with edges := c.edges.erase e, removed := c.removed ++ [e] }
+    | none => c
+  | .addEdge d =>
+    let e := d.toEdge
+    if c.canAdd e then { c with edges := c.edges ++ [e], removed := c.removed.erase e, fresh := c.fresh + 1 } else c
 
-/-- Every edit possible now, grouped by kind. -/
+/-- Every edit possible now, grouped by kind, except new edges. -/
 def Case.candidates (c : Case) : List (List Edit) :=
   let ps := c.srcs.map (·.path)
   let adds := c.srcs.flatMap fun s => (s.allowed.filter fun p => !s.includes.contains p).map (.addInc s.path)
   let rms := c.srcs.flatMap fun s => s.includes.map (.rmInc s.path)
-  [ps.map .bump, ps.map .comment, adds, rms, c.edges.map fun e => .retag (e.outs.headD "")].filter (!·.isEmpty)
+  let firsts := c.edges.map (·.outs.headD "")
+  [ps.map .bump, ps.map .comment, adds, rms, firsts.map .retag, ps.map .touch,
+   (products c.graph).map .delOut, [.delLog, .delDeps],
+   ((c.edges.filter fun e => !c.read e).map (·.outs.headD "")).map .rmEdge,
+   ((c.removed.filter c.canAdd).map EdgeD.ofEdge).map .addEdge].filter (!·.isEmpty)
 
-def genEdit (c : Case) : GenM Edit := do pick (← pick c.candidates)
+/-- A new static edge reading sources and products. -/
+def genAdd (c : Case) : GenM Edit := do
+  let gens := products c.graph
+  let pool := ((c.srcs.filter fun s => !s.path.startsWith "src/m").map (·.path)) ++ gens
+  let rule := if ← chance 1 2 then (if c.fresh % 2 == 0 then "stw" else "str") else "st"
+  let e ← genStatic s!"a{c.fresh}" rule pool gens
+  pure (.addEdge (.ofEdge e))
+
+def genEdit (c : Case) : GenM Edit := do
+  if ← chance 1 12 then genAdd c else pick (← pick c.candidates)
 
 /-! ## TOML -/
 
@@ -280,8 +362,6 @@ def tomlOf (g : Graph) : String := Id.run do
 
 /-! ## Running the model -/
 
-def products (g : Graph) : List Path := g.edges.flatMap (·.allOuts)
-
 def jsonMap (kvs : List (String × String)) : Json := Json.mkObj (kvs.map fun (k, v) => (k, Json.str v))
 
 def sortStrs (xs : List String) : List String := (xs.toArray.qsort (· < ·)).toList
@@ -297,10 +377,79 @@ def flatten (paths : List Path) (st : St String) : St String :=
   { fs := fun p => (fs.lookup p).bind id, log := fun p => (log.lookup p).bind id,
     deps := fun p => (deps.lookup p).bind id, clock := st.clock }
 
-/-- One step: write the changed files, check the manifest, build, and record
-what the model runs and the contents it leaves. -/
-def step (edits : List String) (old : Option Case) (c : Case) (st : St String) :
-    Except String (Json × St String) := do
+/-- The edges Ninja visits to build `ts`: those whose outputs the targets
+need, through explicit, implicit and order-only inputs, in manifest order.
+In a schedule every reader follows the edges it reads from, so one pass
+from the end finds them all. Building them with `buildTrace` is a sequence
+of `Reach` steps. -/
+def closure (es : List MEdge) (ts : List Path) : List MEdge :=
+  (es.foldr (fun e (acc, need) => if e.outs.any need.contains then (e :: acc, need ++ e.reads) else (acc, need))
+    ([], ts)).1
+
+/-- A build in which the edge with first output `f` fails before it reads or
+writes anything, under `ninja -k 0`: Ninja runs every edge that does not
+depend on the failed one, and none that does. The edges that finish are a
+sublist of the manifest, so this too is a sequence of `Reach` steps. Also
+returns the edges run and whether `f` was tried. -/
+def failTrace (f : Path) : List MEdge → List Path → St String → St String × List MEdge × Bool
+  | [], _, st => (st, [], false)
+  | e :: es, bad, st =>
+    if e.reads.any bad.contains then failTrace f es (bad ++ e.outs) st
+    else if e.outs.headD "" == f && st.dirty e then
+      let r := failTrace f es (bad ++ e.outs) st
+      (r.1, r.2.1, true)
+    else
+      let r := failTrace f es bad (st.step sem e)
+      (r.1, if st.dirty e then e :: r.2.1 else r.2.1, r.2.2)
+
+/-- A build that Ninja stopped when the edge with first output `f` failed,
+under the default `-k 1`: Ninja starts no new edge after the failure, and
+which edges finished first depends on its scheduling, which the model does
+not fix. So the driver tells the model which edges finished (`fin`) and
+whether `f` was tried, and the model runs exactly those edges in manifest
+order, a sequence of `Reach` steps. It checks that each one was dirty on its
+turn and read no output that an unfinished dirty edge, or `f`, had yet to
+write, and, when `f` was not tried, that Ninja left no dirty edge behind. -/
+def stopTrace (f : Path) (fin : List Path) (tried : Bool) :
+    List MEdge → List Path → St String → Except String (St String × List MEdge)
+  | [], _, st => pure (st, [])
+  | e :: es, bad, st => do
+    let o := e.outs.headD ""
+    if fin.contains o then
+      unless st.dirty e do throw s!"Ninja ran {o}, which the model says is clean"
+      if let some p := e.reads.find? bad.contains then throw s!"Ninja ran {o} before {p} was up to date"
+      let (st', ran) ← stopTrace f fin tried es bad (st.run sem e)
+      pure (st', e :: ran)
+    else if st.dirty e then
+      if !tried then throw s!"Ninja stopped without running {o}, which the model says is dirty"
+      if o == f && e.reads.any bad.contains then throw s!"Ninja tried {o} before its inputs were up to date"
+      stopTrace f fin tried es (bad ++ e.outs) st
+    else
+      if o == f && tried then throw s!"Ninja tried {o}, which the model says is clean"
+      stopTrace f fin tried es bad st
+
+/-- How a step builds. -/
+structure StepD where
+  edits : List Edit := []
+  /-- Build only these targets; every edge when empty. -/
+  targets : List Path := []
+  /-- The edge with this first output fails, and Ninja runs with `-k 0`, or
+  stops at the failure when `stop` holds. -/
+  fail : Option Path := none
+  stop : Bool := false
+  /-- For a `stop` step, what the driver saw: the edges that finished and
+  whether the failing edge was tried. Without it the model guesses as for
+  `-k 0`, and the driver recomputes the case once it has seen the build. -/
+  finished : Option (List Path) := none
+  tried : Bool := false
+  deriving ToJson, FromJson, Inhabited
+
+/-- One step: write the changed files and apply the other edits, check the
+manifest, build, and record what the model runs and the contents it
+leaves. `known` lists every path the case has used, so that the state keeps
+the outputs of removed edges. -/
+def step (sd : StepD) (old : Option Case) (c : Case) (known : List Path) (st : St String) :
+    Except String (Json × St String × List Path) := do
   let g := c.graph
   unless g.check do throw "the graph is not valid"
   let toml := tomlOf g
@@ -308,84 +457,107 @@ def step (edits : List String) (old : Option Case) (c : Case) (st : St String) :
   match Toml.load toml with
   | .error e => throw s!"mise.toml does not load: {e}"
   | .ok vg => unless print (emit vg.1) == ninja do throw "mise.toml does not read back as the graph"
-  let changed := c.srcs.filter fun s => match old with
+  let touched := sd.edits.filterMap fun | .touch p => some p | _ => none
+  let changed := c.srcs.filter fun s => touched.contains s.path || match old with
     | some o => (o.srcs.find? (·.path == s.path)).map (·.text) != some s.text
     | none => true
   let tomlChanged := match old with
     | some o => tomlOf o.graph != toml
     | none => true
+  let known := dedup (known ++ g.sources ++ products g)
+  let outs := known.filter (!g.isSource ·)
+  let dels := dedup (sd.edits.filterMap fun | .delOut p => some p | _ => none) |>.filter outs.contains
+  let delLog := sd.edits.any fun | .delLog => true | _ => false
+  let delDeps := sd.edits.any fun | .delDeps => true | _ => false
   let st := st.edits (changed.map fun s => (s.path, s.text))
+  let st := { st with fs := fun p => if dels.contains p then none else st.fs p }
+  let st := if delLog then { st with log := fun _ => none } else st
+  let st := if delDeps then { st with deps := fun _ => none } else st
   let es := (emit g).medges
-  let (st', ran) := buildTrace sem es st
-  let st' := flatten (g.sources ++ products g) st'
-  unless (buildTrace sem es st').2.isEmpty do throw "the model is not idempotent"
+  let fail := sd.fail.filter fun f => es.any (·.outs.headD "" == f)
+  let targets := sd.targets.filter (products g).contains
+  let (st', ran, tried) ← match fail, sd.stop, sd.finished with
+    | some f, true, some fin => do
+      let (st', ran) ← stopTrace f fin sd.tried es [] st
+      pure (st', ran, sd.tried)
+    | some f, _, _ => pure (failTrace f es [] st)
+    | none, _, _ => let r := buildTrace sem (if targets.isEmpty then es else closure es targets) st; pure (r.1, r.2, false)
+  let st' := flatten known st'
+  if fail.isNone then
+    unless (buildTrace sem (if targets.isEmpty then es else closure es targets) st').2.isEmpty do
+      throw "the model is not idempotent"
   for e in es do
     if e.dyn then
       for o in e.outs do
         for k in (st'.deps o).getD [] do
           unless g.isSource k || e.reads.contains k do throw s!"{o} read {k}, which it may not"
   let write := changed.map (fun s => (s.path, s.text)) ++ (if tomlChanged then [("mise.toml", toml)] else [])
-  let j := Json.mkObj [("edits", toJson edits), ("write", jsonMap write), ("ninja", Json.str ninja),
-    ("ran", toJson (sortStrs (ran.map (·.outs.headD "")))),
-    ("products", jsonMap ((products g).map fun p => (p, st'.content p)))]
-  pure (j, st')
+  let delete := dels ++ (if delLog then [".ninja_log"] else []) ++ (if delDeps then [".ninja_deps"] else [])
+  let j := Json.mkObj [("edits", toJson (sd.edits.map (·.describe))), ("write", jsonMap write),
+    ("delete", toJson delete), ("ninja", Json.str ninja), ("targets", toJson targets),
+    ("fail", toJson fail), ("stop", toJson (fail.isSome && sd.stop)), ("tried", toJson tried),
+    ("edges", toJson (c.edges.map EdgeD.ofEdge)), ("ran", toJson (sortStrs (ran.map (·.outs.headD "")))),
+    ("products", Json.mkObj (outs.map fun p => (p, match st'.fs p with
+      | some (v, _) => Json.str v
+      | none => Json.null)))]
+  pure (j, st', known)
 
 def empty : St String := { fs := fun _ => none, log := fun _ => none, clock := 0 }
 
-def genSteps (c0 : Case) (n : Nat) : GenM (List (List Edit)) := do
+/-- `n` steps of edits. All but the last build may build some targets only
+(one in five), have an edge fail under `-k 0` (one in ten), or stop at a
+failing edge (one in ten). Under `Opts.absent` no build fails. -/
+def genSteps (o : Opts) (c0 : Case) (n : Nat) : GenM (List StepD) := do
   let mut c := c0
   let mut out := []
-  for _ in [0:n] do
+  for i in [0:n] do
     let k ← if ← chance 1 10 then pure 0 else pure (1 + (← rand 3))
     let mut es := []
     for _ in [0:k] do
       let e ← genEdit c
       c := c.apply e
       es := es ++ [e]
-    out := out ++ [es]
+    let r ← rand 10
+    let mut sd : StepD := { edits := es }
+    -- Under `absent`, Ninja reruns every edge with a missing output, so it
+    -- tries a failing edge, and finishes edges before a stop, that the model
+    -- finds clean; those cases build fully instead.
+    if i + 1 == n || r ≥ 4 || c.edges.isEmpty || (o.absent && r ≥ 2) then pure ()
+    else if r < 2 then sd := { sd with targets := ← sample (1 + (← rand 2)) (products c.graph) }
+    else
+      -- Ninja schedules an edge with readers early, so a stop there leaves
+      -- more edges unstarted.
+      let read := c.edges.filter c.read
+      let pool := if r == 3 && !read.isEmpty then read else c.edges
+      sd := { sd with fail := some (← pick (pool.map (·.outs.headD ""))), stop := r == 3 }
+    out := out ++ [sd]
   pure out
 
 /-! ## Case descriptions
 
 A description is a case before the model runs: the sources, the edges and
-the edits. `fuzzgen` writes it into every case file, and `fuzzgen expect`
+the steps. `fuzzgen` writes it into every case file, and `fuzzgen expect`
 reads one back and recomputes the expectations, so `test/fuzz.py` can
 shrink a failing case by editing its description. -/
-
-/-- `GEdge` with JSON instances. -/
-structure EdgeD where
-  rule : String
-  outs : List Path
-  implicitOuts : List Path
-  ins : List Path
-  implicitIns : List Path
-  orderOnly : List Path
-  vars : List (String × String)
-  deriving ToJson, FromJson
-
-def EdgeD.ofEdge (e : GEdge) : EdgeD := ⟨e.rule, e.outs, e.implicitOuts, e.ins, e.implicitIns, e.orderOnly, e.vars⟩
-def EdgeD.toEdge (e : EdgeD) : GEdge := ⟨e.rule, e.outs, e.implicitOuts, e.ins, e.implicitIns, e.orderOnly, e.vars⟩
 
 structure Desc where
   srcs : List Src
   edges : List EdgeD
-  steps : List (List Edit)
+  steps : List StepD
   deriving ToJson, FromJson
 
-def runCase (c0 : Case) (steps : List (List Edit)) : Except String Json := do
-  let (j0, st0) ← step [] none c0 empty
+def runCase (c0 : Case) (steps : List StepD) : Except String Json := do
+  let (j0, st0, k0) ← step {} none c0 [] empty
   let mut st := st0
+  let mut known := k0
   let mut c := c0
   let mut js := #[j0]
-  for es in steps do
-    let mut c' := c
-    let mut ds := []
-    for e in es do
-      ds := ds ++ [e.describe]
-      c' := c'.apply e
-    let (j, st') ← step ds (some c) c' st
+  for sd in steps do
+    let c' := sd.edits.foldl Case.apply c
+    let (j, st', known') ← step sd (some c) c' known st
     js := js.push j
     st := st'
+    known := known'
     c := c'
   let desc : Desc := ⟨c0.srcs, c0.edges.map .ofEdge, steps⟩
   pure (Json.mkObj [("desc", toJson desc), ("steps", Json.arr js)])
@@ -395,11 +567,11 @@ def seeded (seed i : Nat) : Rng := Id.run do
   for _ in [0:4] do g := g.next.2
   g
 
-def genOne (o : Opts) (seed i : Nat) : Case × List (List Edit) :=
-  let gen : GenM (Case × List (List Edit)) := do
+def genOne (o : Opts) (seed i : Nat) : Case × List StepD :=
+  let gen : GenM (Case × List StepD) := do
     let c ← genCase o
     let n := 3 + (← rand 6)
-    pure (c, ← genSteps c n)
+    pure (c, ← genSteps o c n)
   (gen.run (seeded seed i)).1
 
 end MiseTest.Fuzz
@@ -410,7 +582,7 @@ def main (args : List String) : IO UInt32 := do
     let d ← match Json.parse (← IO.FS.readFile src) >>= fromJson? (α := Desc) with
       | .ok d => pure d
       | .error e => IO.eprintln s!"{src}: {e}"; return 2
-    match runCase ⟨d.srcs, d.edges.map (·.toEdge)⟩ d.steps with
+    match runCase { srcs := d.srcs, edges := d.edges.map (·.toEdge) } d.steps with
     | .error e => IO.eprintln s!"{src}: {e}"; return 1
     | .ok j => IO.FS.writeFile dst j.compress; return 0
   let (dir, n, seed, o) := match args with

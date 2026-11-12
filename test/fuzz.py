@@ -1,17 +1,30 @@
 #!/usr/bin/env python3
 """Random-graph harness: replay cases from `lake exe fuzzgen` against real Ninja.
 
-Each case (`<i>.json`) holds a description (sources, edges and edits) and
-the steps the model computed from it. For each step the driver writes the
-step's files, runs `mise gen` and compares `build.ninja` with the expected
-text, then runs `ninja` with a random `-j` level. It then checks:
+Each case (`<i>.json`) holds a description (sources, edges and steps of
+edits) and the steps the model computed from it. For each step the driver
+writes and deletes the step's files (deletions are products, `.ninja_log`
+and `.ninja_deps`), runs `mise gen` and compares `build.ninja` with the
+expected text, then runs `ninja` with a random `-j` level. A step builds
+every edge, or only some targets (`ninja TARGET...`), or has one edge fail:
+the helper fails when `FZ_FAIL` names its first output. Ninja then runs
+with `-k 0`, so it builds everything that does not depend on the failure,
+or, for a step marked `stop`, with the default `-k 1`, so it stops. Which
+edges finish before a stop depends on Ninja's scheduling, so the driver
+gives the edges that finished to `fuzzgen expect`, which checks them
+against the model and recomputes the later steps. After each build the
+driver checks:
 
 1. the edges that ran (the helper `fz` logs each run's first output to
-   `fz.log`) are exactly the ones the model's `buildTrace` runs, each once;
+   `fz.log`) are exactly the ones the model runs, each once;
 2. the runs form a schedule, as `parallel_equiv` assumes (see
    `check_schedule`);
-3. every product holds the contents the model computes;
-4. `ninja -n` reports no work.
+3. the failing edge was tried, and Ninja failed, exactly when the model
+   says so;
+4. every output the case has had, removed edges' included, holds the
+   contents the model computes, or is missing when the model says so;
+5. `ninja -n` reports no work (with the targets, for a partial build;
+   not checked after a failed build).
 
 After the last step it checks that `ninja -t missingdeps` finds nothing.
 
@@ -19,7 +32,7 @@ After the last step it checks that `ninja -t missingdeps` finds nothing.
 commands leave out some outputs. Ninja then reruns an edge with a missing
 output in every build, which the model does not (see `Mise/Model/NOTES.md`).
 The option lets such edges run in addition to the model's, and replaces
-check 4: a second build may run only such edges, must pass check 2 and
+check 5: a second build may run only such edges, must pass check 2 and
 must leave the same contents (`ninja -n` does not restat, so it would list
 their dependents).
 
@@ -27,7 +40,8 @@ Edits need fresh mtimes: after writing a file the driver waits until its
 mtime is newer than every file in the case directory.
 
 A failing case is shrunk: the driver drops steps, edges, edits, inputs,
-includes and sources from its description one at a time, asks
+includes and sources from its description one at a time, turns partial
+and failing builds into full builds and stops into `-k 0` failures, asks
 `fuzzgen expect` for the model's steps on the smaller description, and
 keeps the change when the case still fails the same check with the same
 `-j` levels. It repeats until no single change keeps the failure, and
@@ -46,6 +60,7 @@ import shutil
 import subprocess
 import sys
 import time
+from collections import Counter
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
@@ -62,11 +77,15 @@ class Fail(Exception):
         self.kind = kind
 
 
-def run(cmd, cwd):
-    r = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True)
-    if r.returncode != 0:
+def run(cmd, cwd, env=None, ok=(0,)):
+    r = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, env=env)
+    if r.returncode not in ok:
         raise Fail("exit", f"{' '.join(map(str, cmd))} exited {r.returncode}:\n{r.stdout}{r.stderr}")
-    return r.stdout
+    return r
+
+
+def lines(p):
+    return p.read_text().split() if p.exists() else []
 
 
 def newest(d):
@@ -104,7 +123,7 @@ def parse_log(text):
     return order, runs
 
 
-def check_schedule(desc, order, runs, stats):
+def check_schedule(edges, order, runs, stats):
     """Check the assumptions behind `parallel_equiv` (Mise/Model/Parallel.lean).
 
     The theorem treats a parallel run as the sequence of its commands by
@@ -132,7 +151,7 @@ def check_schedule(desc, order, runs, stats):
     writes, and the sequence by start time has the parallel run's effect."""
     if len(runs) != len(order):
         return  # a helper without timestamps (--fz)
-    edges = {e["outs"][0]: e for e in desc["edges"]}
+    edges = {e["outs"][0]: e for e in edges}
     outs = {k: e["outs"] + e["implicitOuts"] for k, e in edges.items()}
     prod = {o: k for k, os in outs.items() for o in os}
     reads = {k: e["ins"] + e["implicitIns"] + e["orderOnly"] for k, e in edges.items()}
@@ -182,68 +201,104 @@ def new_stats():
     return {"max": 0, "pairs": 0, "steps": 0, "multi": 0}
 
 
-def with_missing(d, desc):
+def with_missing(d, edges):
     """The first outputs of the edges with a missing output."""
-    return {e["outs"][0] for e in desc["edges"] if not all((d / o).exists() for o in e["outs"] + e["implicitOuts"])}
+    return {e["outs"][0] for e in edges if not all((d / o).exists() for o in e["outs"] + e["implicitOuts"])}
 
 
 def check_products(d, s):
+    """Every output the case has had holds the model's contents, or is
+    missing when the model has no file (`null`). An `x` command's left-out
+    output is missing on disk, and the model gives it the empty contents a
+    missing file reads as, so a missing file also matches `""`."""
     for p, v in s["products"].items():
-        # A missing file reads as empty, as in the model.
-        got = (d / p).read_text() if (d / p).exists() else ""
+        got = (d / p).read_text() if (d / p).exists() else None if v is None else ""
         if got != v:
             raise Fail("contents", f"{p} holds {got!r}, the model says {v!r}")
 
 
-def ran_edges(d, jobs):
-    """Run `ninja` and return `parse_log` of the runs it made."""
+def ran_edges(d, jobs, targets=(), env=None, fail=False, k0=False):
+    """Run `ninja` on `targets` (every edge when empty) and return
+    `parse_log` of the runs it made and Ninja's result. With `fail`, an edge
+    may fail through `FZ_FAIL`, so exit status 1 is allowed; with `k0`, run
+    with `-k 0`."""
     log = d / "fz.log"
     log.unlink(missing_ok=True)
-    run(["ninja", jobs], d)
+    r = run(["ninja", jobs] + (["-k", "0"] if k0 else []) + list(targets), d, env, ok=(0, 1) if fail else (0,))
     ran, runs = parse_log(log.read_text()) if log.exists() else ([], {})
     if len(ran) != len(set(ran)):
         raise Fail("twice", f"an edge ran twice: {sorted(ran)}")
-    return ran, runs
+    return ran, runs, r
 
 
 def replay_steps(d, steps, jobs, fz, desc, stats=None, missing_ok=False):
     """Replay steps in a fresh directory `d`. Returns None, or (kind, message).
-    With `missing_ok`, allow the differences `--missing-ok` describes."""
+    After a build that stopped at a failure, ask `fuzzgen expect` for the
+    model's steps given the edges that finished, and go on with those. With
+    `missing_ok`, allow the differences `--missing-ok` describes."""
     stats = stats if stats is not None else new_stats()
     shutil.rmtree(d, ignore_errors=True)
     d.mkdir(parents=True)
     (d / "fz").symlink_to(fz)
-    for i, s in enumerate(steps):
-        where = f"step {i} ({'; '.join(s['edits']) or 'no edits'}, {jobs[i]})"
+    tmp = d.with_name(d.name + ".expect")
+    tmp.mkdir(parents=True, exist_ok=True)
+    desc = copy.deepcopy(desc)
+    for i in range(len(steps)):
+        s = steps[i]
+        mode = f"{'stop at' if s['stop'] else 'fail'} {s['fail']}" if s["fail"] else f"build {' '.join(s['targets'])}" if s["targets"] else "build all"
+        where = f"step {i} ({'; '.join(s['edits']) or 'no edits'}; {mode}, {jobs[i]})"
         try:
             write_fresh(d, s["write"])
+            for p in s["delete"]:
+                (d / p).unlink(missing_ok=True)
             run([MISE, "gen", "."], d)
             if (d / "build.ninja").read_text() != s["ninja"]:
                 raise Fail("manifest", "build.ninja differs from the expected manifest")
-            ok = with_missing(d, desc) if missing_ok and i > 0 else set()
-            ran, runs = ran_edges(d, jobs[i])
+            ok = with_missing(d, s["edges"]) if missing_ok and i > 0 else set()
+            fails = d / "fz.fail"
+            fails.unlink(missing_ok=True)
+            env = dict(os.environ)
+            env.pop("FZ_FAIL", None)
+            if s["fail"]:
+                env["FZ_FAIL"] = s["fail"]
+            fail = bool(s["fail"])
+            ran, runs, r = ran_edges(d, jobs[i], s["targets"], env, fail=fail, k0=fail and not s["stop"])
+            tried = lines(fails)
+            if s["stop"]:
+                st = desc["steps"][i - 1]
+                st["finished"], st["tried"] = ran, bool(tried)
+                steps, err = expect(desc, tmp)
+                if steps is None:
+                    raise Fail("stop", f"the model rejects the edges Ninja ran {ran}: {err.split(': ', 1)[-1]}")
+                s = steps[i]
+            if tried != ([s["fail"]] if s["tried"] else []):
+                raise Fail("tried", f"the failing edge ran {len(tried)} times, the model says {int(s['tried'])}")
+            if (r.returncode != 0) != s["tried"]:
+                raise Fail("exit", f"ninja exited {r.returncode}:\n{r.stdout}{r.stderr}")
             extra = sorted(set(ran) - set(s["ran"]) - ok)
             missing = sorted(set(s["ran"]) - set(ran))
             if extra or missing:
                 raise Fail("ran", f"ran differs from the model: extra {extra}, missing {missing}")
             stats["multi"] += jobs[i] != "-j1" and len(ran) > 1
-            check_schedule(desc, ran, runs, stats)
+            check_schedule(s["edges"], ran, runs, stats)
             check_products(d, s)
+            if s["tried"]:
+                continue  # a failed build leaves work to do
             if not missing_ok:
-                if "no work to do" not in run(["ninja", "-n"], d):
+                if "no work to do" not in run(["ninja", "-n"] + s["targets"], d).stdout:
                     raise Fail("rerun", "ninja -n has work to do")
             else:
-                again, again_runs = ran_edges(d, jobs[i])
+                again, again_runs, _ = ran_edges(d, jobs[i], s["targets"])
                 # Check the second build's schedule too, but keep it out of the overlap statistics.
-                check_schedule(desc, again, again_runs, new_stats())
-                again = sorted(set(again) - with_missing(d, desc))
+                check_schedule(s["edges"], again, again_runs, new_stats())
+                again = sorted(set(again) - with_missing(d, s["edges"]))
                 if again:
                     raise Fail("rerun", f"a second build ran {again}, which have every output")
                 check_products(d, s)
         except Fail as e:
             return e.kind, f"{where}: {e}"
     try:
-        md = run(["ninja", "-t", "missingdeps"], d)
+        md = run(["ninja", "-t", "missingdeps"], d).stdout
     except Fail as e:
         return e.kind, str(e)
     if "No missing dependencies" not in md:
@@ -252,11 +307,12 @@ def replay_steps(d, steps, jobs, fz, desc, stats=None, missing_ok=False):
 
 
 def expect(desc, tmp):
-    """The model's steps for a description, or None if fuzzgen rejects it."""
+    """The model's steps for a description and None, or None and fuzzgen's
+    reason for rejecting it."""
     src, dst = tmp / "desc.json", tmp / "case.json"
     src.write_text(json.dumps(desc))
     r = subprocess.run([FUZZGEN, "expect", src, dst], capture_output=True, text=True)
-    return json.loads(dst.read_text())["steps"] if r.returncode == 0 else None
+    return (json.loads(dst.read_text())["steps"], None) if r.returncode == 0 else (None, r.stderr.strip())
 
 
 def refs(desc, path):
@@ -267,11 +323,24 @@ def refs(desc, path):
     )
 
 
+def mentions(x, path):
+    if isinstance(x, dict):
+        return any(mentions(v, path) for v in x.values())
+    if isinstance(x, list):
+        return any(mentions(v, path) for v in x)
+    return x == path
+
+
 def forget(desc, path):
-    """Remove `path` from every `allowed` list and every edit that names it."""
+    """Remove `path` from every `allowed` list, every edit that names it, and
+    every step's targets."""
     for s in desc["srcs"]:
         s["allowed"] = [a for a in s["allowed"] if a != path]
-    desc["steps"] = [[x for x in st if path not in next(iter(x.values())).values()] for st in desc["steps"]]
+    for st in desc["steps"]:
+        st["edits"] = [x for x in st["edits"] if not mentions(x, path)]
+        st["targets"] = [t for t in st["targets"] if t != path]
+        if st["fail"] == path:
+            st["fail"] = None
 
 
 def set_vars(e):
@@ -303,9 +372,22 @@ def candidates(desc, jobs):
             forget(c, o)
         yield c, jobs
     for k, st in enumerate(steps):
-        for j in range(len(st)):
+        if st["fail"] or st["targets"]:
             c = copy.deepcopy(desc)
-            del c["steps"][k][j]
+            c["steps"][k].update(fail=None, targets=[], stop=False)
+            yield c, jobs
+        if st["stop"]:
+            c = copy.deepcopy(desc)
+            c["steps"][k]["stop"] = False
+            yield c, jobs
+        if len(st["targets"]) > 1:
+            for t in st["targets"]:
+                c = copy.deepcopy(desc)
+                c["steps"][k]["targets"].remove(t)
+                yield c, jobs
+        for j in range(len(st["edits"])):
+            c = copy.deepcopy(desc)
+            del c["steps"][k]["edits"][j]
             yield c, jobs
     for i, e in enumerate(desc["edges"]):
         for key in ["ins", "implicitIns", "orderOnly"]:
@@ -346,7 +428,7 @@ def candidates(desc, jobs):
 
 def size(desc):
     return f"{len(desc['edges'])} edges, {len(desc['srcs'])} sources, {len(desc['steps'])} edit steps, " \
-        f"{sum(map(len, desc['steps']))} edits"
+        f"{sum(len(s['edits']) for s in desc['steps'])} edits"
 
 
 def shrink(name, desc, jobs, kind, fz, missing_ok):
@@ -358,14 +440,14 @@ def shrink(name, desc, jobs, kind, fz, missing_ok):
         progress = False
         for c, cj in candidates(desc, jobs):
             trials += 1
-            steps = expect(c, tmp)
+            steps, _ = expect(c, tmp)
             if steps is None:
                 continue
             r = replay_steps(tmp / "run", steps, cj, fz, c, missing_ok=missing_ok)
             if r and r[0] == kind:
                 desc, jobs, progress = c, cj, True
                 break
-    steps = expect(desc, tmp)
+    steps, _ = expect(desc, tmp)
     r = replay_steps(OUT / "shrunk-run" / name, steps, jobs, fz, desc, missing_ok=missing_ok)
     shrunk = OUT / "shrunk"
     shrunk.mkdir(parents=True, exist_ok=True)
@@ -379,13 +461,16 @@ def replay(case, seed, keep, fz, do_shrink, missing_ok):
     data = json.loads(case.read_text())
     steps = data["steps"]
     rng = random.Random(f"{seed}/{name}")
-    jobs = data.get("jobs") or [rng.choice(JOBS) for _ in steps]
+    # A stopped build with many jobs in flight usually finishes every edge
+    # that does not depend on the failure, so stopped builds use few jobs.
+    jobs = data.get("jobs") or [rng.choice(JOBS[:2] if s["stop"] else JOBS) for s in steps]
     d = OUT / "run" / name
     stats = new_stats()
     r = replay_steps(d, steps, jobs, fz, data["desc"], stats, missing_ok)
     if r is None:
         if not keep:
             shutil.rmtree(d)
+            shutil.rmtree(d.with_name(d.name + ".expect"))
         return None, stats
     kind, msg = r
     report = f"case {name}: {msg}"
@@ -396,6 +481,21 @@ def replay(case, seed, keep, fz, do_shrink, missing_ok):
         report += f"\n  {r2[1] if r2 else 'the shrunk case passes on replay (flaky?)'}"
         report += f"\n  replay: test/fuzz.py test/out/fuzz/shrunk {name}"
     return report, stats
+
+
+def summary(cases):
+    """Counts of steps by kind and of edits by kind, for the summary line."""
+    steps, modes, kinds = 0, Counter(), Counter()
+    for c in cases:
+        data = json.loads(c.read_text())
+        steps += len(data["steps"])
+        for s in data["steps"][1:]:
+            modes["stop" if s["stop"] else ("failed" if s["tried"] else "fail-skipped")
+                  if s["fail"] else "partial" if s["targets"] else "full"] += 1
+        for st in data["desc"]["steps"]:
+            kinds.update(e if isinstance(e, str) else next(iter(e)) for e in st["edits"])
+    fmt = lambda cnt: ", ".join(f"{k} {v}" for k, v in sorted(cnt.items()))
+    return f"{steps} steps\n  builds after the first: {fmt(modes)}\n  edits: {fmt(kinds)}"
 
 
 def main():
@@ -427,8 +527,7 @@ def main():
         mo = [a.missing_ok] * n
         results = list(ex.map(replay, cases, [a.seed] * n, [a.keep] * n, [fz] * n, [False] * n, mo))
         fails = [(c, r) for c, (r, _) in zip(cases, results) if r]
-        steps = sum(len(json.loads(c.read_text())["steps"]) for c in cases)
-        print(f"fuzz: {n - len(fails)}/{n} cases passed, {steps} steps, {time.time() - t:.1f}s")
+        print(f"fuzz: {n - len(fails)}/{n} cases passed in {time.time() - t:.1f}s, {summary(cases)}")
         st = [s for _, s in results]
         print(f"fuzz: of {sum(s['multi'] for s in st)} builds with -j above 1 that ran two or more edges, "
               f"{sum(s['steps'] for s in st)} ran edges at the same time; "

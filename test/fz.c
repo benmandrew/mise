@@ -25,6 +25,10 @@
    to N-1 microseconds after entry and again between reading and writing,
    so that parallel runs overlap more.
 
+   When the environment variable FZ_FAIL names the first output, the
+   command instead appends it to `fz.fail` and exits 1, before it reads or
+   writes anything else. The harness uses this to stop a build part way.
+
    `fzContent` and `fzDyn` in test/MiseTest/Fuzz.lean compute the same
    contents and reads; the harness compares the two. */
 #include <fcntl.h>
@@ -72,6 +76,18 @@ static char *slurp(const char *path, size_t *len) {
   return buf;
 }
 
+static int appendLine(const char *path, const char *s) {
+  int fd = open(path, O_WRONLY | O_APPEND | O_CREAT, 0644);
+  if (fd < 0) return 0;
+  size_t n = strlen(s);
+  char *line = malloc(n + 1);
+  memcpy(line, s, n);
+  line[n] = '\n';
+  int ok = write(fd, line, n + 1) == (ssize_t)(n + 1);
+  free(line);
+  return close(fd) == 0 && ok;
+}
+
 static int writeAll(const char *path, const char *s, size_t n) {
   FILE *f = fopen(path, "wb");
   if (!f || fwrite(s, 1, n, f) != n || fclose(f) != 0) {
@@ -97,6 +113,11 @@ int main(int argc, char **argv) {
   int dyn = strchr(mode, 'd') != NULL, restat = strchr(mode, 'r') != NULL, skip = strchr(mode, 'x') != NULL;
   int nouts = sep - 3;
   char **outs = argv + 3;
+  const char *fail = getenv("FZ_FAIL");
+  if (fail && strcmp(fail, outs[0]) == 0) {
+    appendLine("fz.fail", outs[0]);
+    return 1;
+  }
 
   /* Files to read, in reading order. */
   int cap = 64, n = 0;

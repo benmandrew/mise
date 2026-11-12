@@ -55,7 +55,8 @@ Stages 6 and 7 generalised the Stage 5 model in place. Without depfile or `resta
 ## Where the model differs from Ninja
 
 - `ninjaBuild` builds every edge, where Ninja builds the requested or `default` targets. `Reach` covers partial builds.
-- A missing input reads as `default` with mtime 0, where Ninja stops or rebuilds. The model has no deletions.
+- A missing input reads as `default` with mtime 0, where Ninja stops or rebuilds. The model has no deletions; `test/MiseTest/Fuzz.lean` deletes a product by removing it from `fs`, outside `Reach`.
+- The model has no failing commands. The random-graph harness treats a build that stops at a failure as steps of the edges that finished, which is exact only when the failed command wrote nothing. The helper fails before it reads or writes anything, and a wrapped `restat` command that fails puts its old outputs back (`wrapRun_fail`). A command that fails after writing an output, and a build interrupted by a signal (Ninja kills the running commands and deletes the outputs they changed), are outside the model and untested.
 - The log records the write time, where Ninja records the start time, also for kept `restat` outputs. With no edits during a build both order the same way against every input.
 - Ninja stores a command hash, the model the command string, so a collision would make Ninja skip an edge the model runs.
 - Phony edges have an empty command; the DSL does not emit them. `generator` is ignored.
