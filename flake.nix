@@ -44,8 +44,9 @@
       ninjas = pkgs: lib.mapAttrs' (v: h: lib.nameValuePair (attrName v) (ninjaAt pkgs v h)) ninjaReleases;
 
       shellWith = pkgs: ninja: pkgs.mkShell {
-        packages = [ pkgs.lean4 ninja pkgs.python3 pkgs.ccache ];
-        # ccache is for the property harness. `mise` is on PATH after `lake build`.
+        packages = [ pkgs.lean4 ninja pkgs.python3 pkgs.ccache pkgs.typst ];
+        # ccache is for the property harness, typst for docs/headline.pdf.
+        # `mise` is on PATH after `lake build`.
         shellHook = ''
           export PATH="$PWD/.lake/build/bin:$PATH"
         '';

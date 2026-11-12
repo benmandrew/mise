@@ -16,7 +16,9 @@ things:
 2. that the definitions the statements use mean what their names suggest.
 
 `docs/trusted.md` lists those definitions for every theorem, with their
-locations. `scripts/check.sh` fails if that list is out of date.
+locations. `scripts/trusted.sh --pdf` builds `docs/headline.pdf`, which adds a
+mechanical English translation of each statement and the source of every
+definition. `scripts/check.sh` fails if either is out of date.
 
 The statements share these hypotheses:
 
@@ -43,30 +45,37 @@ variable {V : Type} [Inhabited V] (sem : Sem V)
 /-! ## Names used in the statements -/
 
 /-- The edges of the manifest `mise` emits for `g`, as the Ninja model sees
-them. -/
+them.
+Gloss: the edges of the manifest for {g} -/
 abbrev edges (g : Graph) : List MEdge := (emit g).medges
 
 /-- `st` can arise from empty build and deps logs by any sequence of source
 edits and of edges run or skipped as Ninja would. Full builds, builds of some
-targets and interrupted builds are all such sequences. -/
+targets and interrupted builds are all such sequences.
+Gloss: {st} can arise for {g} from empty logs by source edits and Ninja edge visits -/
 abbrev Reachable (g : Graph) (st : St V) : Prop := Reach sem (edges g) st
 
-/-- The state after one `ninja` run on the emitted manifest. -/
+/-- The state after one `ninja` run on the emitted manifest.
+Gloss: the state after one `ninja` run for {g} from {st} -/
 abbrev build (g : Graph) (st : St V) : St V := ninjaBuild sem (emit g) st
 
-/-- The edges that one `ninja` run executes, in order. -/
+/-- The edges that one `ninja` run executes, in order.
+Gloss: the edges one `ninja` run for {g} executes from {st} -/
 abbrev ran (g : Graph) (st : St V) : List MEdge := (buildTrace sem (edges g) st).2
 
-/-- No edge of the manifest writes `p`. -/
+/-- No edge of the manifest writes `p`.
+Gloss: no edge of the manifest for {g} writes {p} -/
 abbrev IsSource (g : Graph) (p : Path) : Prop := ∀ e ∈ edges g, p ∉ e.outs
 
 /-- `es` is an order a parallel Ninja could run the edges in: the same edges
 as the manifest, where each edge reads no output of itself or of a later
-edge. -/
+edge.
+Gloss: {es} is an order in which a parallel Ninja could run the edges for {g} -/
 abbrev ValidOrder (g : Graph) (es : List MEdge) : Prop := es.Perm (edges g) ∧ Sched es
 
 /-- `p` is an input Ninja checks for some output of `e` in state `st`: a
-static input, or for a depfile edge a path its deps log entry records. -/
+static input, or for a depfile edge a path its deps log entry records.
+Gloss: {p} is an input Ninja checks for some output of {e} in {st} -/
 abbrev Checks (st : St V) (e : MEdge) (p : Path) : Prop :=
   ∃ o ∈ e.outs, ∃ D, st.effIns e o = some D ∧ p ∈ D
 

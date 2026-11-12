@@ -10,7 +10,8 @@ manifest well formed. The parser model (`Mise.Syntax.Parse`) runs the same
 namespace Mise.Syntax
 
 /-- A path is a string. `validPath` says which strings the printer and the
-parser model accept. -/
+parser model accept.
+Gloss: paths -/
 abbrev Path := String
 
 /-- A piece of an evaluated string: literal text or a variable reference. -/
@@ -22,13 +23,18 @@ inductive Seg where
 /-- Ninja's `EvalString`: a value whose variable references are expanded later. -/
 abbrev EvalString := List Seg
 
+/-- A variable binding `key = value`; the value is not yet evaluated. -/
 abbrev Binding := String × EvalString
 
+/-- A `rule` statement: its name and its indented bindings, in order. -/
 structure Rule where
   name : String
   bindings : List Binding
   deriving DecidableEq, Repr, Inhabited
 
+/-- A `build` statement: explicit outputs, implicit outputs (after `|`), the
+rule, explicit inputs, implicit inputs (after `|`), order-only inputs
+(after `||`), and the edge's indented bindings. -/
 structure Edge where
   outs : List Path
   implicitOuts : List Path := []
@@ -39,6 +45,8 @@ structure Edge where
   bindings : List Binding := []
   deriving DecidableEq, Repr, Inhabited
 
+/-- A top-level statement: a variable binding, a rule, a build edge, or a
+`default` statement naming targets. -/
 inductive Stmt where
   | binding (key : String) (value : EvalString)
   | rule (r : Rule)
@@ -46,14 +54,19 @@ inductive Stmt where
   | default (targets : List Path)
   deriving DecidableEq, Repr, Inhabited
 
+/-- A manifest: its statements in file order.
+Gloss: manifests -/
 structure Manifest where
   stmts : List Stmt
   deriving DecidableEq, Repr, Inhabited
 
 namespace Edge
 
+/-- Explicit then implicit outputs. -/
 def allOuts (e : Edge) : List Path := e.outs ++ e.implicitOuts
+/-- Explicit, implicit and order-only inputs, in that order. -/
 def allIns (e : Edge) : List Path := e.ins ++ e.implicitIns ++ e.orderOnly
+/-- Every path the edge names: its outputs, then its inputs. -/
 def allPaths (e : Edge) : List Path := e.allOuts ++ e.allIns
 
 end Edge
@@ -84,10 +97,14 @@ def ruleKeys : List String :=
 
 /-! ## Validity -/
 
+/-- A nonempty string of `varname` characters (`isVarChar`). -/
 def validIdent (s : String) : Bool := !s.toList.isEmpty && s.toList.all isVarChar
 
+/-- Nonempty literal text with no newline, carriage return or NUL. -/
 def validLit (s : String) : Bool := !s.toList.isEmpty && s.toList.all litChar
 
+/-- A literal segment is valid when its text is (`validLit`); a variable
+reference when its name is an identifier (`validIdent`). -/
 def Seg.valid : Seg → Bool
   | .lit s => validLit s
   | .var n => validIdent n
@@ -99,6 +116,8 @@ def noAdjLits : EvalString → Bool
   | .lit _ :: .lit _ :: _ => false
   | _ :: s :: r => noAdjLits (s :: r)
 
+/-- Every segment is valid and no two literal segments are adjacent
+(`noAdjLits`). -/
 def validEval (e : EvalString) : Bool := e.all Seg.valid && noAdjLits e
 
 /-- Split a character list at every `/`. -/
@@ -119,11 +138,15 @@ def canonical (p : List Char) : Bool :=
     let bad (c : List Char) := c == ['.'] || c == ['.', '.']
     (rest.all fun c => !c.isEmpty && !bad c) && !bad first && (!first.isEmpty || !rest.isEmpty)
 
+/-- A path `mise` accepts: nonempty, made of path characters (`pathChar`), and
+canonical (`canonical`). -/
 def validPath (p : Path) : Bool :=
   !p.toList.isEmpty && p.toList.all pathChar && canonical p.toList
 
+/-- The key is an identifier and the value is valid. -/
 def validBinding (b : Binding) : Bool := validIdent b.1 && validEval b.2
 
+/-- No string occurs twice in the list. -/
 def nodupB : List String → Bool
   | [] => true
   | x :: xs => !xs.contains x && nodupB xs
@@ -137,6 +160,9 @@ structure Ctx where
   known : List Path := []
   deriving Repr, Inhabited
 
+/-- Record a statement in the context. A rule adds its name to the rules; an
+edge adds its outputs to `outs` and all its paths to `known`. Other
+statements change nothing. -/
 def Ctx.add (c : Ctx) : Stmt → Ctx
   | .rule r => { c with rules := c.rules ++ [r.name] }
   | .edge e => { c with outs := c.outs ++ e.allOuts, known := c.known ++ e.allPaths }

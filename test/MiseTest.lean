@@ -7,3 +7,4 @@ import MiseTest.Stage6
 import MiseTest.Stage7
 import MiseTest.Toml
 import MiseTest.Axioms
+import MiseTest.Gloss

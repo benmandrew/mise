@@ -3,7 +3,9 @@
 #   1. lake build succeeds;
 #   2. no `sorry` or `admit` in Lean sources;
 #   3. headline theorems use only propext, Classical.choice and Quot.sound;
-#   4. docs/trusted.md matches the definitions the headline theorems use.
+#   4. docs/trusted.md and docs/headline.typ match the definitions the
+#      headline theorems use, and docs/headline.typ compiles with Typst;
+#   5. every one of those definitions has a docstring.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -24,5 +26,6 @@ if [ -n "$bad" ]; then
   exit 1
 fi
 n=$(echo "$out" | grep -c 'axiom' || true)
+# Checks 4 and 5.
 scripts/trusted.sh --check
 echo "check: ok ($n theorems checked)"

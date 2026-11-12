@@ -13,10 +13,12 @@ outside the model, and so is a `\r\n` line ending: both make `parse` fail.
 
 namespace Mise.Syntax
 
+/-- Drop leading spaces. -/
 def eatSpaces : List Char → List Char
   | [] => []
   | c :: r => if c = ' ' then eatSpaces r else c :: r
 
+/-- Split a list before the first character that fails `p`. -/
 def spanWhile (p : Char → Bool) : List Char → List Char × List Char
   | [] => ([], [])
   | c :: r => if p c then ((spanWhile p r).1.cons c, (spanWhile p r).2) else ([], c :: r)
@@ -149,6 +151,7 @@ def section2 (l : List Char) : Option (List (List Char) × List Char) :=
     if c = '|' && d = '|' && r.head? != some '@' then readPaths (eatSpaces r) else some ([], l)
   | _ => some ([], l)
 
+/-- Character lists as paths. -/
 def toPaths (ps : List (List Char)) : List Path := ps.map String.ofList
 
 /-- A `build` line after the keyword and its spaces. Bindings come later. -/
@@ -176,6 +179,9 @@ inductive Header where
   | edge (e : Edge)
   | default (ps : List Path)
 
+/-- Parse the first line of a statement: `rule name`, `build …`,
+`default paths`, or `key = value`. Fails on any other keyword, on text after
+a rule name or default targets, and on a line in no such form. -/
 def parseHeader (l : List Char) : Option Header := do
   let (w, r) ← readIdent l
   if w = ['r', 'u', 'l', 'e'] then
@@ -192,6 +198,8 @@ def parseHeader (l : List Char) : Option Header := do
                 else none
     | [] => none
 
+/-- How a line starts: blank (spaces only), a comment (`#` after any spaces),
+indented (a space, then other text), or at the top level. -/
 inductive LineKind where
   | blank
   | comment
@@ -199,6 +207,8 @@ inductive LineKind where
   | top
   deriving DecidableEq
 
+/-- The `LineKind` of a line. An indented line keeps its text after the
+leading spaces. -/
 def classify (l : List Char) : LineKind :=
   match eatSpaces l with
   | [] => .blank
@@ -230,6 +240,10 @@ def finishStmt : Header → List (List Char) → Option Stmt
   | .edge e, blk => (blk.mapM parseLet).map (fun bs => .edge { e with bindings := bs })
   | _, _ :: _ => none
 
+/-- Parse lines into statements, after the statements `acc` already read with
+context `c`. Blank and comment lines are skipped, and an indented line
+outside a statement fails. Each statement must pass `Stmt.ok` in the
+context of the statements before it. -/
 def parseLines (ls : List (List Char)) (c : Ctx) (acc : List Stmt) : Option (List Stmt) :=
   match ls with
   | [] => some acc
@@ -253,6 +267,8 @@ decreasing_by
     | (simp; done)
     | (have := takeBlock_length ls; rw [_hb] at this; simp at this ⊢; omega)
 
+/-- Split a character list at every newline. The result has one more element
+than there are newlines. -/
 def splitLines : List Char → List (List Char)
   | [] => [[]]
   | c :: r =>
@@ -261,9 +277,14 @@ def splitLines : List Char → List (List Char)
       | l :: ls => (c :: l) :: ls
       | [] => [[c]]
 
+/-- Parse a whole manifest, starting from the context that knows only the
+`phony` rule; `none` if any line fails. -/
 def parseChars (cs : List Char) : Option Manifest :=
   (parseLines (splitLines cs) {} []).map Manifest.mk
 
+/-- The parser model: the manifest the text describes, or `none` when the
+model rejects the text.
+Gloss: the result of parsing {s} -/
 def parse (s : String) : Option Manifest := parseChars s.toList
 
 end Mise.Syntax

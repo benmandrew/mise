@@ -47,6 +47,9 @@ structure GRule where
   restat : Bool := false
   deriving DecidableEq, Repr, Inhabited
 
+/-- An edge in the DSL: the name of its rule, explicit and implicit outputs,
+explicit, implicit and order-only inputs, and the edge's own variables
+with their literal values. -/
 structure GEdge where
   rule : String
   outs : List Path
@@ -59,9 +62,11 @@ structure GEdge where
 
 namespace GEdge
 
+/-- Explicit then implicit outputs. -/
 def allOuts (e : GEdge) : List Path := e.outs ++ e.implicitOuts
 /-- The inputs the command reads: explicit and implicit. -/
 def inputs (e : GEdge) : List Path := e.ins ++ e.implicitIns
+/-- Explicit, implicit and order-only inputs. -/
 def allIns (e : GEdge) : List Path := e.ins ++ e.implicitIns ++ e.orderOnly
 
 /-- The value of a variable in this edge's command, as the DSL defines it. -/
@@ -72,6 +77,9 @@ def look (e : GEdge) (v : String) : String :=
 
 end GEdge
 
+/-- A build as the DSL describes it: declared sources, rules, edges in the
+order they were added, and default targets.
+Gloss: build graphs -/
 structure Graph where
   sources : List Path := []
   rules : List GRule := []
@@ -81,15 +89,23 @@ structure Graph where
 
 /-! ## Validity -/
 
+/-- Every variable the template refers to is `in`, `out`, or a name outside
+`reserved`. -/
 def tmplVarsOK (t : EvalString) : Bool :=
   t.all fun
     | .var n => n == "in" || n == "out" || !reserved.contains n
     | .lit _ => true
 
+/-- A rule `mise` can emit: the name is an identifier other than `phony`, the
+command is a valid nonempty value whose only reserved variables are `in`
+and `out`, and the description is a valid value. -/
 def GRule.ok (r : GRule) : Bool :=
   validIdent r.name && r.name != "phony" && validEval r.command && !r.command.isEmpty &&
     tmplVarsOK r.command && validEval r.description
 
+/-- Edge variables `mise` can emit: no name occurs twice, every name is an
+identifier outside `reserved`, and no value contains a newline, carriage
+return or NUL. -/
 def varsOK (vs : List (String × String)) : Bool :=
   nodupB (vs.map (·.1)) && vs.all fun b => validIdent b.1 && !reserved.contains b.1 && b.2.toList.all litChar
 
@@ -99,10 +115,13 @@ def GEdge.ok (names : List String) (srcs prev : List Path) (e : GEdge) : Bool :=
     nodupB e.allOuts && e.allOuts.all (fun o => !prev.contains o && !srcs.contains o) &&
     e.allIns.all (fun i => srcs.contains i || prev.contains i) && varsOK e.vars
 
+/-- Each edge is acceptable (`GEdge.ok`) after the ones before it. The list
+of paths holds the outputs of the edges already checked. -/
 def edgesOK (names : List String) (srcs : List Path) : List Path → List GEdge → Bool
   | _, [] => true
   | prev, e :: es => e.ok names srcs prev && edgesOK names srcs (prev ++ e.allOuts) es
 
+/-- The names of the graph's rules, in order. -/
 def Graph.ruleNames (g : Graph) : List String := g.rules.map (·.name)
 
 /-- An edge whose rule has a depfile has one explicit output. The depfile
@@ -113,13 +132,19 @@ def depfileOutsOK (rules : List GRule) (e : GEdge) : Bool :=
   | some r => !r.depfile || e.outs.length == 1
   | none => true
 
+/-- The validity check: rule names are distinct, every rule is acceptable
+(`GRule.ok`), every edge is acceptable after the ones before it
+(`edgesOK`), every default target is an output of some edge, and every
+edge whose rule has a depfile has one explicit output
+(`depfileOutsOK`). -/
 def Graph.check (g : Graph) : Bool :=
   nodupB g.ruleNames && g.rules.all GRule.ok && edgesOK g.ruleNames g.sources [] g.edges &&
     (g.defaults.all fun d => g.edges.any (·.allOuts.contains d)) && g.edges.all (depfileOutsOK g.rules)
 
 /-- Every input is a declared source or an output of an earlier edge, every
 output has one producer, every name and path can be written in Ninja, and
-every depfile edge has one explicit output. -/
+every depfile edge has one explicit output.
+Gloss: {g} is valid -/
 def Graph.Valid (g : Graph) : Prop := g.check = true
 
 instance (g : Graph) : Decidable g.Valid := inferInstanceAs (Decidable (_ = _))
@@ -136,7 +161,8 @@ def fetchAll {K V : Type} : List K → Task K V (List V)
   | [] => .pure []
   | k :: ks => .fetch k fun v => (fetchAll ks).bind fun vs => .pure (v :: vs)
 
-/-- What commands mean. -/
+/-- What commands mean.
+Gloss: command meanings over {V} -/
 structure Sem (V : Type) where
   /-- A static command's outputs from its inputs' contents. -/
   exec : String → List V → List V
@@ -165,6 +191,7 @@ def cmdTask {V : Type} (sem : Sem V) (dyn : Bool) (cmd : String) (ins : List Pat
 def outTask {V : Type} [Inhabited V] (t : Task Path V (List V)) (i : Nat) : Task Path V V :=
   t.bind fun vs => .pure (vs.getD i default)
 
+/-- The first rule whose name is the edge's rule name. -/
 def Graph.ruleOf (g : Graph) (e : GEdge) : Option GRule := g.rules.find? (·.name == e.rule)
 
 /-- The command the DSL means for an edge. -/
@@ -190,7 +217,8 @@ def Graph.isSource (g : Graph) (k : Path) : Bool := (findOut GEdge.allOuts k g.e
 
 variable {V : Type} [Inhabited V]
 
-/-- The meaning of a graph, straight from the DSL. -/
+/-- The meaning of a graph, straight from the DSL.
+Gloss: the build specification {g} describes -/
 def Graph.spec (sem : Sem V) (g : Graph) : BuildSpec Path V where
   isSource := g.isSource
   task k := match findOut GEdge.allOuts k g.edges with
@@ -198,22 +226,31 @@ def Graph.spec (sem : Sem V) (g : Graph) : BuildSpec Path V where
     | none => .pure default
 
 /-- The static-ancestor condition (Stage 6): every depfile command reads
-only sources and the edge's own inputs, order-only inputs included. -/
+only sources and the edge's own inputs, order-only inputs included.
+Gloss: every depfile command of {g} reads only sources and its edge's inputs -/
 def Graph.DynOK (sem : Sem V) (g : Graph) : Prop :=
   ∀ e ∈ g.edges, g.isDyn e = true → (sem.dyn (g.cmd e)).FetchesOnly fun k => g.isSource k = true ∨ k ∈ e.allIns
 
 /-! ## Ninja form -/
 
+/-- What a rule with a depfile adds: `depfile = ${out}.d` and `deps = gcc`. -/
 def depfileBindings : List Binding := [("depfile", [.var "out", .lit ".d"]), ("deps", [.lit "gcc"])]
 
+/-- What a rule with `restat` adds: `restat = 1`. -/
 def restatBindings : List Binding := [("restat", [.lit "1"])]
 
+/-- A DSL rule as a Ninja rule: `command`, then `description` when it is
+nonempty, then the depfile and `restat` bindings when the rule asks for
+them. -/
 def emitRule (r : GRule) : Rule :=
   ⟨r.name, [("command", r.command)] ++ (if r.description.isEmpty then [] else [("description", r.description)]) ++
     (if r.depfile then depfileBindings else []) ++ (if r.restat then restatBindings else [])⟩
 
+/-- A string as a value of literal text. The empty string is the empty value. -/
 def litVal (s : String) : EvalString := if s.toList.isEmpty then [] else [.lit s]
 
+/-- A DSL edge as a Ninja edge with the same paths and rule. Each edge
+variable becomes a binding to its literal value. -/
 def emitEdge (e : GEdge) : Edge :=
   { outs := e.outs, implicitOuts := e.implicitOuts, rule := e.rule, ins := e.ins,
     implicitIns := e.implicitIns, orderOnly := e.orderOnly,
@@ -222,6 +259,10 @@ def emitEdge (e : GEdge) : Edge :=
 /-- The first statement of every emitted manifest. -/
 def versionStmt : Stmt := .binding versionVar [.lit ninjaMinVersion]
 
+/-- The manifest `mise` writes for a graph: the version statement
+(`versionStmt`), the rules, then the edges in order, then a `default`
+statement if the graph has default targets.
+Gloss: the manifest `mise` emits for {g} -/
 def emit (g : Graph) : Manifest :=
   ⟨versionStmt :: (g.rules.map (Stmt.rule ∘ emitRule) ++ g.edges.map (Stmt.edge ∘ emitEdge) ++
     (if g.defaults.isEmpty then [] else [.default g.defaults]))⟩
@@ -229,7 +270,8 @@ def emit (g : Graph) : Manifest :=
 /-- The meaning of a manifest under the Ninja evaluation model: each output
 is computed by its edge's evaluated command, which is static or reads a
 depfile according to the edge's `deps` binding. Paths no edge produces are
-sources. -/
+sources.
+Gloss: the meaning of {m} under the Ninja evaluation model -/
 def denote (sem : Sem V) (m : Manifest) : BuildSpec Path V where
   isSource k := (findOut (·.edge.allOuts) k m.elab.edges).isNone
   task k := match findOut (·.edge.allOuts) k m.elab.edges with

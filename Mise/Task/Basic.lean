@@ -8,6 +8,9 @@ continues with a function of that value. This is the initial encoding of the
 
 namespace Mise
 
+/-- A build task with keys `K`, values `V` and result `α`, as a tree: `pure a`
+returns `a`, and `fetch k c` asks for the value of key `k` and continues
+with `c` applied to that value. -/
 inductive Task (K V : Type) (α : Type) where
   | pure  : α → Task K V α
   | fetch : K → (V → Task K V α) → Task K V α
@@ -19,6 +22,8 @@ namespace Task
 
 variable {K V α β γ : Type}
 
+/-- Run the first task, then the task that `f` builds from its result. The
+first task's fetches come first. -/
 def bind : Task K V α → (α → Task K V β) → Task K V β
   | .pure a, f => f a
   | .fetch k c, f => .fetch k (fun v => (c v).bind f)

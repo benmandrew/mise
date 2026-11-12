@@ -25,6 +25,7 @@ namespace Mise.Syntax
 /-- A scope: evaluated bindings, newest first. -/
 abbrev Scope := List (String × String)
 
+/-- The newest binding of `k` in the scope, if there is one. -/
 def Scope.get (s : Scope) (k : String) : Option String := (s.find? (·.1 == k)).map (·.2)
 
 /-- Evaluate a value, looking variables up with `look`. -/
@@ -92,6 +93,7 @@ structure Elab where
   edges : List EdgeInfo := []
   deriving Repr, Inhabited
 
+/-- A variable's value in a file scope; an unbound variable is empty. -/
 def fileLook (s : Scope) (v : String) : String := (s.get v).getD ""
 
 /-- What Ninja stores for an edge read with the given rules and file scope. -/
@@ -101,12 +103,18 @@ def edgeInfo (rules : List Rule) (file : Scope) (e : Edge) : EdgeInfo where
   own := if e.bindings.isEmpty then none
     else some (e.bindings.foldl (fun acc b => (b.1, evalWith (fileLook file) b.2) :: acc) [])
 
+/-- Ninja's parser state after one more statement. A top-level binding is
+evaluated in the current file scope and added to it, a rule is added to the
+rules, an edge is recorded with the current rules and file scope
+(`edgeInfo`), and `default` changes nothing. -/
 def Elab.step (st : Elab) : Stmt → Elab
   | .binding k v => { st with file := (k, evalWith (fileLook st.file) v) :: st.file }
   | .rule r => { st with rules := st.rules ++ [r] }
   | .edge e => { st with edges := st.edges ++ [edgeInfo st.rules st.file e] }
   | .default _ => st
 
+/-- Ninja's parser state after reading every statement in order, from the
+state that knows only the `phony` rule. -/
 def Manifest.elab (m : Manifest) : Elab := m.stmts.foldl Elab.step {}
 
 /-- Every edge with its evaluated command, in manifest order. -/
