@@ -64,14 +64,8 @@
   body
 }
 
-#let how-to-read = [
-  `test/MiseTest/Gloss.lean` writes the English under each statement from the elaborated statement, using the `Gloss:` template of each definition it names. A linked phrase leads to its definition. Parentheses mark an argument that contains a connective or a binder. Templates leave out `sem`, the meaning of commands.
-]
-
 #let intro(body) = {
   body
-  parbreak()
-  how-to-read
   outline(depth: 2, indent: auto)
 }
 
