@@ -3,8 +3,8 @@ import MiseTest.DiffGen
 /-!
 # Parser fuzzer: the Lean side
 
-`test/parser-fuzz.sh` links this module into a libFuzzer harness
-(`test/parser_fuzz.cc`) together with Ninja's own manifest parser. For each
+`fuzz/build.sh parser ENGINE` links this module into a fuzzing harness
+(`fuzz/parser/harness.cc`) together with Ninja's own manifest parser. For each
 input the harness asks the parser model what the manifest means, and when
 the model accepts it, checks that Ninja reads the same edges, evaluates the
 same edge variables and records the same defaults. Ninja accepts more than
@@ -15,7 +15,7 @@ line, each `KEY LEN:VALUE`, where `LEN` is the value's length in bytes, so a
 value may hold any character, newlines included.
 -/
 
-namespace MiseTest.ParseFuzz
+namespace MiseFuzz.Parser
 open Mise.Syntax MiseTest.DiffTest
 
 /-- One field of a dump. -/
@@ -93,4 +93,4 @@ accepts every such text. -/
 @[export mise_fuzz_gen]
 def fuzzGen (b : ByteArray) : String := print (genManifest.runBytes b)
 
-end MiseTest.ParseFuzz
+end MiseFuzz.Parser

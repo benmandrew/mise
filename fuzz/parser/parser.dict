@@ -1,4 +1,4 @@
-# libFuzzer dictionary for test/parser-fuzz.sh: Ninja's keywords and
+# Fuzzer dictionary for `fuzz/fuzz.sh parser`: Ninja's keywords and
 # punctuation (from Ninja's misc/afl-fuzz-tokens) and the rule keys and
 # variables of the parser model's subset.
 "build "

@@ -9,7 +9,7 @@ and `expected`, the output `ninja -t query` should print for those targets
 if real Ninja reads the manifest as the AST says. `test/stage3-diff.sh`
 runs Ninja and compares. `lake exe difftest bytes FILE DIR` writes one
 manifest generated from the bytes of `FILE` instead, as the parser fuzzer
-does (`test/parser-fuzz.sh`).
+does (`fuzz/fuzz.sh parser`).
 -/
 
 open MiseTest.DiffTest Mise.Syntax in

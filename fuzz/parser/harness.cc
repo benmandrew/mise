@@ -1,17 +1,19 @@
 // Differential parser fuzzer: Ninja's manifest parser against the Lean
-// parser model (test/MiseTest/ParseFuzz.lean), in one process.
+// parser model (fuzz/MiseFuzz/Parser.lean), in one process.
 //
-// Built and run by test/parser-fuzz.sh. MISE_FUZZ_MODE=text (the default)
+// Built by `fuzz/build.sh parser ENGINE` and run by `fuzz/fuzz.sh parser`.
+// MISE_FUZZ_MODE=text (the default)
 // treats each input as manifest text. MISE_FUZZ_MODE=gen passes the input
 // to the Lean manifest generator as its choice sequence and parses the text
 // it prints, so every input is a manifest the model accepts.
 //
 // When the model accepts a manifest, Ninja must accept it too and read the
 // same edges, edge variables and defaults; otherwise the harness prints both
-// readings and aborts, which libFuzzer reports as a crash. An input the model
+// readings and fails the input (`mise_fuzz_failed`), which aborts under a
+// fuzzer, so that it reports a crash. An input the model
 // rejects is not checked, since Ninja reads more than the model's subset.
 
-#include <lean/lean.h>
+#include "../lean_glue.h"
 
 #include <cstdint>
 #include <cstdio>
@@ -28,7 +30,7 @@
 #include "version.h"
 
 extern "C" {
-lean_object* initialize_mise_MiseTest_ParseFuzz(uint8_t builtin);
+lean_object* initialize_mise_MiseFuzz_Parser(uint8_t builtin);
 lean_object* mise_fuzz_text(lean_object* bytes);
 lean_object* mise_fuzz_gen(lean_object* bytes);
 }
@@ -42,19 +44,9 @@ bool gen_mode = false;
 // The edge variables the Lean side evaluates for every non-phony edge.
 const char* const kKeys[] = {"command", "description", "depfile", "deps", "restat"};
 
-// Call an exported Lean function on a byte array and return its string.
-std::string call_lean(lean_object* (*f)(lean_object*), const uint8_t* data, size_t size) {
-  lean_object* arr = lean_alloc_sarray(1, size, size);
-  if (size > 0) memcpy(lean_sarray_cptr(arr), data, size);
-  lean_object* res = f(arr);  // takes ownership of arr
-  std::string out(lean_string_cstr(res), lean_string_size(res) - 1);
-  lean_dec(res);
-  return out;
-}
-
 void add(Fields* fs, const char* key, const std::string& value) { fs->emplace_back(key, value); }
 
-// Read fields in the `KEY LEN:VALUE\n` format of `ParseFuzz.dump`.
+// Read fields in the `KEY LEN:VALUE\n` format of `MiseFuzz.Parser.dump`.
 Fields parse_fields(const std::string& s) {
   Fields fs;
   size_t i = 0;
@@ -123,12 +115,12 @@ void print_fields(const char* who, const Fields& fs) {
   for (const auto& f : fs) fprintf(stderr, "  %s \"%s\"\n", f.first.c_str(), escape(f.second).c_str());
 }
 
-[[noreturn]] void fail(const std::string& text, const char* what, const Fields* model, const Fields* ninja) {
+void fail(const std::string& text, const char* what, const Fields* model, const Fields* ninja) {
   fprintf(stderr, "\nmise parser fuzz: %s\nmanifest:\n", what);
   fprintf(stderr, "----\n%s\n----\n", text.c_str());
   if (model) print_fields("parser model", *model);
   if (ninja) print_fields("ninja", *ninja);
-  abort();
+  mise_fuzz_failed();
 }
 
 struct NoFiles : public FileReader {
@@ -140,30 +132,17 @@ struct NoFiles : public FileReader {
 
 }  // namespace
 
-// Lean's C flags hide symbols by default, and on macOS libFuzzer finds
-// LLVMFuzzerInitialize with dlsym, so both entry points are exported.
-#define FUZZ_EXPORT extern "C" __attribute__((visibility("default")))
-
-FUZZ_EXPORT int LLVMFuzzerInitialize(int*, char***) {
+MISE_FUZZ_EXPORT int LLVMFuzzerInitialize(int*, char***) {
   const char* mode = getenv("MISE_FUZZ_MODE");
   gen_mode = mode && strcmp(mode, "gen") == 0;
-  // As the `main` that Lean generates for an executable: the module's
-  // initialiser starts the runtime itself.
-  lean_object* res = initialize_mise_MiseTest_ParseFuzz(1);
-  lean_io_mark_end_initialization();
-  if (!lean_io_result_is_ok(res)) {
-    lean_io_result_show_error(res);
-    abort();
-  }
-  lean_dec_ref(res);
-  lean_init_task_manager();
+  mise_lean_start(initialize_mise_MiseFuzz_Parser);
   return 0;
 }
 
-FUZZ_EXPORT int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
-  std::string text = gen_mode ? call_lean(mise_fuzz_gen, data, size)
+MISE_FUZZ_EXPORT int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
+  std::string text = gen_mode ? mise_lean_call(mise_fuzz_gen, data, size)
                               : std::string(reinterpret_cast<const char*>(data), size);
-  std::string model = call_lean(mise_fuzz_text, reinterpret_cast<const uint8_t*>(text.data()), text.size());
+  std::string model = mise_lean_call(mise_fuzz_text, reinterpret_cast<const uint8_t*>(text.data()), text.size());
   if (model == "skip" || model.empty()) {
     if (gen_mode) fail(text, "the parser model rejects a generated manifest", nullptr, nullptr);
     return 0;
@@ -179,6 +158,7 @@ FUZZ_EXPORT int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
   if (!parser.ParseTest(text, &err)) {
     std::string what = "the parser model accepts a manifest Ninja rejects: " + err;
     fail(text, what.c_str(), &expected, nullptr);
+    return 0;
   }
   std::vector<bool> cyclic;
   for (const auto& f : expected) {

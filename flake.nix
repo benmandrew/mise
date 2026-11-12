@@ -65,8 +65,8 @@
         # mkShell's stdenv supplies the C compiler the examples use.
         {
           default = shellWith pkgs pkgs.ninja;
-          # The in-process build fuzzer (fuzz/build): clang with libFuzzer,
-          # AFL++ on Linux, and the Ninja sources it links.
+          # The fuzzers in fuzz/: clang with libFuzzer, AFL++ on Linux, and
+          # the Ninja sources fuzz/build.sh links by default.
           fuzz = (shellWith pkgs pkgs.ninja).overrideAttrs (old: {
             nativeBuildInputs = (old.nativeBuildInputs or [ ]) ++ [ pkgs.clang ]
               ++ lib.optionals pkgs.stdenv.hostPlatform.isLinux [ pkgs.aflplusplus ];

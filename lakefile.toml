@@ -9,10 +9,11 @@ name = "Mise"
 name = "MiseTest"
 srcDir = "test"
 
-# The in-process build fuzzer's Lean side; fuzz/build/build.sh links it.
+# The Lean sides of the fuzzers in fuzz/; fuzz/build.sh links them.
 [[lean_lib]]
 name = "MiseFuzz"
-srcDir = "fuzz/build"
+srcDir = "fuzz"
+roots = ["MiseFuzz.Parser", "MiseFuzz.Build"]
 
 [[lean_exe]]
 name = "mise"

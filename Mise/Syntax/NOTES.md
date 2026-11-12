@@ -43,7 +43,7 @@ The model agrees with Ninja on every input it accepts. It rejects some inputs Ni
 
 The model does not evaluate variables, and accepts any `deps` value because Ninja checks it only at build time.
 
-The differential test found two behaviours that are now modelled: Ninja rejects an empty last `command` binding but accepts `${v}` with an empty `v`, and `-t query` lists a consuming edge once per occurrence of an input. The parser fuzzer (`test/parser-fuzz.sh`) found four more, all accepted by the model before. Ninja rejects a nonempty manifest whose last line has no newline. It reads a NUL byte in a comment as the end of the input. It rejects an edge whose `pool` variable names no declared pool. It drops a phony edge's own output from its inputs.
+The differential test found two behaviours that are now modelled: Ninja rejects an empty last `command` binding but accepts `${v}` with an empty `v`, and `-t query` lists a consuming edge once per occurrence of an input. The parser fuzzer (`fuzz/fuzz.sh parser`) found four more, all accepted by the model before. Ninja rejects a nonempty manifest whose last line has no newline. It reads a NUL byte in a comment as the end of the input. It rejects an edge whose `pool` variable names no declared pool. It drops a phony edge's own output from its inputs.
 
 ## Tests
 

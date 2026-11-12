@@ -1,6 +1,8 @@
 // In-process build fuzzer: Ninja's build logic against the Lean model.
 //
-// For each input, the Lean side (MiseFuzz.lean) generates a case from the
+// Built by `fuzz/build.sh build ENGINE` and run by `fuzz/fuzz.sh build`.
+//
+// For each input, the Lean side (fuzz/MiseFuzz/Build.lean) generates a case from the
 // input's bytes, as `lake exe fuzzgen bytes` does, runs the model on it and
 // returns the case as JSON. This file replays the case against Ninja's own State,
 // ManifestParser, BuildLog, DepsLog and Builder, linked into the same
@@ -26,7 +28,9 @@
 // On a mismatch the case is written to $MISE_FUZZ_OUT (default
 // `test/out/fuzz/inproc`) as `<n>.json`, which
 // `test/fuzz.py test/out/fuzz/inproc <n>` replays against real Ninja, and
-// the process aborts so that the fuzzer keeps the input.
+// the input fails (`mise_fuzz_failed`), which aborts under a fuzzer so that
+// it keeps the input. Under the standalone engine (fuzz/standalone.cc),
+// `mise_fuzz_stats` splits the run's time between the model and Ninja.
 
 #include <assert.h>
 #include <limits.h>
@@ -59,9 +63,9 @@
 #include "status.h"
 #include "util.h"
 
-#include <lean/lean.h>
+#include "../lean_glue.h"
 
-extern "C" lean_object* initialize_mise_MiseFuzz(uint8_t builtin);
+extern "C" lean_object* initialize_mise_MiseFuzz_Build(uint8_t builtin);
 extern "C" lean_object* mise_fuzz_case(lean_object* input, lean_object* fins, uint8_t strict);
 
 using std::map;
@@ -203,15 +207,22 @@ static vector<string> strs(const J& j) {
 
 // ---------------------------------------------------------------- Lean
 
+static double monotonic() {
+  struct timespec t;
+  clock_gettime(CLOCK_MONOTONIC, &t);
+  return t.tv_sec + t.tv_nsec / 1e9;
+}
+
+// The time spent in the model, for `mise_fuzz_stats`.
+static double g_model_s = 0;
+
 static string leanCase(const uint8_t* data, size_t size, const string& fins) {
-  lean_object* arr = lean_alloc_sarray(1, size, size);
-  if (size) memcpy(lean_sarray_cptr(arr), data, size);
   // MISE_FUZZ_NO_SELF_CHECK turns the model's own checks off, as
   // FUZZGEN_NO_SELF_CHECK does for fuzzgen.
   static const bool strict = !getenv("MISE_FUZZ_NO_SELF_CHECK");
-  lean_object* r = mise_fuzz_case(arr, lean_mk_string(fins.c_str()), strict);
-  string out(lean_string_cstr(r), lean_string_size(r) - 1);
-  lean_dec_ref(r);
+  double t0 = monotonic();
+  string out = mise_lean_take_string(mise_fuzz_case(mise_lean_bytes(data, size), lean_mk_string(fins.c_str()), strict));
+  g_model_s += monotonic() - t0;
   return out;
 }
 
@@ -490,13 +501,6 @@ struct Rng {
   }
 };
 
-static uint64_t splitmix(uint64_t* s) {
-  uint64_t z = (*s += 0x9E3779B97F4A7C15ULL);
-  z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;
-  z = (z ^ (z >> 27)) * 0x94D049BB133111EBULL;
-  return z ^ (z >> 31);
-}
-
 struct Mismatch {
   string kind, msg;
 };
@@ -689,7 +693,7 @@ static string join(const vector<string>& v) {
 
 static const int kJobs[] = {1, 2, 8, 64};
 
-// What the replays covered, for the standalone driver.
+// What the replays covered, for `mise_fuzz_stats`.
 static struct {
   long steps, edges, stops, failed, parallel;
 } stats;
@@ -786,13 +790,7 @@ static void init() {
   static bool done = false;
   if (done) return;
   done = true;
-  lean_object* r = initialize_mise_MiseFuzz(1);
-  lean_io_mark_end_initialization();
-  if (!lean_io_result_is_ok(r)) {
-    lean_io_result_show_error(r);
-    abort();
-  }
-  lean_dec_ref(r);
+  mise_lean_start(initialize_mise_MiseFuzz_Build);
   string out = outDir();
   if (out.empty()) out = "test/out/fuzz/inproc";
   string mk = "mkdir -p '" + out + "'";
@@ -819,65 +817,19 @@ static int one(const uint8_t* data, size_t size) {
   return 0;
 }
 
-extern "C" int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
-  if (one(data, size)) abort();
+MISE_FUZZ_EXPORT int LLVMFuzzerInitialize(int*, char***) {
+  init();
   return 0;
 }
 
-#ifdef MISE_FUZZ_STANDALONE
-// Enough bytes for the generator's choices at the front and the schedule's
-// at the back of a typical case.
-static const size_t kRandomBytes = 4096;
+MISE_FUZZ_EXPORT int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
+  if (one(data, size)) mise_fuzz_failed();
+  return 0;
+}
 
-// Without a fuzzer: `harness N [SEED]` replays N inputs of kRandomBytes
-// pseudo-random bytes, the i-th from seed SEED + i, and prints the rate; `harness FILE...` replays
-// the inputs in the files.
-int main(int argc, char** argv) {
-  if (argc >= 2 && access(argv[1], F_OK) == 0) {
-    int bad = 0;
-    for (int i = 1; i < argc; i++) {
-      FILE* f = fopen(argv[i], "rb");
-      string s;
-      char buf[4096];
-      size_t n;
-      while ((n = fread(buf, 1, sizeof buf, f)) > 0) s.append(buf, n);
-      fclose(f);
-      bad += one((const uint8_t*)s.data(), s.size());
-    }
-    return bad ? 1 : 0;
-  }
-  long n = argc >= 2 ? atol(argv[1]) : 100;
-  uint64_t seed = argc >= 3 ? strtoull(argv[2], nullptr, 10) : 0;
-  init();
-  struct timespec t0, t1;
-  clock_gettime(CLOCK_MONOTONIC, &t0);
-  int bad = 0;
-  double lean_s = 0;
-  for (long i = 0; i < n; i++) {
-    uint64_t x = seed + i;
-    vector<uint8_t> in(kRandomBytes);
-    for (auto& byte : in) byte = (uint8_t)splitmix(&x);
-    struct timespec a, b;
-    clock_gettime(CLOCK_MONOTONIC, &a);
-    string json = leanCase(in.data(), in.size(), "");
-    clock_gettime(CLOCK_MONOTONIC, &b);
-    lean_s += (b.tv_sec - a.tv_sec) + (b.tv_nsec - a.tv_nsec) / 1e9;
-    if (json.rfind("error: ", 0) == 0) {
-      report("{}", Mismatch{"model", json});
-      bad++;
-      continue;
-    }
-    if (auto m = replay(in.data(), in.size(), json)) {
-      report(json, *m);
-      bad++;
-    }
-  }
-  clock_gettime(CLOCK_MONOTONIC, &t1);
-  double s = (t1.tv_sec - t0.tv_sec) + (t1.tv_nsec - t0.tv_nsec) / 1e9;
-  printf("%ld cases in %.2f s: %.1f cases/s; model %.2f s, Ninja %.2f s; %d mismatches\n", n, s, n / s, lean_s,
-         s - lean_s, bad);
+// Called by the standalone engine after its rate line.
+MISE_FUZZ_EXPORT void mise_fuzz_stats(double seconds) {
+  printf("model %.2f s, Ninja %.2f s\n", g_model_s, seconds - g_model_s);
   printf("%ld steps (%ld stopped, %ld failed, %ld parallel with several edges), %ld edges run\n", stats.steps,
          stats.stops, stats.failed, stats.parallel, stats.edges);
-  return bad ? 1 : 0;
 }
-#endif

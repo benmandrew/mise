@@ -3,8 +3,9 @@ import MiseTest.Fuzz
 /-!
 # In-process build fuzzer: the Lean side
 
-`harness.cc` links this module, the case generator `MiseTest.Fuzz` and the
-model into one process with Ninja's build logic. For each fuzzer input it
+`fuzz/build.sh build ENGINE` links this module, the case generator
+`MiseTest.Fuzz` and the model into one process with Ninja's build logic
+(`fuzz/build/harness.cc`). For each fuzzer input it
 calls `mise_fuzz_case`, which turns the input into a case and runs the
 model on it, and replays the case against Ninja in memory.
 
@@ -14,7 +15,7 @@ a mutation of one byte changes one choice of the case. The harness reads
 its scheduling choices from the back.
 -/
 
-namespace MiseFuzz
+namespace MiseFuzz.Build
 open MiseTest.Fuzz Lean
 
 def optsOf (b : ByteArray) : Opts := { absent := b.size > 0 && b[0]! % 2 == 1 }
@@ -46,4 +47,4 @@ def fuzzCase (input : ByteArray) (fins : String) (strict : UInt8) : String :=
   | .ok j => (j.setObjVal! "missingOk" (toJson false)).compress
   | .error e => "error: " ++ e
 
-end MiseFuzz
+end MiseFuzz.Build

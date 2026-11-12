@@ -9,7 +9,7 @@ import MiseTest.Rng
 Random well-formed manifests (`genManifest`), what `ninja -t query` and
 `ninja -t commands` should print for them, and manifests both parsers must
 reject. `MiseTest.DiffTest` writes them for `test/stage3-diff.sh`, and
-`MiseTest.ParseFuzz` feeds them to the parser fuzzer.
+`MiseFuzz.Parser` feeds them to the parser fuzzer.
 -/
 
 namespace MiseTest.DiffTest

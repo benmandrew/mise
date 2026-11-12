@@ -524,7 +524,7 @@ leaves. `known` lists every path the case has used, so that the state keeps
 the outputs of removed edges. With `strict`, also check that a second
 build runs nothing and that depfile edges read only what they may. With
 `checkToml`, check that `mise.toml` loads back as the graph; the in-process
-harness (`fuzz/build`) turns that off, since loading the TOML costs most of
+harness (`fuzz/build/harness.cc`) turns that off, since loading the TOML costs most of
 a case's time. -/
 def step (strict : Bool) (sd : StepD) (old : Option Case) (c : Case) (known : List Path) (st : St String)
     (checkToml : Bool := true) : Except String (Json × St String × List Path) := do
