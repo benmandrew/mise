@@ -43,7 +43,7 @@ def c1 := b1.edit "config.in" "config@1 #note"
 -- A real change to `config.in` still reaches both compiles.
 #guard ran sem m.medges (b1.edit "config.in" "config@2") == products
 
--- The DSL wraps the generator in the `cmp` wrapper, whose semantics is
+-- The DSL wraps the generator in the command wrapper, whose semantics is
 -- `Sem.withCmp`: here the same as `sem`.
 #guard (m.medges.headD default).cmd.startsWith "set -- build/config.h ; "
 #guard ran semW.withCmp m.medges c1 == ["build/config.h"]

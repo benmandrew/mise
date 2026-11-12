@@ -13,9 +13,21 @@ def hello : Graph := match (Fixtures.helloC []).graph with
 #guard decide hello.Valid
 #guard decide (emit hello).WellFormed
 #guard parse (print (emit hello)) == some (emit hello)
+/-- What Ninja makes of a wrapped command with one output and no implicit
+outputs. -/
+def wrapped (out cmd : String) : String :=
+  (((wrapCommand false cmd).replace "$out" out).replace "${mise_iouts}" "").replace "$$" "$"
+
+-- Every command goes through the wrapper.
 #guard hello.edges.map hello.cmd ==
-  ["cc -O2 -Wall -c main.c -o build/main.o", "cc -O2 -Wall -c greet.c -o build/greet.o",
-   "cc build/main.o build/greet.o -o build/hello"]
+  [wrapped "build/main.o" "cc -O2 -Wall -c main.c -o build/main.o",
+   wrapped "build/greet.o" "cc -O2 -Wall -c greet.c -o build/greet.o",
+   wrapped "build/hello" "cc build/main.o build/greet.o -o build/hello"]
+#guard (hello.edges.map hello.cmd).all (·.startsWith "set -- build/")
+-- `wrap := false` emits the command as written.
+#guard match (do let r ← rule "r" "touch $out" (wrap := false); let _ ← edge1 r "a").graph with
+  | .ok g => g.1.edges.map g.1.cmd == ["touch a"]
+  | .error _ => false
 -- The Ninja model evaluates the emitted commands the same way.
 #guard (emit hello).commands.map (·.2) == hello.edges.map hello.cmd
 
@@ -50,5 +62,11 @@ def rejects (b : Build Unit) : Bool := match b.graph with
   let _ ← source "./x"
 #guard rejects do
   let _ ← source "a|b"
+-- The wrapper's `.mise-old` files cannot be declared.
+#guard rejects do
+  let _ ← source "x.mise-old"
+#guard rejects do
+  let r ← rule "r" "touch $out"
+  let _ ← edge1 r "a.mise-old"
 
 end MiseTest.Stage4

@@ -7,7 +7,7 @@
 - `Emit.lean` holds the proofs; `Dsl.lean` is the builder (`source`, `rule`, `edge`, `edge1`, `defaults`, and `Build.graph`, which returns a `ValidGraph`).
 - `Toml.lean` parses a subset of TOML and calls the same builder functions, so it adds no checks and no proofs. The parser is hand-written so that the binary does not link Lean's compiler: with `Lake.Toml` it was 103 MB and each start took 23 ms longer. `test/MiseTest/Toml.lean` compares it with Lake's parser on accepted inputs and checks its error cases, `test/toml-diff.sh` compares it with Python's `tomllib` on random documents, and the shell tests run the examples' `mise.toml` files through `mise`. There is no print-then-parse theorem for the value tree. The parser's recursive functions are `partial def`s, which proofs cannot unfold, so a theorem would first need a total rewrite of the parser with termination measures.
 
-Commands are abstract, collected in `Sem V`: `sem.exec cmd vs` gives one content per output, from the explicit and implicit inputs in order. Stages 6 and 7 add `sem.dyn` and `sem.keep`; `Sem.withCmp` sets `keep` to equality, the semantics of the `cmp` wrapper below. A missing entry reads as `default`, so `V` needs `Inhabited`.
+Commands are abstract, collected in `Sem V`: `sem.exec cmd vs` gives one content per output, from the explicit and implicit inputs in order. Stages 6 and 7 add `sem.dyn` and `sem.keep`; `Sem.withCmp` sets `keep` to equality, the semantics of the command wrapper below. A missing entry reads as `default`, so `V` needs `Inhabited`.
 
 ## Ninja's evaluation rules
 
@@ -42,16 +42,18 @@ Ninja rejects cyclic rule variables; the model uses fuel of the binding count pl
 - `isDyn_emit`, `isRestat_emit`: the evaluated `deps` and `restat` bindings match the rule's flags, emitted by `emitRule` as `depfile = ${out}.d`, `deps = gcc` and `restat = 1`.
 - `emitAcyclic`: an `Acyclic` structure for `denote sem (emit g)` given `Graph.DynOK`, with edge positions as ranks; `emit_acyclic` states existence.
 
-## The `cmp` wrapper for `restat`
+## The command wrapper
 
-`rule` wraps a `restat` command in `cmpWrap` unless `restatCmp := false` (TOML `restat-cmp = false`). The wrapper is a `sh` script around the command, in the rule's command template. It moves each existing output `f` to `f.mise-old`, runs the command in a subshell, and on success moves `f.mise-old` back over `f` when `cmp -s` finds them equal, deleting it otherwise. On failure, or when an output is missing, it deletes what the command wrote, moves every old file back and exits nonzero. The outputs are `$out` and `${mise_iouts}`, which `edge` sets to the shell-quoted implicit outputs of a wrapped edge; a build may not set `mise_iouts` itself.
+`rule` wraps every command in `wrapCommand` unless `wrap := false` (TOML `wrap = false`). The wrapper is a `sh` script around the command, in the rule's command template. It moves each existing output `f` to `f.mise-old`, deleting a stale `f.mise-old` when `f` is absent, and runs the command in a subshell. If the command exits 0 and every output exists, it deletes each `f.mise-old`; for a `restat` rule it first moves `f.mise-old` back over `f` when `cmp -s` finds them equal. On failure, or when an output is missing, it deletes what the command wrote, moves every old file back and exits nonzero. The outputs are `$out` and `${mise_iouts}`, which `edge` sets to the shell-quoted implicit outputs of a wrapped edge; a build may not set `mise_iouts` itself on a wrapped rule. `source` and `edge` reject paths ending in `.mise-old`.
 
+- *Why every command*: the model's `St.run` writes every output, and the model has no failing commands. A real command that exits 0 without writing an output makes Ninja rerun its edge on every build, so `rebuild_noop` fails against real Ninja. The wrapper turns that into a failure. A failure restores the old files and Ninja records nothing, so the state after it equals the state before it, which `Reach` already covers (`Mise.Model.reach_runWrapped`). Changing `Sem` to allow missing outputs was the alternative, and was not taken.
 - *Moving the old file aside* replaces the plan's alternative of writing new outputs to temporary paths. `$out` is one space-separated string, and a command names its implicit outputs itself, so the wrapper cannot redirect the writes. Ninja sees the same: a kept output keeps its file and mtime, and a changed one has a new mtime.
-- *On by default*: with the wrapper, `Sem.keep_eq` holds for every `restat` rule the DSL emits, and a missing output becomes a failure, which removes the model's "always produces every output" deviation. The cost is a rename and a `cmp` per output per run. The command cannot read its previous output, which assumption 2 of `docs/trust.md` already rules out.
-- *Failure* leaves the old outputs and mtimes; the log entry is not written, so the edge stays dirty. An interrupt between the rename and the restore leaves an output missing, which Ninja rebuilds.
-- The command must not contain a shell comment, since it would hide the closing parenthesis of the subshell.
+- *On by default*: with the wrapper, `Sem.keep_eq` holds for every `restat` rule the DSL emits, and every command writes all its outputs. The cost is a shell, a subshell, and a rename and a delete per existing output per run, plus a `cmp` for `restat` rules. The command cannot read its previous output, which assumption 2 of `docs/trust.md` already rules out.
+- *Failure* leaves the old outputs and mtimes; the log entry is not written, so the edge stays dirty and the next build retries it. An interrupt between the rename and the restore leaves an output missing, which Ninja rebuilds. A depfile written by a failed command stays; Ninja reads it only after a success.
+- The command must not contain a shell comment, since it would hide the closing parenthesis of the subshell. It runs with the positional parameters set to the outputs and with the shell variables `f` and `s` set.
+- *Opting out*: `wrap = false` emits the command as written. The proofs then assume the command writes every output on exit 0, changes no file on failure, and for a `restat` rule keeps an output only when its contents would not change.
 
-`Mise.Model.wrapRun` models the script (`Mise/Model/Cmp.lean`) and `Sem.withCmp` is the semantics it gives (`keep` is equality, so `keep_eq` holds by construction).
+`Mise.Model.script` models the script as file operations (`Mise/Model/Cmp.lean`), `script_eq` computes its effect as `wrapRun`, and `Sem.withCmp` is the semantics it gives (`keep` is equality, so `keep_eq` holds by construction).
 
 ## Deviations from the plan
 
@@ -62,4 +64,4 @@ Ninja rejects cyclic rule variables; the model uses fuel of the binding count pl
 
 ## Tests
 
-`test/stage3-diff.sh`, `test/stage4-hello.sh`, `test/restat-cmp.sh` and `test/MiseTest/Stage4.lean`; see `docs/testing.md`.
+`test/stage3-diff.sh`, `test/stage4-hello.sh`, `test/restat-cmp.sh`, `test/wrap-outputs.sh` and `test/MiseTest/Stage4.lean`; see `docs/testing.md`.

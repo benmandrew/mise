@@ -95,7 +95,7 @@ def base : String := "sources = [\"a.c\"]\n[[rule]]\nname = \"cc\"\ncommand = \"
 #guard rejects base [("cflags", "-O0")] (msg := "no such parameter")
 #guard rejects "sources = [\"a.c\"" (msg := "expected ',' or ']'")
 
-/-! The `cmp` wrapper on `restat` rules. -/
+/-! The command wrapper, with `cmp` on `restat` rules. -/
 
 /-- The commands of a description's edges. -/
 def cmds (text : String) : List String := match load text with
@@ -108,16 +108,30 @@ def restatBase (rule edge : String) : String :=
   "sources = [\"a.c\"]\n[[rule]]\nname = \"gen\"\ncommand = \"gen $in $out\"\nrestat = true\n" ++ rule ++
     "[[build]]\nrule = \"gen\"\nouts = [\"a.h\"]\nins = [\"a.c\"]\n" ++ edge
 
+def plainBase (rule edge : String) : String :=
+  "sources = [\"a.c\"]\n[[rule]]\nname = \"gen\"\ncommand = \"gen $in $out\"\n" ++ rule ++
+    "[[build]]\nrule = \"gen\"\nouts = [\"a.h\"]\nins = [\"a.c\"]\n" ++ edge
+
 #guard match cmds (restatBase "" "") with
   | [c] => c.startsWith "set -- a.h ; " && has c "; if ( gen a.c a.h ); then " && has c "cmp -s"
   | _ => false
-#guard cmds (restatBase "restat-cmp = false\n" "") == ["gen a.c a.h"]
-#guard cmds (restatBase "restat-cmp = true\n" "") == cmds (restatBase "" "")
-#guard rejects (base ++ "restat-cmp = false\n") (msg := "restat-cmp: needs restat = true")
+-- A rule without `restat` is wrapped too, without `cmp`.
+#guard match cmds (plainBase "" "") with
+  | [c] => c.startsWith "set -- a.h ; " && has c "; if ( gen a.c a.h ); then " && !has c "cmp"
+  | _ => false
+#guard cmds (restatBase "wrap = false\n" "") == ["gen a.c a.h"]
+#guard cmds (plainBase "wrap = false\n" "") == ["gen a.c a.h"]
+#guard cmds (restatBase "wrap = true\n" "") == cmds (restatBase "" "")
+#guard rejects (base ++ "restat-cmp = false\n") (msg := "unknown key")
 -- Implicit outputs reach the wrapper through `mise_iouts`, shell-quoted.
 #guard match cmds (restatBase "" "implicit-outs = [\"b c.h\"]\n") with
   | [c] => c.startsWith "set -- a.h 'b c.h'; "
   | _ => false
-#guard rejects (restatBase "" "vars = { mise_iouts = \"x\" }\n") (msg := "set by the restat wrapper")
+#guard match cmds (plainBase "" "implicit-outs = [\"b c.h\"]\n") with
+  | [c] => c.startsWith "set -- a.h 'b c.h'; "
+  | _ => false
+#guard rejects (restatBase "" "vars = { mise_iouts = \"x\" }\n") (msg := "set by the command wrapper")
+#guard rejects (plainBase "" "vars = { mise_iouts = \"x\" }\n") (msg := "set by the command wrapper")
+#guard cmds (plainBase "wrap = false\n" "vars = { mise_iouts = \"x\" }\n") == ["gen a.c a.h"]
 
 end MiseTest.Toml

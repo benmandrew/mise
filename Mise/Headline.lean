@@ -1,4 +1,4 @@
-import Mise.Model.Dsl
+import Mise.Model.Cmp
 import Mise.Model.Minimal
 import Mise.Model.Parallel
 import Mise.Syntax.RoundTrip
@@ -27,6 +27,12 @@ The statements share these hypotheses:
 
 `sem : Sem V` says what each command computes. It is a parameter, so the
 theorems hold for every choice of command meanings.
+
+The model has no failing commands: a run writes every output. The DSL
+makes that hold by wrapping each command in a script that restores the old
+outputs when the command fails or leaves an output missing. `wrapped_run`
+shows the state after such a run is reachable, so the other theorems also
+cover histories with failed commands.
 -/
 
 namespace Mise.Headline
@@ -139,5 +145,25 @@ theorem any_order (g : Graph) (hg : g.Valid) (hd : g.DynOK sem) {es : List MEdge
   refine ⟨?_, dsl_same_edges sem g hg hd ho.1 ho.2 h⟩
   rw [(dsl_parallel sem g hg hd ho.1 ho.2 h).1]
   exact BuildSpec.cleanBuild_correct _ _
+
+/-! ## Failed commands -/
+
+/-- **Failed commands.** The DSL wraps every command, unless its rule opts
+out, in a script that `Mise.Model.script` models. The command leaves `w` at
+the outputs, writing what `sem` says (`hw`), and exits 0 when `ok`. If it
+fails or leaves an output missing, the state after the run is the state
+before it; otherwise the run is the model's run. In both cases the state
+after the run is reachable under `Sem.withCmp`, which keeps a `restat`
+output exactly when `cmp` finds it unchanged, so the theorems above apply
+to it. The script needs that no output is another output's `.mise-old` file
+(`ha`) and that no `.mise-old` file of an output exists (`hold`). -/
+theorem wrapped_run [DecidableEq V] (g : Graph) (hg : g.Valid) {st : St V}
+    (h : Reachable sem.withCmp g st) {e : MEdge} (he : e ∈ edges g) (hdirty : st.dirty e = true)
+    (w : Path → Option V) (ok : Bool) (hw : ∀ o ∈ e.outs, ∀ v, w o = some v → v = st.outVal sem e o)
+    (ha : ∀ o ∈ e.outs, aside o ∉ e.outs) (hold : ∀ o ∈ e.outs, st.fs (aside o) = none) :
+    ((ok = false ∨ ∃ o ∈ e.outs, w o = none) → st.runWrapped sem e w ok = st) ∧
+      Reachable sem.withCmp g (st.runWrapped sem e w ok) :=
+  ⟨runWrapped_fail sem st e w ok (outs_nodup_emit hg he) ha hold,
+   reach_runWrapped sem st e w ok h he hdirty (outs_nodup_emit hg he) ha hold hw⟩
 
 end Mise.Headline

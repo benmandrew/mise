@@ -132,9 +132,9 @@ echo ok > mode
 [ "$(ran)" = "GEN " ] || fail "after failure, same contents: ran more than GEN"
 no_old "end"
 
-# `restat-cmp = false` emits the command as written.
-awk '{ print } /^restat = true$/ { print "restat-cmp = false" }' mise.toml > mise.toml.new
+# `wrap = false` emits the command as written.
+awk '{ print } /^restat = true$/ { print "wrap = false" }' mise.toml > mise.toml.new
 mv mise.toml.new mise.toml
 [ "$("$mise" gen --commands . | head -1)" = "sh gen.sh in.txt mode out/a.txt out/b.txt 'out/c d.txt'" ] ||
-  fail "restat-cmp = false still wraps"
+  fail "wrap = false still wraps"
 echo "restat-cmp: cutoff, propagation, failure, missing output and recovery all pass"

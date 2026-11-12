@@ -11,7 +11,7 @@ with open(src) as f:
             key, _, value = line.partition("=")
             lines.append("#define %s %s" % (key.strip(), value.strip()))
 text = "\n".join(lines) + "\n"
-# The rule has `restat`, so mise wraps this command: when the header comes
-# out the same, the wrapper puts the old file back with its old mtime.
+# The rule has `restat`, so mise's command wrapper compares the outputs: when
+# the header comes out the same, it puts the old file back with its old mtime.
 with open(out, "w") as f:
     f.write(text)

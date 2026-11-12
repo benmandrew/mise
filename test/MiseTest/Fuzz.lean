@@ -51,7 +51,7 @@ def hex16 (h : UInt64) : String :=
   let d := Nat.toDigits 16 h.toNat
   String.ofList (List.replicate (16 - d.length) '0' ++ d)
 
-/-- The command inside the DSL's `cmp` wrapper (`cmpWrap`), or the command
+/-- The command inside the DSL's wrapper (`wrapCommand`), or the command
 itself when it is not wrapped. The wrapper does not change what the helper
 computes, only which outputs keep their old file. -/
 def inner (cmd : String) : String :=
@@ -105,26 +105,27 @@ def fzDyn (cmd : String) : Task Path String (List String) :=
 
 /-- The helper as command semantics. A `restat` run leaves an output alone
 when its contents would not change, whether the helper decides that (mode
-`r`) or the `cmp` wrapper does, as `Sem.withCmp` says. -/
+`r`) or the wrapper's `cmp` does, as `Sem.withCmp` says. -/
 def sem : Sem String := Sem.withCmp { exec := fzContent, dyn := fzDyn }
 
 /-! ## Random graphs -/
 
 /-- `(name, mode, depfile, restat, wrapped)`; the mode tells the helper what
-to do. A `restat` rule either has the helper keep unchanged outputs itself
-(mode `r`, emitted with `restat-cmp = false`) or goes through the DSL's
-`cmp` wrapper with a helper that always writes. The `x` rules leave out
-some outputs, are never wrapped, and only `Opts.absent` uses them. -/
+to do. Rules without `restat` go through the DSL's wrapper. A `restat` rule
+either has the helper keep unchanged outputs itself (mode `r`, emitted with
+`wrap = false`) or goes through the wrapper, which compares with `cmp`, with
+a helper that always writes. The `x` rules leave out some outputs, are never
+wrapped, and only `Opts.absent` uses them. -/
 def ruleSpecs : List (String × String × Bool × Bool × Bool) :=
-  [("st", "s", false, false, false), ("str", "sr", false, true, false), ("stw", "s", false, true, true),
-   ("dy", "d", true, false, false), ("dyr", "dr", true, true, false), ("dyw", "d", true, true, true),
+  [("st", "s", false, false, true), ("str", "sr", false, true, false), ("stw", "s", false, true, true),
+   ("dy", "d", true, false, true), ("dyr", "dr", true, true, false), ("dyw", "d", true, true, true),
    ("stx", "srx", false, true, false), ("dyx", "drx", true, true, false)]
 
 def ruleCmd (mode : String) : String := "./fz " ++ mode ++ " ${tag} $out ${iout} -- $in ${imp}"
 
 def rules : List GRule :=
   ruleSpecs.map fun (name, mode, depfile, restat, wrapped) =>
-    { name, command := (readValue (if wrapped then cmpWrap (ruleCmd mode) else ruleCmd mode).toList).getD [],
+    { name, command := (readValue (if wrapped then wrapCommand restat (ruleCmd mode) else ruleCmd mode).toList).getD [],
       depfile, restat }
 
 def wrapped (rule : String) : Bool := ruleSpecs.any fun (n, _, _, _, w) => n == rule && w
@@ -133,7 +134,7 @@ def wrapped (rule : String) : Bool := ruleSpecs.any fun (n, _, _, _, w) => n == 
 also go to the wrapper in `mise_iouts`. -/
 def withIouts (e : GEdge) : GEdge :=
   if wrapped e.rule && !e.implicitOuts.isEmpty then
-    { e with vars := e.vars ++ [(cmpOutsVar, shellList " " e.implicitOuts)] }
+    { e with vars := e.vars ++ [(wrapOutsVar, shellList " " e.implicitOuts)] }
   else e
 
 structure Src where
@@ -355,13 +356,13 @@ def tomlOf (g : Graph) : String := Id.run do
     t := t ++ s!"\n[[rule]]\nname = {tstr name}\ncommand = {tstr (ruleCmd mode)}\n"
     if depfile then t := t ++ "depfile = true\n"
     if restat then t := t ++ "restat = true\n"
-    if restat && !wrapped then t := t ++ "restat-cmp = false\n"
+    if !wrapped then t := t ++ "wrap = false\n"
   for e in g.edges do
     t := t ++ s!"\n[[build]]\nrule = {tstr e.rule}\nouts = {tarr e.outs}\n"
     for (k, v) in [("implicit-outs", e.implicitOuts), ("ins", e.ins), ("implicit-ins", e.implicitIns),
                    ("order-only", e.orderOnly)] do
       if !v.isEmpty then t := t ++ s!"{k} = {tarr v}\n"
-    let vars := e.vars.filter (·.1 != cmpOutsVar)
+    let vars := e.vars.filter (·.1 != wrapOutsVar)
     t := t ++ "vars = { " ++ ", ".intercalate (vars.map fun (k, v) => s!"{k} = {tstr v}") ++ " }\n"
   t
 
