@@ -8,8 +8,10 @@ text, then runs `ninja` with a random `-j` level. It then checks:
 
 1. the edges that ran (the helper `fz` logs each run's first output to
    `fz.log`) are exactly the ones the model's `buildTrace` runs, each once;
-2. every product holds the contents the model computes;
-3. `ninja -n` reports no work.
+2. the runs form a schedule, as `parallel_equiv` assumes (see
+   `check_schedule`);
+3. every product holds the contents the model computes;
+4. `ninja -n` reports no work.
 
 After the last step it checks that `ninja -t missingdeps` finds nothing.
 
@@ -25,7 +27,7 @@ writes the result to `test/out/fuzz/shrunk/<i>.json`, which
 `fuzz.py test/out/fuzz/shrunk <i>` replays.
 
 usage: fuzz.py [--workers W] [--seed S] [--keep] [--no-shrink]
-               [--shrink-max K] [--fz PATH] CASES_DIR [CASE...]
+               [--shrink-max K] [--fz PATH] [--delay US] CASES_DIR [CASE...]
 """
 import argparse
 import copy
@@ -43,7 +45,7 @@ ROOT = Path(__file__).resolve().parent.parent
 MISE = ROOT / ".lake" / "build" / "bin" / "mise"
 FUZZGEN = ROOT / ".lake" / "build" / "bin" / "fuzzgen"
 OUT = ROOT / "test" / "out" / "fuzz"
-JOBS = ["-j1", "-j2", "-j8"]
+JOBS = ["-j1", "-j2", "-j8", "-j64"]
 
 
 class Fail(Exception):
@@ -82,8 +84,99 @@ def write_fresh(d, files):
             raise Fail("mtime", f"{rel}: mtime does not advance past {floor}")
 
 
-def replay_steps(d, steps, jobs, fz):
+def parse_log(text):
+    """The first output of each run in log order, and for each run with
+    timestamps its six times and the files it read (see test/fz.c)."""
+    order, runs = [], {}
+    for line in text.splitlines():
+        f = line.split()
+        order.append(f[0])
+        if len(f) >= 7:
+            runs[f[0]] = ([int(x) for x in f[1:7]], f[7:])
+    return order, runs
+
+
+def check_schedule(desc, order, runs, stats):
+    """Check the assumptions behind `parallel_equiv` (Mise/Model/Parallel.lean).
+
+    The theorem treats a parallel run as the sequence of its commands by
+    start time, each reading its inputs at the start and writing its outputs
+    at the end, and assumes that sequence is a `Sched`. With the times `fz`
+    logs:
+
+    (b) within each run, entry <= first read <= last read <= first write <=
+        last write <= exit, so all reads come before all writes;
+    (a) every run starts after every edge producing one of its inputs is
+        done. Inputs are explicit, implicit and order-only inputs and the
+        files the run read, so discovered deps count. A producer that ran
+        is done when it exits; one that did not run is done when all of its
+        own producers are, which is the earliest Ninja could have found it
+        clean;
+    (s) the edges sorted by start time (edges that did not run at their
+        done time, ties broken by depth) form a `Sched`: no edge reads its
+        own outputs or a later edge's outputs, and outputs are unique.
+
+    (a) gives the second conjunct of `Sched` for the sequence in (s); (s)
+    checks it directly, together with the first and third conjuncts, which
+    hold for every emitted manifest (`sched_emit`). (a) is the stronger
+    claim: a producer has ended, not just started, before a reader starts,
+    so with (b) two runs that overlap in time never read what the other
+    writes, and the sequence by start time has the parallel run's effect."""
+    if len(runs) != len(order):
+        return  # a helper without timestamps (--fz)
+    edges = {e["outs"][0]: e for e in desc["edges"]}
+    outs = {k: e["outs"] + e["implicitOuts"] for k, e in edges.items()}
+    prod = {o: k for k, os in outs.items() for o in os}
+    reads = {k: e["ins"] + e["implicitIns"] + e["orderOnly"] for k, e in edges.items()}
+    for k, (t, _) in runs.items():
+        if t != sorted(t):
+            raise Fail("rw-order", f"{k}: times entry, read, read, write, write, exit are out of order: {t}")
+    done, depth = {}, {}
+
+    def visit(k):
+        if k not in done:
+            ps = [visit(prod[p]) for p in reads[k] if p in prod]
+            done[k] = runs[k][0][5] if k in runs else max((p[0] for p in ps), default=0)
+            depth[k] = 1 + max((p[1] for p in ps), default=0)
+        return done[k], depth[k]
+
+    for k in edges:
+        visit(k)
+    for k, (t, rd) in runs.items():
+        for p in reads[k] + rd:
+            q = prod.get(p)
+            if q is not None and done[q] >= t[0]:
+                raise Fail("sched", f"{k} started at {t[0]}, before {q}, which produces {p}, was done at {done[q]}")
+    seq = sorted(edges, key=lambda k: (runs[k][0][0] if k in runs else done[k], depth[k]))
+    seen = set()
+    for i in reversed(range(len(seq))):
+        k = seq[i]
+        if set(outs[k]) & seen or len(set(outs[k])) != len(outs[k]):
+            raise Fail("sched", f"start order {seq}: an output of {k} is not unique")
+        seen |= set(outs[k])
+        bad = set(reads[k] + (runs[k][1] if k in runs else [])) & seen
+        if bad:
+            raise Fail("sched", f"start order {seq}: {k} reads {sorted(bad)}, written by itself or a later edge")
+    # Overlap statistics: pairs of runs whose intervals intersect, and the
+    # most runs at once.
+    ev = sorted([(t[0], 1) for t, _ in runs.values()] + [(t[5], -1) for t, _ in runs.values()])
+    cur = 0
+    for _, x in ev:
+        cur += x
+        stats["max"] = max(stats["max"], cur)
+    iv = sorted(t[0:6:5] for t, _ in runs.values())
+    pairs = sum(1 for i in range(len(iv)) for j in range(i + 1, len(iv)) if iv[j][0] < iv[i][1])
+    stats["pairs"] += pairs
+    stats["steps"] += pairs > 0
+
+
+def new_stats():
+    return {"max": 0, "pairs": 0, "steps": 0, "multi": 0}
+
+
+def replay_steps(d, steps, jobs, fz, desc, stats=None):
     """Replay steps in a fresh directory `d`. Returns None, or (kind, message)."""
+    stats = stats if stats is not None else new_stats()
     shutil.rmtree(d, ignore_errors=True)
     d.mkdir(parents=True)
     (d / "fz").symlink_to(fz)
@@ -97,13 +190,15 @@ def replay_steps(d, steps, jobs, fz):
             log = d / "fz.log"
             log.unlink(missing_ok=True)
             run(["ninja", jobs[i]], d)
-            ran = log.read_text().split() if log.exists() else []
+            ran, runs = parse_log(log.read_text()) if log.exists() else ([], {})
             if len(ran) != len(set(ran)):
                 raise Fail("twice", f"an edge ran twice: {sorted(ran)}")
             if sorted(ran) != s["ran"]:
                 extra = sorted(set(ran) - set(s["ran"]))
                 missing = sorted(set(s["ran"]) - set(ran))
                 raise Fail("ran", f"ran differs from the model: extra {extra}, missing {missing}")
+            stats["multi"] += jobs[i] != "-j1" and len(ran) > 1
+            check_schedule(desc, ran, runs, stats)
             for p, v in s["products"].items():
                 got = (d / p).read_text() if (d / p).exists() else None
                 if got != v:
@@ -231,12 +326,12 @@ def shrink(name, desc, jobs, kind, fz):
             steps = expect(c, tmp)
             if steps is None:
                 continue
-            r = replay_steps(tmp / "run", steps, cj, fz)
+            r = replay_steps(tmp / "run", steps, cj, fz, c)
             if r and r[0] == kind:
                 desc, jobs, progress = c, cj, True
                 break
     steps = expect(desc, tmp)
-    r = replay_steps(OUT / "shrunk-run" / name, steps, jobs, fz)
+    r = replay_steps(OUT / "shrunk-run" / name, steps, jobs, fz, desc)
     shrunk = OUT / "shrunk"
     shrunk.mkdir(parents=True, exist_ok=True)
     (shrunk / f"{name}.json").write_text(json.dumps({"desc": desc, "jobs": jobs, "steps": steps}))
@@ -251,11 +346,12 @@ def replay(case, seed, keep, fz, do_shrink):
     rng = random.Random(f"{seed}/{name}")
     jobs = data.get("jobs") or [rng.choice(JOBS) for _ in steps]
     d = OUT / "run" / name
-    r = replay_steps(d, steps, jobs, fz)
+    stats = new_stats()
+    r = replay_steps(d, steps, jobs, fz, data["desc"], stats)
     if r is None:
         if not keep:
             shutil.rmtree(d)
-        return None
+        return None, stats
     kind, msg = r
     report = f"case {name}: {msg}"
     if do_shrink:
@@ -264,7 +360,7 @@ def replay(case, seed, keep, fz, do_shrink):
         report += f"\n  shrunk from {size(data['desc'])}\n  to {size(small)} in {trials} trials, {time.time() - t:.1f}s"
         report += f"\n  {r2[1] if r2 else 'the shrunk case passes on replay (flaky?)'}"
         report += f"\n  replay: test/fuzz.py test/out/fuzz/shrunk {name}"
-    return report
+    return report, stats
 
 
 def main():
@@ -277,6 +373,8 @@ def main():
     ap.add_argument("--no-shrink", action="store_true")
     ap.add_argument("--shrink-max", type=int, default=3, help="shrink at most this many failing cases")
     ap.add_argument("--fz", help="use this helper binary instead of compiling test/fz.c")
+    ap.add_argument("--delay", type=int, default=20000,
+                    help="each command sleeps up to this many microseconds twice, so that runs overlap (0: off)")
     a = ap.parse_args()
     cases = sorted(Path(a.cases).glob("*.json"), key=lambda p: int(p.stem))
     if a.only:
@@ -285,17 +383,22 @@ def main():
     fz = Path(a.fz).resolve() if a.fz else OUT / "fz"
     if not a.fz:
         subprocess.run(["cc", "-O2", "-Wall", "-o", fz, ROOT / "test" / "fz.c"], check=True)
+    os.environ["FZ_DELAY"] = str(a.delay)
     t = time.time()
     n = len(cases)
     with ProcessPoolExecutor(a.workers) as ex:
         results = list(ex.map(replay, cases, [a.seed] * n, [a.keep] * n, [fz] * n, [False] * n))
-        fails = [(c, r) for c, r in zip(cases, results) if r]
+        fails = [(c, r) for c, (r, _) in zip(cases, results) if r]
         steps = sum(len(json.loads(c.read_text())["steps"]) for c in cases)
         print(f"fuzz: {n - len(fails)}/{n} cases passed, {steps} steps, {time.time() - t:.1f}s")
+        st = [s for _, s in results]
+        print(f"fuzz: of {sum(s['multi'] for s in st)} builds with -j above 1 that ran two or more edges, "
+              f"{sum(s['steps'] for s in st)} ran edges at the same time; "
+              f"{sum(s['pairs'] for s in st)} overlapping pairs, at most {max(s['max'] for s in st)} at once")
         if fails and not a.no_shrink:
             todo = [c for c, _ in fails[: a.shrink_max]]
             k = len(todo)
-            shrunk = dict(zip(todo, ex.map(replay, todo, [a.seed] * k, [True] * k, [fz] * k, [True] * k)))
+            shrunk = dict(zip(todo, (r for r, _ in ex.map(replay, todo, [a.seed] * k, [True] * k, [fz] * k, [True] * k))))
             fails = [(c, shrunk.get(c, r)) for c, r in fails]
     for _, f in fails:
         print("FAIL", f)

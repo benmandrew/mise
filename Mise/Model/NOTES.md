@@ -58,7 +58,7 @@ Stages 6 and 7 generalised the Stage 5 model in place. Without depfile or `resta
 - Ninja stores a command hash, the model the command string, so a collision would make Ninja skip an edge the model runs.
 - Phony edges have an empty command; the DSL does not emit them. `generator` is ignored.
 - (Stage 6) The model records deps for every output of every edge, where Ninja keys the deps log by the first output of edges with `deps`.
-- (Stage 7) A parallel run is the sequence of its commands by start time, assuming each reads at the start and writes at the end. Ninja's ordering makes that sequence a `Sched`.
+- (Stage 7) A parallel run is the sequence of its commands by start time, assuming each reads at the start and writes at the end. Ninja's ordering makes that sequence a `Sched`. The schedule check in `test/fuzz.py` tests both on every build (see `docs/testing.md`).
 - (Stage 7) Two orders agree on contents, dirtiness and the edges they run, but not on mtimes or log times.
 - (Stage 7) A `restat` command always produces every output, where Ninja treats a missing one as unchanged.
 

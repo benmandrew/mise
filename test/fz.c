@@ -9,7 +9,19 @@
    FNV-1a hash of the arguments after argv[0] joined by spaces, then i, then
    the contents of every file read with lines starting with `#` left out.
    A restat command leaves an output alone when its contents would not
-   change. Every run appends its first output to `fz.log`.
+   change. Every run appends one line to `fz.log`:
+
+     OUT T_START T_READ0 T_READ1 T_WRITE0 T_WRITE1 T_END READ...
+
+   OUT is the first output, READ... the files read in order, and the times
+   are CLOCK_MONOTONIC_RAW nanoseconds, which every process on the machine
+   shares: at entry, before the first and after the last read of an input,
+   before the first and after the last write (outputs and depfile; a
+   `restat` command's look at its old output counts here), and before the
+   log write. test/fuzz.py checks the schedule with them. When FZ_DELAY
+   is set to N > 0, the command sleeps a random 0 to N-1 microseconds after
+   entry and again between reading and writing, so that parallel runs
+   overlap more.
 
    `fzContent` and `fzDyn` in test/MiseTest/Fuzz.lean compute the same
    contents and reads; the harness compares the two. */
@@ -18,7 +30,18 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
+
+static unsigned long long now(void) {
+  struct timespec t;
+  clock_gettime(CLOCK_MONOTONIC_RAW, &t);
+  return (unsigned long long)t.tv_sec * 1000000000ULL + (unsigned long long)t.tv_nsec;
+}
+
+static void pause_random(long n) {
+  if (n > 0) usleep((useconds_t)(random() % n));
+}
 
 static uint64_t feed(uint64_t h, const char *s, size_t n) {
   for (size_t i = 0; i < n; i++) {
@@ -57,6 +80,10 @@ static int writeAll(const char *path, const char *s, size_t n) {
 }
 
 int main(int argc, char **argv) {
+  unsigned long long t_start = now();
+  const char *dv = getenv("FZ_DELAY");
+  long delay = dv ? atol(dv) : 0;
+  srandom((unsigned)(t_start ^ (unsigned long long)getpid() << 16));
   int sep = -1;
   for (int i = 3; i < argc; i++)
     if (strcmp(argv[i], "--") == 0) { sep = i; break; }
@@ -88,6 +115,8 @@ int main(int argc, char **argv) {
 
   char **texts = malloc(cap * sizeof *texts);
   size_t *lens = malloc(cap * sizeof *lens);
+  pause_random(delay);
+  unsigned long long t_read0 = now();
   for (int k = 0; k < n; k++) {
     texts[k] = slurp(reads[k], &lens[k]);
     if (!dyn) continue;
@@ -114,6 +143,11 @@ int main(int argc, char **argv) {
     }
   }
 
+  unsigned long long t_read1 = now();
+
+  /* Hash before the write phase, so that it holds only file accesses. */
+  char (*outv)[32] = malloc(nouts * sizeof *outv);
+  int *outl = malloc(nouts * sizeof *outl);
   for (int i = 0; i < nouts; i++) {
     char idx[32];
     int il = snprintf(idx, sizeof idx, "%d\n", i);
@@ -132,8 +166,14 @@ int main(int argc, char **argv) {
       }
       h = feed(h, "\0", 1);
     }
-    char out[32];
-    int ol = snprintf(out, sizeof out, "%016llx\n", (unsigned long long)h);
+    outl[i] = snprintf(outv[i], sizeof outv[i], "%016llx\n", (unsigned long long)h);
+  }
+
+  pause_random(delay);
+  unsigned long long t_write0 = now();
+  for (int i = 0; i < nouts; i++) {
+    char *out = outv[i];
+    int ol = outl[i];
     if (restat) {
       size_t len;
       char *old = slurp(outs[i], &len);
@@ -155,14 +195,19 @@ int main(int argc, char **argv) {
     fprintf(f, "\n");
     fclose(f);
   }
+  unsigned long long t_write1 = now();
 
+  /* One write(2) per line, so that lines from parallel runs do not mix. */
+  size_t ll = strlen(outs[0]) + 6 * 21 + 2;
+  for (int k = 0; k < n; k++) ll += strlen(reads[k]) + 1;
+  char *line = malloc(ll);
+  int len = snprintf(line, ll, "%s %llu %llu %llu %llu %llu %llu", outs[0], t_start, t_read0, t_read1, t_write0,
+                     t_write1, now());
+  for (int k = 0; k < n; k++) len += snprintf(line + len, ll - len, " %s", reads[k]);
+  line[len++] = '\n';
   int log = open("fz.log", O_WRONLY | O_APPEND | O_CREAT, 0644);
   if (log < 0) return 1;
-  size_t ol = strlen(outs[0]);
-  char *line = malloc(ol + 2);
-  memcpy(line, outs[0], ol);
-  line[ol] = '\n';
-  if (write(log, line, ol + 1) != (ssize_t)(ol + 1)) return 1;
+  if (write(log, line, len) != (ssize_t)len) return 1;
   close(log);
   return 0;
 }
