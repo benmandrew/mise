@@ -97,14 +97,24 @@ case "$target" in
   parser) lean_libs="-lInit -lleanrt" ;;
   build) lean_libs="-lleancpp -lInit -lStd -lLean -lleanrt" ;;
 esac
-ldflags=
+# leanc's flags name every Lean library. They are dropped, and our own set
+# goes where they were: inside the first `--start-group` on Linux, where
+# the libraries refer to each other, or before -lc++ on macOS, which has no
+# groups.
+ldflags= placed=
 for w in $(leanc --print-ldflags); do
   case "$w" in
     -lleancpp|-lInit|-lStd|-lLean|-lleanrt|-lLake|-lLeanExport) ;;
-    -lc++) ldflags+=" $lean_libs -lc++" ;;
+    -Wl,--start-group)
+      ldflags+=" $w"
+      [ -n "$placed" ] || { ldflags+=" $lean_libs"; placed=1; } ;;
+    -lc++)
+      [ -n "$placed" ] || { ldflags+=" $lean_libs"; placed=1; }
+      ldflags+=" $w" ;;
     *) ldflags+=" $w" ;;
   esac
 done
+[ -n "$placed" ] || ldflags+=" $lean_libs"
 
 {
   echo "ninja_required_version = 1.10"
