@@ -70,7 +70,7 @@ jobs:
           fi
           python3 test/run affected "${args[@]}" nightly
 
-  # 500 random graphs (59 seconds on 8 cores, per docs/testing.md).
+  # 500 random graphs (74 seconds on 8 cores, per docs/testing.md).
   fuzz:
     needs: changed
     if: fromJSON(needs.changed.outputs.run)['fuzz']

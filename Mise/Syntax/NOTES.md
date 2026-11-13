@@ -1,6 +1,6 @@
 # Stage 3 notes: Ninja syntax, printer, parser model, round trip
 
-Tested against Ninja `1.13.2` (Homebrew, macOS arm64).
+The model follows Ninja `1.13.2`.
 
 ## Definitions
 
@@ -9,7 +9,7 @@ Tested against Ninja `1.13.2` (Homebrew, macOS arm64).
 - `Parse.lean`: the *parser model*, one statement per header line plus its indented block, lexing as `ReadIdent`, `ReadPath` and `ReadVarValue` do in Ninja's `lexer.in.re`.
 - `RoundTrip.lean`: the proof, plus `unescapePath`.
 
-`Manifest.WellFormed m` means every statement passes `Stmt.ok` in the context (`Ctx`) of the statements before it. The parser model runs the same `Stmt.ok`, so both share one definition. It covers these conditions:
+`Manifest.WellFormed m` means every statement passes `Stmt.ok` in the context (`Ctx`) of the statements before it. The parser model runs the same `Stmt.ok`. It requires that:
 
 - identifiers, literals and paths use only characters Ninja can lex, and literals are never adjacent;
 - paths are canonical, so `CanonicalizePath` leaves them unchanged;
@@ -24,12 +24,10 @@ Tested against Ninja `1.13.2` (Homebrew, macOS arm64).
 - `unescape_escPath`: `unescapePath (escPath p) = some p` for valid `p`.
 - `unescape_renderVal`: `readValue (renderVal e) = some e` for valid `e`.
 
-None of `RoundTrip.lean` duplicates Mathlib, so the plan's Mathlib threshold does not apply.
-
 ## Deviations from the plan
 
-- `Path` is a plain `String` with validity in `WellFormed`, which keeps keys simple for Stages 4 and 5.
-- `WellFormed` includes context checks (unique outputs, known `default` targets, a nonempty last `command`) because Ninja rejects these at parse time.
+- `Path` is a plain `String` with validity in `WellFormed`, which keeps keys simple for later stages.
+- `WellFormed` includes the context checks (unique outputs, known `default` targets, a nonempty last `command`) because Ninja rejects these at parse time.
 
 ## Where the parser model differs from Ninja
 
@@ -43,7 +41,14 @@ The model agrees with Ninja on every input it accepts. It rejects some inputs Ni
 
 The model does not evaluate variables, and accepts any `deps` value because Ninja checks it only at build time.
 
-The differential test found two behaviours that are now modelled: Ninja rejects an empty last `command` binding but accepts `${v}` with an empty `v`, and `-t query` lists a consuming edge once per occurrence of an input. The parser fuzzer (`fuzz/fuzz.sh parser`) found four more, all accepted by the model before. Ninja rejects a nonempty manifest whose last line has no newline. It reads a NUL byte in a comment as the end of the input. It rejects an edge whose `pool` variable names no declared pool. It drops a phony edge's own output from its inputs.
+The model also follows these Ninja behaviours:
+
+- Ninja rejects an empty last `command` binding but accepts `${v}` with an empty `v`.
+- `-t query` lists a consuming edge once per occurrence of an input.
+- Ninja rejects a nonempty manifest whose last line has no newline.
+- It reads a NUL byte in a comment as the end of the input.
+- It rejects an edge whose `pool` variable names no declared pool.
+- It drops a phony edge's own output from its inputs.
 
 ## Tests
 
