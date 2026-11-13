@@ -98,12 +98,13 @@
 // A file of definitions: a numbered subsection, listed in the contents.
 #let file-heading(file) = heading(level: 2, raw(file))
 
-// One definition: a numbered heading, left out of the contents, with the name
-// and location on one line. Then the docstring without its `Gloss:` lines,
-// kept on the page of the code that follows.
+// One definition: a numbered heading, left out of the contents, with the
+// location below it as for a theorem. Then the docstring without its `Gloss:`
+// lines, kept on the page of the code that follows.
 #let def-head(name, lbl, file, a, b, url, body) = {
-  [#heading(level: 3, outlined: false)[#raw(name) #h(0.3em) #text(weight: "regular", grey(source(url, file + ":" + str(a) + "–" + str(b))))]#label(lbl)]
-  block(above: 0.45em, below: 0.5em, sticky: true, width: 100%)[
+  [#heading(level: 3, outlined: false, raw(name))#label(lbl)]
+  block(above: 0.3em, below: 0.5em, sticky: true, grey(source(url, file + ":" + str(a) + "–" + str(b))))
+  block(above: 0.5em, below: 0.5em, sticky: true, width: 100%)[
   #body
   ]
 }
