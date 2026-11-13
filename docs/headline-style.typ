@@ -86,10 +86,17 @@
 // A source location, linked to the lines on GitHub.
 #let source(url, body) = link(url, raw(body))
 
-#let theorem-heading(name, file, line, url) = {
-  heading(level: 2, raw(name))
-  block(above: 0.3em, below: 0.8em, sticky: true, grey(source(url, file + ":" + str(line))))
-}
+// A heading with its source location right-aligned on the same line. The
+// heading's own spacing goes to the block around both.
+#let with-source(above, below, head, loc) = block(
+  above: above, below: below, sticky: true, width: 100%,
+  grid(columns: (1fr, auto), column-gutter: 1em, align: (left + bottom, right + bottom), {
+    show heading: set block(above: 0pt, below: 0pt)
+    head
+  }, grey(loc)))
+
+#let theorem-heading(name, file, line, url) = with-source(2.2em, 0.8em,
+  heading(level: 2, raw(name)), source(url, file + ":" + str(line)))
 
 #let defs-intro = [
   This part shows the definitions that a core statement names, and the definitions that those name in turn, file by file in import order. The printer and the parser appear, but the definitions they use do not.
@@ -102,12 +109,12 @@
 #let file-heading(file) = heading(level: 2, raw(short(file)))
 
 // One definition: a numbered heading, left out of the contents, with the
-// location below it as for a theorem. Then the docstring without its `Gloss:`
-// lines, kept on the page of the code that follows.
+// location on the same line as for a theorem. Then the docstring without its
+// `Gloss:` lines, kept on the page of the code that follows.
 #let def-head(name, lbl, file, a, b, url, body) = {
-  [#heading(level: 3, outlined: false, raw(name))#label(lbl)]
-  block(above: 0.3em, below: 0.5em, sticky: true, grey(source(url, short(file) + ":" + str(a) + "–" + str(b))))
-  block(above: 0.5em, below: 0.5em, sticky: true, width: 100%)[
+  with-source(1.6em, 0.7em, [#heading(level: 3, outlined: false, raw(name))#label(lbl)],
+    source(url, short(file) + ":" + str(a) + "–" + str(b)))
+  block(above: 0.7em, below: 0.5em, sticky: true, width: 100%)[
   #body
   ]
 }
