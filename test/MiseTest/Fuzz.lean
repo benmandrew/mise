@@ -447,7 +447,7 @@ any, fails before it reads or writes anything, and each edge for which
 `natFail` holds fails after its helper ran. Ninja runs every edge that does
 not depend on a failed one, and none that does. The edges that finish are a
 sublist of the manifest, and a failed run leaves the state as it was
-(`Mise.Headline.wrapped_run`), so this too is a sequence of `Reach` steps.
+(`Mise.Theorems.wrapped_run`), so this too is a sequence of `Reach` steps.
 Returns the state, the edges whose helper ran (failed ones included),
 whether `f` was tried, and whether any edge failed. -/
 def failTrace (f : Option Path) : List MEdge → List Path → St String → St String × List MEdge × Bool × Bool

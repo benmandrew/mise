@@ -1,5 +1,5 @@
 # Codepoints kept in the Iosevka subsets (scripts/subset-fonts.sh).
-# scripts/trusted.sh --check fails if docs/headline.typ uses a character
+# scripts/trusted.sh --check fails if docs/theorems.typ uses a character
 # outside these ranges. Sizes are for the regular face with ASCII alone
 # (12,408 bytes) plus that range.
 U+0020-007E  # ASCII

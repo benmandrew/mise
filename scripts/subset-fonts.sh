@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Write docs/fonts/IosevkaExtended-{Regular,Bold}.ttf, the code font of
-# docs/headline.pdf, as subsets of Iosevka Extended from nixpkgs' iosevka-bin.
+# docs/theorems.pdf, as subsets of Iosevka Extended from nixpkgs' iosevka-bin.
 #
 # The full package is 486 MB, so the repository keeps only these subsets
 # (about 90 KB each). They hold the ranges in docs/fonts/charset.txt and drop

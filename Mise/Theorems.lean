@@ -4,7 +4,7 @@ import Mise.Model.Parallel
 import Mise.Syntax.RoundTrip
 
 /-!
-# Headline theorems, restated for reading
+# End-to-end theorems, restated for reading
 
 `mise` is a Lean 4 front end for Ninja. A user describes a build in a
 *domain-specific language* (DSL), and `mise` writes it out as a Ninja manifest.
@@ -16,7 +16,7 @@ but a theorem means only what the definitions in its statement mean, so those
 definitions follow the theorems.
 -/
 
-namespace Mise.Headline
+namespace Mise.Theorems
 open Mise Mise.Syntax Mise.Frontend Mise.Model
 
 variable {V : Type} [Inhabited V] (sem : Sem V)
@@ -189,4 +189,4 @@ theorem wrapped_run [DecidableEq V] (g : Graph) (valid : g.Valid) {st : St V}
    reach_runWrapped sem st e written exitedZero reachable inManifest isDirty
      (outs_nodup_emit valid inManifest) asideNotOutput asideMissing writesSem⟩
 
-end Mise.Headline
+end Mise.Theorems

@@ -35,9 +35,9 @@
 cmd = ["scripts/check.sh"]
 time = "7 to 13 s from an empty .lake"
 # It builds every default target and regenerates the trusted-base docs,
-# compiling docs/headline.typ with its style, fonts and Lean syntax.
-paths = ["*.lean", "scripts/*", "docs/trusted.md", "docs/headline.typ",
-         "docs/headline-style.typ", "docs/fonts/*", "docs/lean4.sublime-syntax"]
+# compiling docs/theorems.typ with its style, fonts and Lean syntax.
+paths = ["*.lean", "scripts/*", "docs/trusted.md", "docs/theorems.typ",
+         "docs/theorems-style.typ", "docs/fonts/*", "docs/lean4.sublime-syntax"]
 
 # --- Against real Ninja ------------------------------------------------
 

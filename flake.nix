@@ -45,7 +45,7 @@
 
       shellWith = pkgs: ninja: pkgs.mkShell {
         packages = [ pkgs.lean4 ninja pkgs.python3 pkgs.ccache pkgs.typst ];
-        # ccache is for the property harness, typst for docs/headline.pdf.
+        # ccache is for the property harness, typst for docs/theorems.pdf.
         # `mise` is on PATH after `lake build`.
         shellHook = ''
           export PATH="$PWD/.lake/build/bin:$PATH"

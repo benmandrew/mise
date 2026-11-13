@@ -1,4 +1,4 @@
-// Layout for docs/headline.typ, which scripts/trusted.sh generates.
+// Layout for docs/theorems.typ, which scripts/trusted.sh generates.
 // Everything here is presentation: the content comes from the generator.
 
 // Fonts: Libertinus Serif, which typst embeds, for text and headings, and

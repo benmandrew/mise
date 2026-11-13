@@ -60,15 +60,15 @@ fails if any theorem depends on an axiom outside the standard three. -/
 #print axioms Mise.Model.dsl_same_edges
 #print axioms Mise.Model.trace_nodup_sched
 #print axioms Mise.Frontend.isRestat_emit
--- Mise/Headline.lean: readable restatements
-#print axioms Mise.Headline.meaning
-#print axioms Mise.Headline.correct_unique
-#print axioms Mise.Headline.build_correct
-#print axioms Mise.Headline.rebuild_noop
-#print axioms Mise.Headline.ran_nodup
-#print axioms Mise.Headline.rebuild_minimal
-#print axioms Mise.Headline.restat_cutoff
-#print axioms Mise.Headline.any_order
+-- Mise/Theorems.lean: readable restatements
+#print axioms Mise.Theorems.meaning
+#print axioms Mise.Theorems.correct_unique
+#print axioms Mise.Theorems.build_correct
+#print axioms Mise.Theorems.rebuild_noop
+#print axioms Mise.Theorems.ran_nodup
+#print axioms Mise.Theorems.rebuild_minimal
+#print axioms Mise.Theorems.restat_cutoff
+#print axioms Mise.Theorems.any_order
 #print axioms Mise.Model.wrapRun_content
 #print axioms Mise.Model.wrapRun_kept_iff
 #print axioms Mise.Model.wrapRun_fail
@@ -82,7 +82,7 @@ fails if any theorem depends on an axiom outside the standard three. -/
 #print axioms Mise.Model.runWrapped_ok
 #print axioms Mise.Model.reach_runWrapped
 #print axioms Mise.Model.outs_nodup_emit
-#print axioms Mise.Headline.wrapped_run
+#print axioms Mise.Theorems.wrapped_run
 
 -- Deviations from Ninja
 #print axioms Mise.Model.deps_uniform

@@ -1,5 +1,5 @@
-# Lean syntax for the code blocks in docs/headline.typ (loaded by
-# docs/headline-style.typ through `set raw(syntaxes: ...)`).
+# Lean syntax for the code blocks in docs/theorems.typ (loaded by
+# docs/theorems-style.typ through `set raw(syntaxes: ...)`).
 #
 # Source: https://github.com/LexouDuck/SublimeText-Lean, file Lean.sublime-syntax,
 # commit 88c47b63f375d189fce6a7c0e7824bb41455dcfa (2026-10-15). It is the grammar
