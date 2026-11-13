@@ -95,15 +95,18 @@
   This part shows the definitions that a core statement names, and the definitions that those name in turn, file by file in import order. The printer and the parser appear, but the definitions they use do not.
 ]
 
+// A path without the `Mise/` that every library file shares.
+#let short(file) = file.trim("Mise/", at: start, repeat: false)
+
 // A file of definitions: a numbered subsection, listed in the contents.
-#let file-heading(file) = heading(level: 2, raw(file))
+#let file-heading(file) = heading(level: 2, raw(short(file)))
 
 // One definition: a numbered heading, left out of the contents, with the
 // location below it as for a theorem. Then the docstring without its `Gloss:`
 // lines, kept on the page of the code that follows.
 #let def-head(name, lbl, file, a, b, url, body) = {
   [#heading(level: 3, outlined: false, raw(name))#label(lbl)]
-  block(above: 0.3em, below: 0.5em, sticky: true, grey(source(url, file + ":" + str(a) + "–" + str(b))))
+  block(above: 0.3em, below: 0.5em, sticky: true, grey(source(url, short(file) + ":" + str(a) + "–" + str(b))))
   block(above: 0.5em, below: 0.5em, sticky: true, width: 100%)[
   #body
   ]
