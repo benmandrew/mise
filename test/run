@@ -4,7 +4,8 @@
     test/run list                      every harness and CI job
     test/run TARGET... [-- ARGS]       run harnesses, in their dev shells
     test/run deps TARGET               the files a target depends on
-    test/run affected [--all] WORKFLOW the CI gate: which jobs need to run
+    test/run affected [--all | --only JOBS] WORKFLOW
+                                       the CI gate: which jobs need to run
     test/run lint                      check the registry against the tree
 
 A TARGET is a harness (`fuzz`), a harness's short run (`fuzz:quick`) or a
@@ -263,14 +264,26 @@ def have(sha):
 
 
 def affected(args):
+    """`--all` runs every job; `--only JOBS` (space- or comma-separated
+    keys) runs those jobs alone, without looking at the history."""
+    usage = "usage: test/run affected [--all | --only JOBS] WORKFLOW"
     run_all = args[:1] == ["--all"]
+    only = None
     if run_all:
         args = args[1:]
+    elif args[:1] == ["--only"] and len(args) >= 2:
+        only = args[1].replace(",", " ").split()
+        args = args[2:]
     if len(args) != 1 or args[0] not in JOB:
-        sys.exit("usage: test/run affected [--all] WORKFLOW")
+        sys.exit(usage)
     wf = args[0]
     result = {}
-    if run_all:
+    if only is not None:
+        unknown = [k for k in only if k not in JOB[wf]]
+        if unknown or not only:
+            sys.exit(f"test/run affected: unknown {wf} jobs {unknown}; jobs: {' '.join(JOB[wf])}")
+        result = {k: (k in only, "asked for" if k in only else "not asked for", []) for k in JOB[wf]}
+    elif run_all:
         result = {k: (True, "run by hand", []) for k in JOB[wf]}
     else:
         sha = os.environ["SHA"]

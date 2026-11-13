@@ -1,6 +1,7 @@
 # The heavy harnesses, once a day and on demand. In a scheduled run each
 # job runs only when a file it depends on changed since the last commit on
-# which it succeeded; a run from workflow_dispatch runs every job. See
+# which it succeeded; a run from workflow_dispatch runs the jobs its
+# `jobs` input names, or every job when it is empty. See
 # docs/testing.md for each harness and its arguments.
 #
 # Jobs run on ubuntu-latest, the main platform. macOS also runs the
@@ -16,6 +17,12 @@ on:
   schedule:
     - cron: "17 3 * * *"
   workflow_dispatch:
+    inputs:
+      jobs:
+        description: Jobs to run, space-separated (empty runs every job)
+        required: false
+        default: ""
+        type: string
 
 permissions:
   contents: read
@@ -34,7 +41,7 @@ jobs:
   # affected`; each job's harnesses and dependencies are in
   # test/harnesses.toml). A job with no earlier success runs, and a failed
   # job does not count, so the next night tries it again. A run started by
-  # hand runs every job.
+  # hand runs the jobs in its `jobs` input, or every job.
   changed:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -55,10 +62,13 @@ jobs:
           EVENT: ${{ github.event_name }}
           SHA: ${{ github.sha }}
           BRANCH: ${{ github.ref_name }}
+          JOBS: ${{ inputs.jobs }}
         run: |
-          all=()
-          [ "$EVENT" = workflow_dispatch ] && all=(--all)
-          python3 test/run affected "${all[@]}" nightly
+          args=()
+          if [ "$EVENT" = workflow_dispatch ]; then
+            if [ -n "$JOBS" ]; then args=(--only "$JOBS"); else args=(--all); fi
+          fi
+          python3 test/run affected "${args[@]}" nightly
 
   # 500 random graphs (59 seconds on 8 cores, per docs/testing.md).
   fuzz:
