@@ -99,7 +99,7 @@
   heading(level: 2, raw(name)), source(url, file + ":" + str(line)))
 
 #let defs-intro = [
-  This part shows the definitions that a core statement names, and the definitions that those name in turn, file by file in import order. The printer and the parser appear, but the definitions they use do not.
+  This part shows the definitions that a core statement or an assumption of the trust base names, and the definitions that those name in turn, file by file in import order. It leaves out `emit` and `Graph.Valid`, which the theorems constrain.
 ]
 
 // A path without the `Mise/` that every library file shares.

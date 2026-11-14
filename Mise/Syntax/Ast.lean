@@ -194,12 +194,15 @@ def Stmt.ok (c : Ctx) : Stmt → Bool
     e.allIns.all (fun i => !e.allOuts.contains i)
   | .default ps => !ps.isEmpty && ps.all validPath && ps.all c.known.contains
 
+/-- Each statement is acceptable (`Stmt.ok`) in the context of the statements
+before it, which `Ctx.add` records. -/
 def stmtsOK : Ctx → List Stmt → Bool
   | _, [] => true
   | c, s :: ss => s.ok c && stmtsOK (c.add s) ss
 
 /-- A manifest is well formed when every statement passes `Stmt.ok` in the
-context of the statements before it. -/
+context of the statements before it.
+Gloss: {m} is well formed -/
 def Manifest.WellFormed (m : Manifest) : Prop := stmtsOK {} m.stmts = true
 
 instance (m : Manifest) : Decidable m.WellFormed := inferInstanceAs (Decidable (_ = _))

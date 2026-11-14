@@ -46,7 +46,7 @@ Ninja rejects cyclic rule variables; the model uses fuel of the binding count pl
 
 ## Theorems
 
-- `emit_wellFormed`: `(emit g).WellFormed` for valid `g`, so `parse_print` applies.
+- `emit_wellFormed`: `(emit g).WellFormed` for valid `g`, so `parse_print` and trust item 1 apply.
 - `denote_emit` (headline): `denote sem (emit g) = g.spec sem` for valid `g` and any `sem`, via `command_emit` and `cmdEdges_emit`.
 - `cmdEdges_emit`: the emitted edges that run a command are the graph's own edges, since every alias is a `phony` edge and no rule of a valid graph is called `phony`.
 - `isDyn_emit`, `isRestat_emit`: the evaluated `deps` and `restat` bindings match the rule's flags, emitted by `emitRule` as `depfile = ${out}.d`, `deps = gcc` and `restat = 1`.

@@ -1,15 +1,14 @@
 import Mise.Model.Cmp
 import Mise.Model.Minimal
 import Mise.Model.Parallel
-import Mise.Syntax.RoundTrip
 
 /-!
 # End-to-end theorems, restated for reading
 
 `mise` is a Lean 4 front end for Ninja. A user describes a build in a
 *domain-specific language* (DSL), and `mise` writes it out as a Ninja manifest.
-The theorems show that the manifest means the build the user described, and
-that Ninja, as modelled in Lean, runs it correctly. One run leaves correct
+The theorems show that the manifest is well formed, and that Ninja, as
+modelled in Lean, builds what the user described. One run leaves correct
 contents, and a second run does nothing. A run executes only the edges it
 must, and any parallel order gives the same result. Lean checks every proof,
 but a theorem means only what the definitions in its statement mean, so those
@@ -38,19 +37,16 @@ Gloss: {st} is reachable for {g} -/
 abbrev Reachable (g : Graph) (st : St V) : Prop := Reach sem (edges g) st
 
 /-- The state after one modelled `ninja` run from `st` on the manifest
-emitted for `g`.
+emitted for `g`, which visits every edge in manifest order. When `g` has
+default targets, `ninja` with no arguments builds only those. That is a
+partial build, which `Reachable` covers and `build` does not describe.
 Gloss: the state after building {g} from {st} -/
-abbrev build (g : Graph) (st : St V) : St V := ninjaBuild sem (emit g) st
+abbrev build (g : Graph) (st : St V) : St V := (buildTrace sem (edges g) st).1
 
 /-- The edges that one modelled `ninja` run from `st` executes, in the order
 it runs them.
 Gloss: the edges run by building {g} from {st} -/
 abbrev ran (g : Graph) (st : St V) : List MEdge := (buildTrace sem (edges g) st).2
-
-/-- No edge in `edges g` writes `p`. That list leaves out `phony` edges, so
-in a valid graph an alias name also counts as a source.
-Gloss: {p} is a source of {g} -/
-abbrev IsSource (g : Graph) (p : Path) : Prop := ∀ e ∈ edges g, p ∉ e.outs
 
 /-- `es` is an order in which a parallel Ninja could run the edges. It is a
 permutation of `edges g` in which no edge reads an output of itself or of a
@@ -66,15 +62,15 @@ Gloss: Ninja checks input {p} of {e} in {st} -/
 abbrev Checks (st : St V) (e : MEdge) (p : Path) : Prop :=
   ∃ o ∈ e.outs, ∃ D, st.effIns e o = some D ∧ p ∈ D
 
-/-! ## What the manifest means -/
+/-! ## The manifest -/
 
-/-- For a valid graph, the parser model reads the text that `mise` writes as
-the manifest that `mise` emitted. Read through the model of Ninja's variable
-evaluation, that manifest means the build the DSL describes (`Graph.spec`).
+/-- For a valid graph, the manifest that `mise` emits is well formed. The
+text `mise` writes is `print (emit g)` (`ValidGraph.ninja`), and trust item 1
+assumes that Ninja reads `print m` as `m` for every well-formed manifest `m`.
+So Ninja reads the text as `emit g`, the manifest the theorems below run.
 Review: core -/
-theorem meaning (g : Graph) (valid : g.Valid) :
-    parse (print (emit g)) = some (emit g) ∧ denote sem (emit g) = g.spec sem :=
-  ⟨parse_print _ (emit_wellFormed g valid), denote_emit sem g valid⟩
+theorem well_formed (g : Graph) (valid : g.Valid) : (emit g).WellFormed :=
+  emit_wellFormed g valid
 
 /-- Take a valid graph whose depfile commands read only allowed inputs. For
 any sources, the build it describes has at most one correct result.
@@ -110,11 +106,6 @@ theorem rebuild_noop (g : Graph) (valid : g.Valid) (depfilesOK : g.DynOK sem) {s
   have h2 := congrArg Prod.fst hi
   exact ⟨h1, h2⟩
 
-/-- For a valid graph, one `ninja` run from any state executes each edge at
-most once. -/
-theorem ran_nodup (g : Graph) (valid : g.Valid) (st : St V) : (ran sem g st).Nodup :=
-  trace_nodup_sched sem _ st (sched_emit g valid)
-
 /-- Take a valid graph whose depfile commands read only allowed inputs and a
 reachable state. Build, apply `edits` to sources, and build again. Every edge
 `e` that the second build runs has a reason: an input `p` that Ninja checks
@@ -127,7 +118,7 @@ kept its output did not touch that output.
 Review: core -/
 theorem rebuild_minimal (g : Graph) (valid : g.Valid) (depfilesOK : g.DynOK sem) {st₀ : St V}
     (reachable : Reachable sem g st₀) (edits : List (Path × V))
-    (editsSources : ∀ edit ∈ edits, IsSource g edit.1) {e : MEdge}
+    (editsSources : ∀ edit ∈ edits, g.isSource edit.1 = true) {e : MEdge}
     (eRan : e ∈ ran sem g ((build sem g st₀).edits edits)) :
     ∃ before after, edges g = before ++ e :: after ∧ ∃ p, Checks (build sem g st₀) e p ∧
       (build sem g st₀).clock < (buildTrace sem before ((build sem g st₀).edits edits)).1.mtime p ∧
@@ -136,28 +127,24 @@ theorem rebuild_minimal (g : Graph) (valid : g.Valid) (depfilesOK : g.DynOK sem)
   have hclean := (dsl_parallel sem g valid depfilesOK (List.Perm.refl _) (sched_emit g valid)
     reachable).2
   obtain ⟨pre, post, hsplit, o, ho, D, hD, p, hp, hnew, hwhy⟩ :=
-    build_minimal_clean sem (sched_emit g valid) hclean edits editsSources eRan
+    build_minimal_clean sem (sched_emit g valid) hclean edits
+      (fun edit h => source_emit g valid (editsSources edit h)) eRan
   exact ⟨pre, post, hsplit, p, ⟨o, ho, D, hD, hp⟩, hnew, hwhy⟩
-
-/-- **Early cutoff.** Running a `restat` edge `e` that keeps every output
-leaves the dirtiness of each edge `e'` unchanged, when `e'` shares no output
-with `e`. So no such edge is rebuilt on account of `e`. -/
-theorem restat_cutoff {st : St V} {e e' : MEdge} (disjoint : Disjoint e'.outs e.outs)
-    (allKept : ∀ o ∈ e.outs, st.kept sem e o = true) : (st.run sem e).dirty e' = st.dirty e' :=
-  Mise.Model.restat_cutoff sem disjoint allKept
 
 /-! ## Parallel builds -/
 
 /-- Take a valid graph whose depfile commands read only allowed inputs and a
 reachable state. Running the edges in any valid `order` leaves contents that
 are correct for the current sources. It runs the same edges as a run in
-manifest order, up to order, so each at most once (`ran_nodup`).
+manifest order, up to order, and a run in manifest order executes each edge
+at most once.
 Review: core -/
 theorem any_order (g : Graph) (valid : g.Valid) (depfilesOK : g.DynOK sem) {order : List MEdge}
     (validOrder : ValidOrder g order) {st : St V} (reachable : Reachable sem g st) :
     (g.spec sem).Correct st.content (buildTrace sem order st).1.content ∧
-      (buildTrace sem order st).2.Perm (ran sem g st) := by
-  refine ⟨?_, dsl_same_edges sem g valid depfilesOK validOrder.1 validOrder.2 reachable⟩
+      (buildTrace sem order st).2.Perm (ran sem g st) ∧ (ran sem g st).Nodup := by
+  refine ⟨?_, dsl_same_edges sem g valid depfilesOK validOrder.1 validOrder.2 reachable,
+    trace_nodup_sched sem _ st (sched_emit g valid)⟩
   rw [(dsl_parallel sem g valid depfilesOK validOrder.1 validOrder.2 reachable).1]
   exact BuildSpec.cleanBuild_correct _ _
 

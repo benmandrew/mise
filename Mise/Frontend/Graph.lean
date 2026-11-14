@@ -250,7 +250,8 @@ def Graph.isRestat (g : Graph) (e : GEdge) : Bool :=
   | none => false
 
 /-- Whether no edge of `g` produces `k`. In a valid graph this holds for an
-alias name. -/
+alias name.
+Gloss: whether {k} is a source of {g} -/
 def Graph.isSource (g : Graph) (k : Path) : Bool := (findOut GEdge.allOuts k g.edges).isNone
 
 variable {V : Type} [Inhabited V]

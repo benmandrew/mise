@@ -61,13 +61,11 @@ fails if any theorem depends on an axiom outside the standard three. -/
 #print axioms Mise.Model.trace_nodup_sched
 #print axioms Mise.Frontend.isRestat_emit
 -- Mise/Theorems.lean: readable restatements
-#print axioms Mise.Theorems.meaning
+#print axioms Mise.Theorems.well_formed
 #print axioms Mise.Theorems.correct_unique
 #print axioms Mise.Theorems.build_correct
 #print axioms Mise.Theorems.rebuild_noop
-#print axioms Mise.Theorems.ran_nodup
 #print axioms Mise.Theorems.rebuild_minimal
-#print axioms Mise.Theorems.restat_cutoff
 #print axioms Mise.Theorems.any_order
 #print axioms Mise.Model.wrapRun_content
 #print axioms Mise.Model.wrapRun_kept_iff

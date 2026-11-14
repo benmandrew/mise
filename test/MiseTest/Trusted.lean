@@ -14,25 +14,40 @@ environment variable `TRUSTED_OUT` (default `docs`):
   statement as written in the source with each name linked to its
   definition, and an English translation made by
   `Gloss.statement`. Then come, in reading order, the definitions the core
-  statements name and the ones those name in turn, except that the printer
-  and parser are not expanded.
+  statements and the assumptions name, and the ones those name in turn.
 
 It prints one line per problem: `missing docstring: X` for a trusted
 declaration without a docstring, and `no template: X` for a constant that a
 statement mentions but that has no `Gloss:` template. Run it with
 `scripts/trusted.sh`, which compares the files with `docs/` under `--check`.
 
-The walk starts from a theorem's statement and follows every `Mise`
-constant it mentions, through the types and bodies of definitions and the
-constructors of inductive types. It does not enter theorems, because Lean
+The walk starts from a theorem's statement, or from the definitions an
+assumption of `docs/trust.md` is stated in (`assumptions`), and follows every
+`Mise` constant it mentions, through the types and bodies of definitions and
+the constructors of inductive types. It does not enter theorems, because Lean
 checks their proofs; proofs inside a definition are abstracted into
 auxiliary theorems when the definition is compiled, so it skips those too.
-Constants outside `Mise` (Lean's core library) are not listed.
+It stops at the implementation definitions in `implementation`, which the
+theorems constrain. Constants outside `Mise` (Lean's core library) are not
+listed.
 -/
 
 namespace Trusted
 
 def isMise (n : Name) : Bool := n.getRoot == `Mise
+
+/-- Definitions a reader need not check, with the reason. A statement may
+name them, but the walk does not enter them. -/
+def implementation : List (Name × String) :=
+  [(`Mise.Frontend.emit, "The theorems hold for whatever manifest `emit g` is. The text `mise` writes is `print (emit g)` (`ValidGraph.ninja`), and `well_formed` and trust item 1 say how Ninja reads it."),
+   (`Mise.Frontend.Graph.Valid, "Every theorem assumes `g.Valid`, and `mise` refuses a graph that fails it (`Build.graph` returns a `ValidGraph`). A check that is too strict makes `mise` refuse more graphs, and cannot make a theorem false.")]
+
+def isImplementation (n : Name) : Bool := implementation.any (·.1 == n)
+
+/-- Assumptions of `docs/trust.md` that are stated in terms of definitions,
+with the definitions they name. -/
+def assumptions : List (String × List Name) :=
+  [("trust item 1", [`Mise.Syntax.print, `Mise.Syntax.Manifest.WellFormed])]
 
 /-- Auxiliary constants a reader would not look up by name. -/
 def isAux (env : Environment) (n : Name) : Bool :=
@@ -81,17 +96,25 @@ partial def reach (env : Environment) (start : Array Name) : NameSet := Id.run d
     todo := todo.pop
     if seen.contains n || !isMise n then continue
     seen := seen.insert n
+    if isImplementation (owner env n) then continue
     todo := todo ++ next env n
   return seen
+
+/-- The trusted declarations reachable from `start`, by owner. A matcher is
+looked through, since Lean shares one matcher among definitions that match
+the same way, and its owner may be any of them. -/
+def trustedFrom (env : Environment) (start : Array Name) : NameSet :=
+  (reach env start).foldl (fun s n =>
+    match env.find? n with
+    | some (.thmInfo _) => s
+    | _ =>
+      if isGenerated n || isMatcherCore env n || isImplementation (owner env n) then s
+      else s.insert (owner env n)) {}
 
 /-- The trusted declarations of theorem `thm`, by owner. -/
 def trustedOf (env : Environment) (thm : Name) : NameSet :=
   match env.find? thm with
-  | some (.thmInfo t) =>
-    (reach env t.type.getUsedConstants).foldl (fun s n =>
-      match env.find? n with
-      | some (.thmInfo _) => s
-      | _ => if isGenerated n then s else s.insert (owner env n)) {}
+  | some (.thmInfo t) => trustedFrom env t.type.getUsedConstants
   | _ => {}
 
 /-- The trusted declarations that `d` mentions directly. Auxiliary constants
@@ -106,6 +129,7 @@ partial def usesOf (env : Environment) (trusted : NameSet) (d : Name) : NameSet 
     if seen.contains n || !isMise n then continue
     seen := seen.insert n
     if let some (.thmInfo _) := env.find? n then continue
+    if isMatcherCore env n then todo := todo ++ next env n; continue
     let o := owner env n
     if o != d && trusted.contains o then out := out.insert o
     else if o == d || isAux env n then todo := todo ++ next env n
@@ -246,12 +270,6 @@ def reviewDoc (doc : String) : String :=
   ("\n".intercalate ((doc.splitOn "\n").filter fun l =>
     !l.trimAscii.toString.startsWith "Review:")).trimAscii.toString
 
-/-- Modules whose definitions the PDF does not expand: the printer and the
-parser, which `meaning` covers by round trip and `test/stage3-diff.sh` tests
-against Ninja. -/
-def notExpanded (mod : String) : Bool :=
-  mod == "Mise.Syntax.Print" || mod == "Mise.Syntax.Parse"
-
 def short (n : Name) : String := (n.replacePrefix `Mise .anonymous).toString
 
 /-- Where a file's source is published. Links use `main`, not a commit, so
@@ -327,11 +345,18 @@ open Trusted in
     | _ => s
   -- Owners of every theorem, with locations.
   let mut all : NameSet := {}
-  let mut perThm : Array (Name × Array Name) := #[]
+  let shortThm (t : Name) := (t.replacePrefix `Mise.Theorems .anonymous).toString
+  let mut perThm : Array (String × Array Name) := #[]
   for t in thms do
     let ds := sortNames (trustedOf env t)
-    perThm := perThm.push (t, ds)
+    perThm := perThm.push (s!"`{shortThm t}`", ds)
     all := ds.foldl (·.insert ·) all
+  let mut assumed : NameSet := {}
+  for (label, roots) in assumptions do
+    let ds := sortNames (trustedFrom env roots.toArray)
+    perThm := perThm.push (label, ds)
+    all := ds.foldl (·.insert ·) all
+    assumed := roots.foldl (·.insert ·) assumed
   let mut rows : Array (Nat × String × Position × Position × Name) := #[]
   for d in all.toArray do
     let (m, i, a, b) ← location d
@@ -343,11 +368,10 @@ open Trusted in
   /- Markdown. -/
   let mut out := "# Trusted definitions\n\n"
   out := out ++ "Generated by `scripts/trusted.sh` from `test/MiseTest/Trusted.lean`; do not edit. `scripts/check.sh` fails if this file is out of date.\n\n"
-  out := out ++ s!"The theorems in `Mise/Theorems.lean` are checked by Lean, so their meaning rests on the statements and on the definitions below. The list follows every `Mise` constant a statement mentions, through definitions and inductive types but not into proofs. Lean's core library is not listed. There are {sorted.size} declarations, {total} lines in all, across {mods.length} files.\n\n"
-  let shortThm (t : Name) := (t.replacePrefix `Mise.Theorems .anonymous).toString
+  out := out ++ s!"The theorems in `Mise/Theorems.lean` are checked by Lean, so their meaning rests on the statements and on the definitions below. The list follows every `Mise` constant a statement mentions, through definitions and inductive types but not into proofs. It also follows the definitions in which an assumption of [trust.md](trust.md) is stated. Lean's core library is not listed, and neither are the implementation definitions under [Not trusted](#not-trusted). There are {sorted.size} declarations, {total} lines in all, across {mods.length} files.\n\n"
   let sets := perThm.map fun (t, ds) => (t, ds.foldl (fun (acc : NameSet) d => acc.insert d) {})
-  out := out ++ "## By theorem\n\nThe number of declarations each theorem depends on, by file. A blank cell means none.\n\n"
-  out := out ++ "| File | " ++ " | ".intercalate (perThm.toList.map fun (t, _) => s!"`{shortThm t}`") ++ " |\n"
+  out := out ++ "## By theorem\n\nThe number of declarations each theorem, or assumption, depends on, by file. A blank cell means none.\n\n"
+  out := out ++ "| File | " ++ " | ".intercalate (perThm.toList.map (·.1)) ++ " |\n"
   out := out ++ "|---|" ++ String.join (perThm.toList.map fun _ => "---|") ++ "\n"
   for m in mods do
     let ds := sorted.filter (·.1 == m) |>.map (·.2.2.2)
@@ -360,6 +384,9 @@ open Trusted in
   out := out ++ "\n## By file\n\nRead in this order: each file uses only the ones above it.\n\n| Declaration | Lines | Size |\n|---|---|---|\n"
   for (m, a, b, d) in sorted do
     out := out ++ s!"| `{d.replacePrefix `Mise .anonymous}` | `{modPath m}:{a}`–{b} | {b - a + 1} |\n"
+  out := out ++ "\n## Not trusted\n\nThe theorem statements name these definitions, but a reader need not check them, and the walk does not enter them.\n\n| Declaration | Reason |\n|---|---|\n"
+  for (d, why) in implementation do
+    out := out ++ s!"| `{d.replacePrefix `Mise .anonymous}` | {why} |\n"
   IO.FS.writeFile (outDir ++ "/trusted.md") out
   /- Problems. -/
   let mut report : Array String := #[]
@@ -397,19 +424,17 @@ open Trusted in
   let mut core : Array Name := #[]
   for (_, t) in thmRows do
     if isCore ((← liftCoreM (findDocString? env t)).getD "") then core := core.push t
-  -- The definitions shown: those a core statement names (depth 1), and the
-  -- ones they name in turn (depth 2), except inside the syntax modules.
+  -- The definitions shown: those a core statement or an assumption names
+  -- (depth 1), and the ones they name in turn (depth 2).
   let named (t : Name) : NameSet := ((env.find? t).get!.type.getUsedConstants).foldl (fun s n =>
     if isMise n && all.contains (owner env n) then s.insert (owner env n) else s) {}
   let mut depth1 : NameSet := {}
   for t in core do depth1 := (named t).foldl (·.insert ·) depth1
+  depth1 := assumed.foldl (·.insert ·) depth1
   let mut depth2 : NameSet := {}
   for d in sortNames depth1 do
-    let (m, _, _, _) ← location d
-    if notExpanded m then continue
     for u in sortNames (usesOf env all d) do
-      let (mu, _, _, _) ← location u
-      if !depth1.contains u && !notExpanded mu then depth2 := depth2.insert u
+      if !depth1.contains u then depth2 := depth2.insert u
   let shown := depth2.foldl (·.insert ·) depth1
   let omitted := sorted.filter (!shown.contains ·.2.2.2)
   report := report.push s!"review: {depth1.size} definitions at depth 1, {depth2.size} at depth 2, {omitted.size} omitted"

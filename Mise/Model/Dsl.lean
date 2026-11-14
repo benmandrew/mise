@@ -98,6 +98,15 @@ theorem dsl_sound (g : Graph) (hg : g.Valid) (hd : g.DynOK sem) {st : St V}
   funext k
   exact congrFun (BuildSpec.correct_eq_cleanBuild (g.acyclic sem hg hd) hc) k
 
+/-- A source of a valid graph is written by no edge of the emitted manifest. -/
+theorem source_emit (g : Graph) (hg : g.Valid) {k : Path} (hk : g.isSource k = true) :
+    ∀ e ∈ (emit g).medges, k ∉ e.outs := by
+  rw [medges_emit g hg]
+  intro e he hko
+  obtain ⟨e', he', rfl⟩ := List.mem_map.mp he
+  simp only [Graph.isSource, Option.isNone_iff_eq_none] at hk
+  exact findOut_none_iff hk e' he' hko
+
 omit [Inhabited V] in
 /-- With no depfile rules, the condition on depfile commands holds. -/
 theorem dynOK_static (g : Graph) (h : ∀ e ∈ g.edges, g.isDyn e = false) : g.DynOK sem :=
