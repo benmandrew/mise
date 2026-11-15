@@ -35,7 +35,7 @@ After the last step it checks that `ninja -t missingdeps` finds nothing
 `--missing-ok` is for cases generated with `fuzzgen ... absent,nowrap`,
 whose unwrapped commands leave out some outputs; such case files say
 `"missingOk": true`, which turns it on. Ninja then reruns an edge with a missing
-output in every build, which the model does not (see `Mise/Model/NOTES.md`).
+output in every build, which the model does not (see `Mise/NOTES.md`).
 The option lets such edges run in addition to the model's, and replaces
 check 5: a second build may run only such edges, must pass check 2 and
 must leave the same contents (`ninja -n` does not restat, so it would list

@@ -238,7 +238,7 @@ leaves out some outputs (`test/fz.c`, mode `x`) in the DSL's wrapper, which
 turns such a run into a failure that changes no file (`natFail`). With
 `nowrap` as well, half the `restat` edges get such a command outside the
 wrapper instead, so outputs go missing, which the model cannot express; see
-"Where the model differs from Ninja" in `Mise/Model/NOTES.md`. -/
+"Where the model differs from Ninja" in `Mise/NOTES.md`. -/
 structure Opts where
   absent : Bool := false
   nowrap : Bool := false

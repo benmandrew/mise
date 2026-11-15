@@ -1,21 +1,37 @@
-# Theorems
+# Theorems and assumptions
 
-To check what is proved, start with `Mise/Theorems.lean`. It restates the end-to-end results in terms of the DSL graph a user writes, and each proof applies a theorem from the table below. Lean checks the proofs, so a reviewer has to confirm two things: that each statement says what its docstring says, and that the definitions it uses mean what their names suggest. [trusted.md](trusted.md) lists those definitions with their sizes, in an order where each file uses only the ones before it. It also lists the definitions that trust item 1 is stated in, `print` and `Manifest.WellFormed`, and leaves out `emit` and `Graph.Valid`, which the theorems constrain; its last section gives the reasons. `scripts/trusted.sh` generates the list from the statements, and `scripts/check.sh` fails if it is out of date or if a trusted definition has no docstring. What the proofs assume is in [trust.md](trust.md).
+To check what is proved, start with `Mise/Theorems.lean`. It states the end-to-end results in terms of the DSL graph a user writes. Lean checks the proofs, so a reviewer confirms two things: each statement says what its docstring says, and the definitions it uses mean what their names suggest. [trusted.md](trusted.md) lists those definitions in reading order. `scripts/trusted.sh --pdf` builds `docs/theorems.pdf`, which gives each theorem an English translation and shows the definitions it depends on.
 
-The same script writes `docs/theorems.typ`, the Typst source of a PDF for reviewing the statements without reading Lean. `scripts/trusted.sh --pdf` inside `nix develop` builds it as `docs/theorems.pdf`, which is not committed, and `check.sh` fails if the `.typ` file is stale. A theorem means only what the definitions in its statement mean, so the PDF shows the *core theorems* (those whose docstring has the line `Review: core`) with the definitions their statements depend on. Each core theorem has its docstring, its statement as written in the source, and an English translation, which `test/MiseTest/Gloss.lean` produces from the elaborated statement; its module docstring gives the rules. A named definition is translated with the template on the `Gloss:` line of its docstring, and a name without a template appears in Lean notation and is listed under Warnings at the end. The definitions follow in reading order, those a core statement or trust item 1 names and those they name in turn, each with its docstring, highlighted source and any template the translation used. Every source location links to those lines on GitHub. A closing paragraph names every trusted declaration left out and lists the other headline theorems with their docstrings.
+## Theorems
 
-The library has one directory per stage, each with a `NOTES.md` giving its definitions, assumptions and deviations from Ninja. `test/MiseTest/Axioms.lean` lists the headline theorems, and `scripts/check.sh` fails unless each depends only on `propext`, `Classical.choice` and `Quot.sound`. There are no `axiom` declarations.
+Each theorem takes a valid graph `g`. All but `well_formed` and `wrapped_run` also take `Graph.DynOK`: every depfile command reads only allowed inputs. A *reachable* state is one that a start from empty logs, followed by any source edits and any partial builds, can produce.
 
-| Stage | Directory | Headline theorems |
-|---|---|---|
-| 1 | `Mise/Task` | `run_eq_of_agree`: a task gives the same result on stores that agree on what it fetches. |
-| 2 | `Mise/Spec` | `correct_unique`: an acyclic build has one correct store, and `cleanBuild` computes it. |
-| 3 | `Mise/Syntax` | `parse_print`: the parser model reads a printed manifest back to the same syntax tree, which supports trust item 1. |
-| 4 | `Mise/Frontend` | `denote_emit`: the emitted manifest, read through a model of Ninja's evaluation, means what the DSL means. |
-| 5 | `Mise/Model` | `ninjaBuild_sound_static`, `ninjaBuild_idem`: an incremental build is correct, and a second build runs nothing. |
-| 6 | `Mise/Model` | `reach_sound`, `dsl_sound`: the same after any history of edits and partial builds, with depfiles. |
-| 7 | `Mise/Model` | `build_minimal`, `trace_nodup`: only edges with a changed input run, each at most once. |
-| 7 | `Mise/Model` | `restat_cutoff`: a `restat` run that keeps its outputs rebuilds nothing downstream. |
-| 7 | `Mise/Model` | `parallel_equiv`, `parallel_same_edges`: any order consistent with the dependencies gives the same contents and runs the same edges. |
-| 7 | `Mise/Model` | `run_withCmp`, `wrapRun_kept_iff`: the DSL's command wrapper keeps a `restat` output exactly when the command wrote the old contents again, which is the model's run under `Sem.withCmp`. |
-| 7 | `Mise/Model` | `script_fail`, `script_ok`, `reach_runWrapped`: a failed wrapped run changes no file and leaves the state reachable, and a successful one writes or keeps every output. |
+| Theorem | Statement |
+|---|---|
+| `well_formed` | The emitted manifest is well formed, so by trust item 1 Ninja reads the text `mise` writes as that manifest. |
+| `correct_unique` | For any sources, the build has at most one correct result. |
+| `build_correct` | From any reachable state, one build leaves contents that are correct for the current sources. |
+| `rebuild_noop` | After a build, a second build runs nothing and changes nothing. |
+| `rebuild_minimal` | After edits, an edge runs only when an edit or an earlier edge of the same build wrote an input that Ninja checks for it. |
+| `any_order` | Any order a parallel Ninja could choose gives correct contents and runs the same edges, each at most once. |
+| `wrapped_run` | A wrapped command that fails leaves the state unchanged, and every wrapped run leaves the state reachable, so the theorems above cover histories with failed commands. |
+
+Every theorem depends only on the axioms `propext`, `Classical.choice` and `Quot.sound`, and the library has no `axiom` declarations. `test/MiseTest/Axioms.lean` checks this for these theorems and for the module-level theorems they are built from.
+
+## What the proofs cover
+
+`mise` writes the text `print (emit g)`. [trusted.md](trusted.md) leaves out `emit` and `Graph.Valid`, because the theorems hold for whatever manifest `emit` returns, and a validity check that is too strict only makes `mise` refuse more graphs. Reading `mise.toml` and expanding its conveniences are outside the proofs. Their result must pass the same validity check, so a decoding mistake gives a wrong build, never an unsound one.
+
+The theorems fix one graph. Editing `mise.toml`, or adding or removing a file that a `source-globs` pattern matches, changes the graph, and no theorem covers a history across that change.
+
+The supported Ninja subset is top-level bindings, `rule`, `build` with implicit outputs and implicit and order-only inputs, edge bindings, `phony` edges for aliases, and `default`, with the rule keys in `ruleKeys` (`Mise/Syntax/Ast.lean`). `dyndep`, `generator`, `pool`, `subninja`, `include`, MSVC deps, response files and Windows are out of scope.
+
+## Assumptions
+
+The proofs rest on five *trust items*. [testing.md](testing.md) describes the harnesses named here.
+
+1. **Real Ninja reads and runs a manifest as the model does.** `parse_print` shows that the parser model reads `print m` as `m`, and the parser fuzzer checks that Ninja reads every manifest the model accepts in the same way. The random-graph harness checks that Ninja runs the model's edges and leaves its contents, on 1.12.1 and 1.13.2. Every manifest starts with `ninja_required_version = 1.12.1`, because Ninja 1.10.2 and 1.11.1 log the wrong mtime when a `restat` depfile edge keeps its output after `.ninja_deps` is deleted, and so rerun the edge in the next build. The model leaves out `phony` edges, so this item also assumes that Ninja runs no command for an alias and builds its inputs when asked for it. `build_correct` and `rebuild_noop` describe a build of every edge; `Reachable` covers builds of some targets, such as the `default` ones.
+2. **Commands are deterministic and read only declared or discovered inputs.** For depfile commands this is the hypothesis `Graph.DynOK`, which `ninja -t missingdeps` checks. `conf-sandbox` runs every command under a sandbox that kills it on a read or write it may not make, and `conf-determinism` checks that clean builds give identical products. The wrapper's `sh` runs unconfined, since macOS cannot nest one sandbox in another, and runs only shell builtins.
+3. **Depfiles list every file the command read.** `conf-depfiles` traces the files each command opens. System headers are outside this check, since `-MMD` leaves them out, and are assumed fixed with the toolchain.
+4. **A command that exits 0 writes every output, a command that fails changes no file, and a `restat` command keeps an output only when its contents would not change** (`Sem.keep_eq`). By default the DSL wraps every command in a script that ensures this ([usage.md](usage.md)). The item then reduces to two things: the script, `cmp`, `mv` and `rm` behave as `Mise.Model.script` models them, and no file `OUTPUT.mise-old` exists outside the script. For a rule with `wrap = false` the item stays an assumption about the command.
+5. **Mtimes are faithful.** There is no clock skew, nothing edits files during a build, and each command reads its inputs at the start and writes its outputs at the end. The schedule check tests the last part. `mtime-faults` shows what breaks without it, on Ninja 1.13.2. An edit in the same mtime tick as the start of a command that read the file, a source mtime set backwards (`touch -t`, `cp -p`), or a source stamped by a slow clock leaves stale products that no later build repairs. An edit during a build leaves a stale product that the next build repairs. A source stamped ahead makes every build rerun its readers until the clock catches up.

@@ -2,7 +2,7 @@
 # job runs only when a file it depends on changed since the last commit on
 # which it succeeded; a run from workflow_dispatch runs the jobs its
 # `jobs` input names, or every job when it is empty. See
-# docs/testing.md for each harness and its arguments.
+# docs/testing.md for each harness, and its script for its arguments.
 #
 # Jobs run on ubuntu-latest, the main platform. macOS also runs the
 # priority jobs (500 random graphs, and the matrix on the latest release),
@@ -70,7 +70,7 @@ jobs:
           fi
           python3 test/run affected "${args[@]}" nightly
 
-  # 500 random graphs (74 seconds on 8 cores, per docs/testing.md).
+  # 500 random graphs (see test/harnesses.toml for the run time).
   fuzz:
     needs: changed
     if: fromJSON(needs.changed.outputs.run)['fuzz']

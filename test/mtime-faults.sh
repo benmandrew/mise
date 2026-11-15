@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# mtime fault injection: break trust-base item 5 (docs/trust.md) on purpose
+# mtime fault injection: break trust item 5 (docs/theorems.md) on purpose
 # and record what Ninja does. This is not a pass/fail test and is not part
 # of scripts/check.sh; it prints one line per fault and writes the same
 # table to test/out/mtime-faults/report.txt.

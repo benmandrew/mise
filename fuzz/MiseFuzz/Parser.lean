@@ -39,7 +39,7 @@ def versions (m : Manifest) : List String := Id.run do
 /-- Whether evaluating `v` on an edge reaches a rule variable that is
 already being evaluated. Ninja then exits with "cycle in rule variables"
 (`EdgeEnv::LookupVariable`), while the model cuts the recursion with fuel
-(see `Mise/Frontend/NOTES.md`), so the harness does not compare such an
+(see `Mise/NOTES.md`), so the harness does not compare such an
 edge's variables. A variable bound in the edge's or the file's scope, and
 `in`, `in_newline` and `out`, end the chain, as in `EdgeInfo.lookup`. -/
 def cyclic (file : Scope) (c : EdgeInfo) : Nat → List String → String → Bool

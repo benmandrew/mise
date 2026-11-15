@@ -11,7 +11,6 @@ mise build examples/hello-c  # reads mise.toml, writes build.ninja, runs ninja
 ```
 
 - [Usage](docs/usage.md): the `mise` command and the `mise.toml` format.
-- [Theorems](docs/theorems.md): what is proved, by stage.
+- [Theorems and assumptions](docs/theorems.md): what is proved, what is assumed, and the supported Ninja subset.
 - [Trusted definitions](docs/trusted.md): what a reader must check for the proofs to mean what they say.
-- [Trust base](docs/trust.md): what is assumed, and the supported Ninja subset.
 - [Testing](docs/testing.md): the acceptance gate and the tests against real Ninja.
