@@ -4,12 +4,13 @@
 #
 #   scripts/trusted.sh          write both files
 #   scripts/trusted.sh --pdf    write both files and build docs/theorems.pdf
+#                               (scripts/theorems-pdf.sh)
 #   scripts/trusted.sh --check  fail if either file is out of date, if a
 #                               trusted declaration has no docstring, or if
 #                               docs/theorems.typ does not compile with Lean
 #                               highlighting
 #
-# docs/theorems.pdf is not committed; docs/theorems.typ is.
+# All three files are committed.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 mode=${1:-}
@@ -64,7 +65,6 @@ EOF
 else
   cp "$tmp/trusted.md" "$tmp/theorems.typ" docs/
   if [ "$mode" = "--pdf" ]; then
-    typst compile --ignore-system-fonts --font-path docs/fonts docs/theorems.typ docs/theorems.pdf
-    echo "wrote docs/theorems.pdf"
+    scripts/theorems-pdf.sh
   fi
 fi

@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# The Nix shell sets core.hooksPath to .githooks, so git runs this before
+# each commit.
+exec scripts/theorems-pdf.sh --staged

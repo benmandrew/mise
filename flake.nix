@@ -49,6 +49,10 @@
         # `mise` is on PATH after `lake build`.
         shellHook = ''
           export PATH="$PWD/.lake/build/bin:$PATH"
+          # The pre-commit hook keeps docs/theorems.pdf in step with its inputs.
+          if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+            git config core.hooksPath .githooks
+          fi
         '';
       };
     in {

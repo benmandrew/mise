@@ -1,6 +1,6 @@
 # Theorems and assumptions
 
-To check what is proved, start with `Mise/Theorems.lean`. It states the end-to-end results in terms of the DSL graph a user writes. Lean checks the proofs, so a reviewer confirms two things: each statement says what its docstring says, and the definitions it uses mean what their names suggest. [trusted.md](trusted.md) lists those definitions in reading order. `scripts/trusted.sh --pdf` builds `docs/theorems.pdf`, which gives each theorem an English translation and shows the definitions it depends on.
+To check what is proved, start with `Mise/Theorems.lean`. It states the end-to-end results in terms of the DSL graph a user writes. Lean checks the proofs, so a reviewer confirms two things: each statement says what its docstring says, and the definitions it uses mean what their names suggest. [trusted.md](trusted.md) lists those definitions in reading order. [theorems.pdf](theorems.pdf) gives each theorem an English translation and shows the definitions it depends on.
 
 ## Theorems
 

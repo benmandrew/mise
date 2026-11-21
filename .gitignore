@@ -4,4 +4,3 @@
 /examples/*/build/
 /examples/*/.ninja_*
 /.direnv/
-/docs/theorems.pdf
