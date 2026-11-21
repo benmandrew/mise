@@ -59,6 +59,19 @@ def emptied : Path → String := fun p =>
 example : ¬ (g.spec sem).Correct start.content emptied := fun h =>
   absurd (h.1 "main.c" (by decide)) (by decide)
 
+/-! ### `Spec` (conclusion of `build_correct` and `any_order`) -/
+
+/-- A build that ignores its input and leaves `emptied`. -/
+def emptyingBuild (_ : St String) : St String := { start with fs := fun p => some (emptied p, 0) }
+
+/-- `Spec` rejects `emptyingBuild`. The test above checks `Correct` alone;
+this one checks how the two theorems use it. A `Spec` that compared the
+result with itself, `Correct (f st).content (f st).content`, would accept
+`emptyingBuild`, because its targets match the emptied source. -/
+example : ¬ Spec sem g emptyingBuild := fun h =>
+  absurd ((h (.init start_fresh (fun _ => rfl) (fun _ => rfl))).1 "main.c" (by decide))
+    (by decide)
+
 /-! ### `wrapped_run` and `runWrapped` -/
 
 /-- Build under `cmp`, then edit `main.c`, so the edge is dirty again. -/

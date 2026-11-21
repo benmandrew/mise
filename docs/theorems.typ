@@ -9,7 +9,7 @@
 
 = Core theorems
 
-#theorem-heading("well_formed", "Mise/Theorems.lean", 67, "https://github.com/benmandrew/mise/blob/main/Mise/Theorems.lean#L67-L73")
+#theorem-heading("well_formed", "Mise/Theorems.lean", 75, "https://github.com/benmandrew/mise/blob/main/Mise/Theorems.lean#L75-L81")
 
 #"For a valid graph, the manifest that ";#raw("mise");#" emits is well formed. The text ";#raw("mise");#" writes is ";#raw("print (emit g)");#" (";#raw("ValidGraph.ninja");#"), and trust item 1 assumes that Ninja reads ";#raw("print m");#" as ";#raw("m");#" for every well-formed manifest ";#raw("m");#". So Ninja reads the text as ";#raw("emit g");#", the manifest the theorems below run.";
 
@@ -23,23 +23,22 @@
 - #"the manifest for ";#raw("g");#link(label("def:Mise.Syntax.Manifest.WellFormed"))[#" is well formed";];#".";
 ]
 
-#theorem-heading("build_correct", "Mise/Theorems.lean", 87, "https://github.com/benmandrew/mise/blob/main/Mise/Theorems.lean#L87-L95")
+#theorem-heading("build_correct", "Mise/Theorems.lean", 95, "https://github.com/benmandrew/mise/blob/main/Mise/Theorems.lean#L95-L103")
 
 #"Take a valid graph whose ";#emph[#"depfile";];#" commands read only allowed inputs. From any reachable state, one ";#raw("ninja");#" run leaves contents that are correct for the current sources.";
 
-#lean-linked(("theorem build_correct (g : ", none), ("Graph", "def:Mise.Frontend.Graph"), (") (valid : g.Valid) (depfilesOK : g.", none), ("DynOK", "def:Mise.Frontend.Graph.DynOK"), (" sem) {st : ", none), ("St", "def:Mise.Model.St"), (" V}\n    (reachable : ", none), ("Reachable", "def:Mise.Theorems.Reachable"), (" sem g st) :\n    (g.", none), ("spec", "def:Mise.Frontend.Graph.spec"), (" sem).", none), ("Correct", "def:Mise.BuildSpec.Correct"), (" st.", none), ("content", "def:Mise.Model.St.content"), (" (", none), ("build", "def:Mise.Theorems.build"), (" sem g st).", none), ("content", "def:Mise.Model.St.content"))
+#lean-linked(("theorem build_correct (g : ", none), ("Graph", "def:Mise.Frontend.Graph"), (") (valid : g.Valid) (depfilesOK : g.", none), ("DynOK", "def:Mise.Frontend.Graph.DynOK"), (" sem) :\n    ", none), ("Spec", "def:Mise.Theorems.Spec"), (" sem g (", none), ("build", "def:Mise.Theorems.build"), (" sem g)", none))
 
 #english[
-#line-par[#"For all ";#raw("V");#", ";#raw("sem");#", ";#raw("g");#" and ";#raw("st");#", where ";#raw("V");#" has ";#"a default element";#".";]
+#line-par[#"For all ";#raw("V");#", ";#raw("sem");#" and ";#raw("g");#", where ";#raw("V");#" has ";#"a default element";#".";]
 #part-sub[Assume]
 - #"the ";#link(label("def:Mise.Frontend.Graph"))[#"graph";];#" ";#raw("g");#" is valid";#".";
 - #link(label("def:Mise.Frontend.Graph.DynOK"))[#"the depfile commands of ";];#raw("g");#link(label("def:Mise.Frontend.Graph.DynOK"))[#" read only allowed inputs";];#".";
-- #"the ";#link(label("def:Mise.Model.St"))[#"state";];#" ";#raw("st");#link(label("def:Mise.Theorems.Reachable"))[#" is reachable for ";];#raw("g");#".";
 #part-sub[Then]
-- #link(label("def:Mise.Model.St.content"))[#"the contents of ";];#link(label("def:Mise.Theorems.build"))[#"the state after building ";];#raw("g");#link(label("def:Mise.Theorems.build"))[#" from ";];#raw("st");#link(label("def:Mise.BuildSpec.Correct"))[#" is a correct result of ";];#link(label("def:Mise.Frontend.Graph.spec"))[#"the specification of ";];#raw("g");#link(label("def:Mise.BuildSpec.Correct"))[#" when the sources are ";];#link(label("def:Mise.Model.St.content"))[#"the contents of ";];#raw("st");#".";
+- #link(label("def:Mise.Theorems.build"))[#"building ";];#raw("g");#link(label("def:Mise.Theorems.Spec"))[#" meets the specification of ";];#raw("g");#".";
 ]
 
-#theorem-heading("rebuild_noop", "Mise/Theorems.lean", 97, "https://github.com/benmandrew/mise/blob/main/Mise/Theorems.lean#L97-L107")
+#theorem-heading("rebuild_noop", "Mise/Theorems.lean", 105, "https://github.com/benmandrew/mise/blob/main/Mise/Theorems.lean#L105-L115")
 
 #"Take a valid graph whose depfile commands read only allowed inputs. After one ";#raw("ninja");#" run from any reachable state, a second run executes no edge and leaves the state unchanged.";
 
@@ -57,7 +56,7 @@
 - #link(label("def:Mise.Theorems.build"))[#"the state after building ";];#raw("g");#link(label("def:Mise.Theorems.build"))[#" from ";];#raw("st₁");#" equals ";#raw("st₁");#".";
 ]
 
-#theorem-heading("rebuild_minimal", "Mise/Theorems.lean", 109, "https://github.com/benmandrew/mise/blob/main/Mise/Theorems.lean#L109-L132")
+#theorem-heading("rebuild_minimal", "Mise/Theorems.lean", 117, "https://github.com/benmandrew/mise/blob/main/Mise/Theorems.lean#L117-L140")
 
 #"Take a valid graph whose depfile commands read only allowed inputs and a reachable state. Build, apply ";#raw("edits");#" to sources, and build again. Every edge ";#raw("e");#" that the second build runs has a reason: an input ";#raw("p");#" that Ninja checks for ";#raw("e");#" in the state the first build left. When the second build reaches ";#raw("e");#", the modification time (mtime) of ";#raw("p");#" is later than the clock at the end of the first build. And ";#raw("p");#" is either a path in ";#raw("edits");#" or an output of an edge that ran earlier in the second build. So an edge does not run when no edit and no earlier edge touched its checked inputs. A ";#raw("restat");#" edge that kept its output did not touch that output.";
 
@@ -76,24 +75,21 @@
 - #"there are ";#raw("before");#" and ";#raw("after");#" among ";#"lists of ";#link(label("def:Mise.Model.MEdge"))[#"edges";];#" such that ";#"both ";#link(label("def:Mise.Theorems.edges"))[#"the manifest edges of ";];#raw("g");#" equals ";#raw("before");#" followed by ";#raw("e");#" followed by ";#raw("after");#" and ";#"there is ";#raw("p");#" among ";#link(label("def:Mise.Syntax.Path"))[#"paths";];#" such that ";#"all of: ";#link(label("def:Mise.Theorems.Checks"))[#"Ninja checks input ";];#raw("p");#link(label("def:Mise.Theorems.Checks"))[#" of ";];#raw("e");#link(label("def:Mise.Theorems.Checks"))[#" in ";];#raw("st₁");#", ";#link(label("def:Mise.Model.St"))[#"the clock of ";];#raw("st₁");#" is less than ";#link(label("def:Mise.Model.St.mtime"))[#"the mtime of ";];#raw("p");#link(label("def:Mise.Model.St.mtime"))[#" in ";];#link(label("def:Mise.Model.buildTrace"))[#"the state after visiting ";];#raw("before");#link(label("def:Mise.Model.buildTrace"))[#" from ";];#raw("st₂");#", and ";#"either ";#raw("p");#" is in ";#"(";#"the list of ";#"the first component of ";#raw("x");#" for each ";#"pair";#" ";#raw("x");#" in ";#raw("edits");#")";#", or ";#"there is ";#"an ";#link(label("def:Mise.Model.MEdge"))[#"edge";];#" ";#raw("e'");#" in ";#link(label("def:Mise.Model.buildTrace"))[#"the edges run by visiting ";];#raw("before");#link(label("def:Mise.Model.buildTrace"))[#" from ";];#raw("st₂");#" such that ";#raw("p");#" is in ";#link(label("def:Mise.Model.MEdge"))[#"the outputs of ";];#raw("e'");#".";
 ]
 
-#theorem-heading("any_order", "Mise/Theorems.lean", 136, "https://github.com/benmandrew/mise/blob/main/Mise/Theorems.lean#L136-L149")
+#theorem-heading("any_order", "Mise/Theorems.lean", 144, "https://github.com/benmandrew/mise/blob/main/Mise/Theorems.lean#L144-L159")
 
 #"Take a valid graph whose depfile commands read only allowed inputs and a reachable state. Running the edges in any valid ";#raw("order");#" leaves contents that are correct for the current sources. It runs the same edges as a run in manifest order, up to order, and a run in manifest order executes each edge at most once.";
 
-#lean-linked(("theorem any_order (g : ", none), ("Graph", "def:Mise.Frontend.Graph"), (") (valid : g.Valid) (depfilesOK : g.", none), ("DynOK", "def:Mise.Frontend.Graph.DynOK"), (" sem) {order : List ", none), ("MEdge", "def:Mise.Model.MEdge"), ("}\n    (validOrder : ", none), ("ValidOrder", "def:Mise.Theorems.ValidOrder"), (" g order) {st : ", none), ("St", "def:Mise.Model.St"), (" V} (reachable : ", none), ("Reachable", "def:Mise.Theorems.Reachable"), (" sem g st) :\n    (g.", none), ("spec", "def:Mise.Frontend.Graph.spec"), (" sem).", none), ("Correct", "def:Mise.BuildSpec.Correct"), (" st.", none), ("content", "def:Mise.Model.St.content"), (" (", none), ("buildTrace", "def:Mise.Model.buildTrace"), (" sem order st).1.", none), ("content", "def:Mise.Model.St.content"), (" ∧\n      (", none), ("buildTrace", "def:Mise.Model.buildTrace"), (" sem order st).2.Perm (", none), ("ran", "def:Mise.Theorems.ran"), (" sem g st) ∧ (", none), ("ran", "def:Mise.Theorems.ran"), (" sem g st).Nodup", none))
+#lean-linked(("theorem any_order (g : ", none), ("Graph", "def:Mise.Frontend.Graph"), (") (valid : g.Valid) (depfilesOK : g.", none), ("DynOK", "def:Mise.Frontend.Graph.DynOK"), (" sem) {order : List ", none), ("MEdge", "def:Mise.Model.MEdge"), ("}\n    (validOrder : ", none), ("ValidOrder", "def:Mise.Theorems.ValidOrder"), (" g order) :\n    ", none), ("Spec", "def:Mise.Theorems.Spec"), (" sem g (fun st => (", none), ("buildTrace", "def:Mise.Model.buildTrace"), (" sem order st).1) ∧\n      ∀ {st}, ", none), ("Reachable", "def:Mise.Theorems.Reachable"), (" sem g st →\n        (", none), ("buildTrace", "def:Mise.Model.buildTrace"), (" sem order st).2.Perm (", none), ("ran", "def:Mise.Theorems.ran"), (" sem g st) ∧ (", none), ("ran", "def:Mise.Theorems.ran"), (" sem g st).Nodup", none))
 
 #english[
-#line-par[#"For all ";#raw("V");#", ";#raw("sem");#", ";#raw("g");#", ";#raw("order");#" and ";#raw("st");#", where ";#raw("V");#" has ";#"a default element";#".";]
-#line-par[#"Write ";#raw("order₁");#" for ";#link(label("def:Mise.Theorems.ran"))[#"the edges run by building ";];#"the ";#link(label("def:Mise.Frontend.Graph"))[#"graph";];#" ";#raw("g");#link(label("def:Mise.Theorems.ran"))[#" from ";];#"the ";#link(label("def:Mise.Model.St"))[#"state";];#" ";#raw("st");#".";]
+#line-par[#"For all ";#raw("V");#", ";#raw("sem");#", ";#raw("g");#" and ";#raw("order");#", where ";#raw("V");#" has ";#"a default element";#".";]
 #part-sub[Assume]
-- #raw("g");#" is valid";#".";
+- #"the ";#link(label("def:Mise.Frontend.Graph"))[#"graph";];#" ";#raw("g");#" is valid";#".";
 - #link(label("def:Mise.Frontend.Graph.DynOK"))[#"the depfile commands of ";];#raw("g");#link(label("def:Mise.Frontend.Graph.DynOK"))[#" read only allowed inputs";];#".";
 - #"the ";#"list";#" ";#raw("order");#link(label("def:Mise.Theorems.ValidOrder"))[#" is a valid parallel order for ";];#raw("g");#".";
-- #raw("st");#link(label("def:Mise.Theorems.Reachable"))[#" is reachable for ";];#raw("g");#".";
 #part-sub[Then]
-- #link(label("def:Mise.Model.St.content"))[#"the contents of ";];#link(label("def:Mise.Model.buildTrace"))[#"the state after visiting ";];#raw("order");#link(label("def:Mise.Model.buildTrace"))[#" from ";];#raw("st");#link(label("def:Mise.BuildSpec.Correct"))[#" is a correct result of ";];#link(label("def:Mise.Frontend.Graph.spec"))[#"the specification of ";];#raw("g");#link(label("def:Mise.BuildSpec.Correct"))[#" when the sources are ";];#link(label("def:Mise.Model.St.content"))[#"the contents of ";];#raw("st");#".";
-- #link(label("def:Mise.Model.buildTrace"))[#"the edges run by visiting ";];#raw("order");#link(label("def:Mise.Model.buildTrace"))[#" from ";];#raw("st");#" is a reordering of ";#raw("order₁");#".";
-- #"no element occurs twice in ";#raw("order₁");#".";
+- #"(";#"the function taking ";#raw("st");#" to ";#link(label("def:Mise.Model.buildTrace"))[#"the state after visiting ";];#raw("order");#link(label("def:Mise.Model.buildTrace"))[#" from ";];#raw("st");#")";#link(label("def:Mise.Theorems.Spec"))[#" meets the specification of ";];#raw("g");#".";
+- #"for every ";#raw("st");#" among ";#link(label("def:Mise.Model.St"))[#"states over ";];#"elements of ";#raw("V");#", ";#"if ";#raw("st");#link(label("def:Mise.Theorems.Reachable"))[#" is reachable for ";];#raw("g");#", then ";#"both ";#link(label("def:Mise.Model.buildTrace"))[#"the edges run by visiting ";];#raw("order");#link(label("def:Mise.Model.buildTrace"))[#" from ";];#raw("st");#" is a reordering of ";#link(label("def:Mise.Theorems.ran"))[#"the edges run by building ";];#raw("g");#link(label("def:Mise.Theorems.ran"))[#" from ";];#raw("st");#" and ";#"no element occurs twice in ";#link(label("def:Mise.Theorems.ran"))[#"the edges run by building ";];#raw("g");#link(label("def:Mise.Theorems.ran"))[#" from ";];#raw("st");#".";
 ]
 
 = Definitions
@@ -107,27 +103,12 @@
 ]
 #raw(lang: "lean", block: true, "inductive Task (K V : Type) (α : Type) where\n  | pure  : α → Task K V α\n  | fetch : K → (V → Task K V α) → Task K V α")
 
-#def-head("Store", "def:Mise.Store", "Mise/Task/Basic.lean", 18, 19, "https://github.com/benmandrew/mise/blob/main/Mise/Task/Basic.lean#L18-L19")[
-#"A store maps every key to its current value.";
-]
-#raw(lang: "lean", block: true, "abbrev Store (K V : Type) := K → V")
-
-#def-head("Task.run", "def:Mise.Task.run", "Mise/Task/Basic.lean", 78, 81, "https://github.com/benmandrew/mise/blob/main/Mise/Task/Basic.lean#L78-L81")[
-#"The result of a task when each fetch reads from the store ";#raw("s");#".";
-]
-#raw(lang: "lean", block: true, "def run (s : Store K V) : Task K V α → α\n  | .pure a => a\n  | .fetch k c => (c (s k)).run s")
-
 #def-head("Task.FetchesOnly", "def:Mise.Task.FetchesOnly", "Mise/Task/Basic.lean", 171, 175, "https://github.com/benmandrew/mise/blob/main/Mise/Task/Basic.lean#L171-L175")[
 #"On every branch of the tree, every ";#raw("fetch");#" node's key satisfies ";#raw("P");#".";
 ]
 #raw(lang: "lean", block: true, "inductive FetchesOnly (P : K → Prop) : Task K V α → Prop\n  | pure (a : α) : FetchesOnly P (.pure a)\n  | fetch (k : K) (c : V → Task K V α) :\n      P k → (∀ v, FetchesOnly P (c v)) → FetchesOnly P (.fetch k c)")
 
 #file-heading("Mise/Spec/Basic.lean")
-
-#def-head("BuildSpec", "def:Mise.BuildSpec", "Mise/Spec/Basic.lean", 14, 21, "https://github.com/benmandrew/mise/blob/main/Mise/Spec/Basic.lean#L14-L21")[
-#"A build specification: which keys are sources, and for every key a task that computes its value from the values of the keys it fetches. Correctness (";#raw("Correct");#") ignores the task of a source.";
-]
-#raw(lang: "lean", block: true, "structure BuildSpec (K V : Type) where\n  isSource : K → Bool\n  task : K → Task K V V")
 
 #def-head("BuildSpec.Correct", "def:Mise.BuildSpec.Correct", "Mise/Spec/Basic.lean", 45, 51, "https://github.com/benmandrew/mise/blob/main/Mise/Spec/Basic.lean#L45-L51")[
 #raw("R");#" is a correct result of building ";#raw("b");#" from sources ";#raw("S");#": every source holds its value in ";#raw("S");#", and every other key holds what its task computes when it fetches from ";#raw("R");#".";
@@ -190,11 +171,6 @@
 ]
 #raw(lang: "lean", block: true, "def allOuts (e : GEdge) : List Path := e.outs ++ e.implicitOuts")
 
-#def-head("Frontend.GEdge.inputs", "def:Mise.Frontend.GEdge.inputs", "Mise/Frontend/Graph.lean", 69, 70, "https://github.com/benmandrew/mise/blob/main/Mise/Frontend/Graph.lean#L69-L70")[
-#"Explicit then implicit inputs: the inputs a static command reads.";
-]
-#raw(lang: "lean", block: true, "def inputs (e : GEdge) : List Path := e.ins ++ e.implicitIns")
-
 #def-head("Frontend.GEdge.allIns", "def:Mise.Frontend.GEdge.allIns", "Mise/Frontend/Graph.lean", 71, 72, "https://github.com/benmandrew/mise/blob/main/Mise/Frontend/Graph.lean#L71-L72")[
 #"Explicit, implicit and order-only inputs.";
 ]
@@ -219,16 +195,6 @@
 #"What commands mean: ";#raw("exec");#" for static commands, ";#raw("dyn");#" for depfile commands, and ";#raw("keep");#" for ";#raw("restat");#" commands, with the assumption ";#raw("keep_eq");#".";
 ]
 #raw(lang: "lean", block: true, "structure Sem (V : Type) where\n  /-- A static command's outputs from its inputs' contents. -/\n  exec : String → List V → List V\n  /-- A depfile command: what it reads, and its outputs. -/\n  dyn : String → Task Path V (List V)\n  /-- Stage 7: when a `restat` command would write `new` over `old`, it may\n  leave the file untouched when `keep old new` holds. -/\n  keep : V → V → Bool := fun _ _ => false\n  /-- The assumption behind early cutoff: a command leaves a file untouched\n  only when its new contents would be identical. -/\n  keep_eq : ∀ a b, keep a b = true → a = b := by intro a b h; simp at h")
-
-#def-head("Frontend.cmdTask", "def:Mise.Frontend.cmdTask", "Mise/Frontend/Graph.lean", 217, 221, "https://github.com/benmandrew/mise/blob/main/Mise/Frontend/Graph.lean#L217-L221")[
-#"A command as a task returning all its outputs. A depfile command is the task ";#raw("sem.dyn cmd");#". A static command fetches ";#raw("ins");#" in order and returns ";#raw("sem.exec cmd");#" applied to their values.";
-]
-#raw(lang: "lean", block: true, "def cmdTask {V : Type} (sem : Sem V) (dyn : Bool) (cmd : String) (ins : List Path) : Task Path V (List V) :=\n  if dyn then sem.dyn cmd else (fetchAll ins).bind fun vs => .pure (sem.exec cmd vs)")
-
-#def-head("Frontend.outTask", "def:Mise.Frontend.outTask", "Mise/Frontend/Graph.lean", 223, 226, "https://github.com/benmandrew/mise/blob/main/Mise/Frontend/Graph.lean#L223-L226")[
-#"Output ";#raw("i");#" of a command task, or ";#raw("default");#" when the task returns fewer than ";#raw("i + 1");#" outputs.";
-]
-#raw(lang: "lean", block: true, "def outTask {V : Type} [Inhabited V] (t : Task Path V (List V)) (i : Nat) : Task Path V V :=\n  t.bind fun vs => .pure (vs.getD i default)")
 
 #def-head("Frontend.Graph.cmd", "def:Mise.Frontend.Graph.cmd", "Mise/Frontend/Graph.lean", 231, 237, "https://github.com/benmandrew/mise/blob/main/Mise/Frontend/Graph.lean#L231-L237")[
 #"The command the DSL means for an edge: its rule's command, evaluated with the edge's variables (";#raw("GEdge.look");#"). The command is empty when ";#raw("g");#" has no rule of that name.";
@@ -336,23 +302,28 @@
 ]
 #raw(lang: "lean", block: true, "abbrev Reachable (g : Graph) (st : St V) : Prop := Reach sem (edges g) st")
 
-#def-head("Theorems.build", "def:Mise.Theorems.build", "Mise/Theorems.lean", 39, 44, "https://github.com/benmandrew/mise/blob/main/Mise/Theorems.lean#L39-L44")[
+#def-head("Theorems.build", "def:Mise.Theorems.build", "Mise/Theorems.lean", 39, 45, "https://github.com/benmandrew/mise/blob/main/Mise/Theorems.lean#L39-L45")[
 #"The state after one modelled ";#raw("ninja");#" run from ";#raw("st");#" on the manifest emitted for ";#raw("g");#", which visits every edge in manifest order. When ";#raw("g");#" has default targets, ";#raw("ninja");#" with no arguments builds only those. That is a partial build, which ";#raw("Reachable");#" covers and ";#raw("build");#" does not describe.";
 ]
 #raw(lang: "lean", block: true, "abbrev build (g : Graph) (st : St V) : St V := (buildTrace sem (edges g) st).1")
 
-#def-head("Theorems.ran", "def:Mise.Theorems.ran", "Mise/Theorems.lean", 46, 49, "https://github.com/benmandrew/mise/blob/main/Mise/Theorems.lean#L46-L49")[
+#def-head("Theorems.ran", "def:Mise.Theorems.ran", "Mise/Theorems.lean", 47, 50, "https://github.com/benmandrew/mise/blob/main/Mise/Theorems.lean#L47-L50")[
 #"The edges that one modelled ";#raw("ninja");#" run from ";#raw("st");#" executes, in the order it runs them.";
 ]
 #raw(lang: "lean", block: true, "abbrev ran (g : Graph) (st : St V) : List MEdge := (buildTrace sem (edges g) st).2")
 
-#def-head("Theorems.ValidOrder", "def:Mise.Theorems.ValidOrder", "Mise/Theorems.lean", 51, 55, "https://github.com/benmandrew/mise/blob/main/Mise/Theorems.lean#L51-L55")[
+#def-head("Theorems.ValidOrder", "def:Mise.Theorems.ValidOrder", "Mise/Theorems.lean", 52, 56, "https://github.com/benmandrew/mise/blob/main/Mise/Theorems.lean#L52-L56")[
 #raw("es");#" is an order in which a parallel Ninja could run the edges. It is a permutation of ";#raw("edges g");#" in which no edge reads an output of itself or of a later edge, order-only inputs included, and no two edges share an output.";
 ]
 #raw(lang: "lean", block: true, "abbrev ValidOrder (g : Graph) (es : List MEdge) : Prop := es.Perm (edges g) ∧ Sched es")
 
-#def-head("Theorems.Checks", "def:Mise.Theorems.Checks", "Mise/Theorems.lean", 57, 63, "https://github.com/benmandrew/mise/blob/main/Mise/Theorems.lean#L57-L63")[
+#def-head("Theorems.Checks", "def:Mise.Theorems.Checks", "Mise/Theorems.lean", 58, 64, "https://github.com/benmandrew/mise/blob/main/Mise/Theorems.lean#L58-L64")[
 #raw("p");#" is an input that Ninja checks for some output of ";#raw("e");#" in state ";#raw("st");#": an explicit or implicit input of ";#raw("e");#", or, for a depfile edge, a path in that output's deps log entry. A depfile output with no deps entry has no checked inputs.";
 ]
 #raw(lang: "lean", block: true, "abbrev Checks (st : St V) (e : MEdge) (p : Path) : Prop :=\n  ∃ o ∈ e.outs, ∃ D, st.effIns e o = some D ∧ p ∈ D")
+
+#def-head("Theorems.Spec", "def:Mise.Theorems.Spec", "Mise/Theorems.lean", 66, 71, "https://github.com/benmandrew/mise/blob/main/Mise/Theorems.lean#L66-L71")[
+#"From every reachable state ";#raw("st");#", the state ";#raw("f st");#" has contents that are correct for the sources in ";#raw("st");#". ";#raw("build_correct");#" and ";#raw("any_order");#" state their conclusions with it, so a test of ";#raw("Spec");#" is a test of those conclusions.";
+]
+#raw(lang: "lean", block: true, "abbrev Spec (g : Graph) (f : St V → St V) : Prop :=\n  ∀ {st}, Reachable sem g st → (g.spec sem).Correct st.content (f st).content")
 

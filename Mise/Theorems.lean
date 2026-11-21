@@ -40,7 +40,8 @@ abbrev Reachable (g : Graph) (st : St V) : Prop := Reach sem (edges g) st
 emitted for `g`, which visits every edge in manifest order. When `g` has
 default targets, `ninja` with no arguments builds only those. That is a
 partial build, which `Reachable` covers and `build` does not describe.
-Gloss: the state after building {g} from {st} -/
+Gloss: the state after building {g} from {st}
+Gloss.fun: building {g} -/
 abbrev build (g : Graph) (st : St V) : St V := (buildTrace sem (edges g) st).1
 
 /-- The edges that one modelled `ninja` run from `st` executes, in the order
@@ -61,6 +62,13 @@ inputs.
 Gloss: Ninja checks input {p} of {e} in {st} -/
 abbrev Checks (st : St V) (e : MEdge) (p : Path) : Prop :=
   ∃ o ∈ e.outs, ∃ D, st.effIns e o = some D ∧ p ∈ D
+
+/-- From every reachable state `st`, the state `f st` has contents that are
+correct for the sources in `st`. `build_correct` and `any_order` state their
+conclusions with it, so a test of `Spec` is a test of those conclusions.
+Gloss: {f} meets the specification of {g} -/
+abbrev Spec (g : Graph) (f : St V → St V) : Prop :=
+  ∀ {st}, Reachable sem g st → (g.spec sem).Correct st.content (f st).content
 
 /-! ## The manifest -/
 
@@ -88,9 +96,9 @@ theorem correct_unique (g : Graph) (valid : g.Valid) (depfilesOK : g.DynOK sem)
 any reachable state, one `ninja` run leaves contents that are correct for
 the current sources.
 Review: core -/
-theorem build_correct (g : Graph) (valid : g.Valid) (depfilesOK : g.DynOK sem) {st : St V}
-    (reachable : Reachable sem g st) :
-    (g.spec sem).Correct st.content (build sem g st).content := by
+theorem build_correct (g : Graph) (valid : g.Valid) (depfilesOK : g.DynOK sem) :
+    Spec sem g (build sem g) := by
+  intro st reachable
   have hc := (reach_sound sem (sched_emit g valid) (reads_emit sem g valid depfilesOK) reachable).1
   rwa [denote_emit sem g valid] at hc
 
@@ -140,11 +148,13 @@ manifest order, up to order, and a run in manifest order executes each edge
 at most once.
 Review: core -/
 theorem any_order (g : Graph) (valid : g.Valid) (depfilesOK : g.DynOK sem) {order : List MEdge}
-    (validOrder : ValidOrder g order) {st : St V} (reachable : Reachable sem g st) :
-    (g.spec sem).Correct st.content (buildTrace sem order st).1.content ∧
-      (buildTrace sem order st).2.Perm (ran sem g st) ∧ (ran sem g st).Nodup := by
-  refine ⟨?_, dsl_same_edges sem g valid depfilesOK validOrder.1 validOrder.2 reachable,
-    trace_nodup_sched sem _ st (sched_emit g valid)⟩
+    (validOrder : ValidOrder g order) :
+    Spec sem g (fun st => (buildTrace sem order st).1) ∧
+      ∀ {st}, Reachable sem g st →
+        (buildTrace sem order st).2.Perm (ran sem g st) ∧ (ran sem g st).Nodup := by
+  refine ⟨fun {st} reachable => ?_, fun {st} reachable =>
+    ⟨dsl_same_edges sem g valid depfilesOK validOrder.1 validOrder.2 reachable,
+      trace_nodup_sched sem _ st (sched_emit g valid)⟩⟩
   rw [(dsl_parallel sem g valid depfilesOK validOrder.1 validOrder.2 reachable).1]
   exact BuildSpec.cleanBuild_correct _ _
 
