@@ -5,6 +5,8 @@ import MiseTest.Stage4
 import MiseTest.Stage5
 import MiseTest.Stage6
 import MiseTest.Stage7
+import MiseTest.Reachable
+import MiseTest.Boundary
 import MiseTest.Toml
 import MiseTest.Bytes
 import MiseTest.Axioms
