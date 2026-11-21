@@ -9,14 +9,14 @@ A Lean 4 front end for Ninja. Users describe a build in Lean, `mise` emits `buil
 - Library `Mise`, one directory per stage: `Mise/Task` (1), `Mise/Spec` (2), `Mise/Syntax` (3), `Mise/Frontend` (4), `Mise/Model` (5–7). `Mise/NOTES.md` records definitions, model assumptions and differences from Ninja, one section per directory.
 - No `axiom` declarations. Assumptions are structure fields or theorem hypotheses.
 - `README.md` stays minimal: a summary, the quick start and links. User documentation lives in `docs/`: `usage.md`, `theorems.md` (theorems, trust items, Ninja subset) and `testing.md`. Each fact has one home; run times live in `test/harnesses.toml` and script arguments in each script's header comment.
-- `scripts/check.sh` is the acceptance gate: build, no `sorry`/`admit`, and `#print axioms` over `test/MiseTest/Axioms.lean` showing only `propext`, `Classical.choice`, `Quot.sound`. Add every headline theorem to that file. Restate end-to-end results in `Mise/Theorems.lean` and rerun `scripts/trusted.sh`, which regenerates `docs/trusted.md` and `docs/theorems.typ` (`check.sh` fails if either is stale, or if a trusted definition has no docstring). Give each name a statement in `Mise/Theorems.lean` uses a `Gloss:` template in its docstring; `scripts/trusted.sh --pdf` builds the PDF (not committed). `test/MiseTest/Trusted.lean` does not walk into the definitions in `implementation` (`emit`, `Graph.Valid`), and also walks the definitions that trust item 1 is stated in (`assumptions`).
+- `scripts/check.sh` is the acceptance gate: build, no `sorry`/`admit`, and `#print axioms` over `test/MiseTest/Axioms.lean` showing only `propext`, `Classical.choice`, `Quot.sound`. Add every theorem in `Mise/Theorems.lean`, and the module-level theorems it is built from, to that file. Restate end-to-end results in `Mise/Theorems.lean` and rerun `scripts/trusted.sh`, which regenerates `docs/trusted.md` and `docs/theorems.typ` (`check.sh` fails if either is stale, or if a trusted definition has no docstring). Give each name a statement in `Mise/Theorems.lean` uses a `Gloss:` template in its docstring; `scripts/trusted.sh --pdf` builds the PDF (not committed). `test/MiseTest/Trusted.lean` does not walk into the definitions in `implementation` (`emit`, `Graph.Valid`), and also walks the definitions that trust item 1 is stated in (`assumptions`).
 - Lean tests live in `test/MiseTest/` (library `MiseTest`); shell tests against real Ninja live in `test/` and write to `test/out/` (gitignored).
 - Proof style: generated equation lemmas for functions with nested `match` are awkward; state small unfolding lemmas via `rw [f.eq_def]; simp` (see `Mise/Syntax/RoundTrip.lean`).
 - Commit per stage on a `stage-N` branch, then fast-forward `main`. Commits are signed. `PLAN.md` is never committed.
 
 ## Decisions to escalate
 
-Adding Mathlib, weakening a headline theorem, adding an `Env` assumption the plan does not list, changing the `Task` representation, or supporting Ninja features outside the Stage 3 subset.
+Adding Mathlib, weakening a theorem in `Mise/Theorems.lean`, adding an `Env` assumption the plan does not list, changing the `Task` representation, or supporting Ninja features outside the Stage 3 subset.
 
 ## Status
 

@@ -44,6 +44,8 @@ params = ["cflags"]
 objs = ["build/%.o"]
 ```
 
+The top-level keys are `sources` (a list of source files), `source-globs` (below), `defaults`, `[params]`, `[[rule]]`, `[[build]]` and `[aliases]` (below), and each is optional.
+
 A `[[rule]]` has `name` and `command`. Its optional keys are `description`, `depfile = true` (the compiler reports what it read), `restat = true` (an output whose contents do not change keeps its old file, so its dependents do not rebuild) and `wrap = false` (below).
 
 A `[[build]]` has `rule` and `outs`. Its optional keys are `implicit-outs`, `ins`, `implicit-ins`, `order-only`, `vars` (edge variables with literal values), `params` (edge variables bound to parameters) and `foreach` (below). For a depfile rule, `order-only` lists the generated files the command may read, as in `examples/gen-header/mise.toml`. Inputs name sources or outputs of any build. Builds may come in any order: `mise` sorts them so that each follows the builds it reads, and rejects a cycle. Defaults name build outputs or aliases. Unknown keys are errors.

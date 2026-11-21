@@ -59,7 +59,7 @@ jobs:
           BASE_BRANCH: ${{ github.base_ref }}
         run: python3 test/run affected ci
 
-  # Build, no sorry/admit, axioms of the headline theorems, docs/trusted.md
+  # Build, no sorry/admit, axioms of the theorems, docs/trusted.md
   # up to date. The proofs do not depend on the Ninja release, so they run
   # once. This is the only job that saves the Lake cache, since it builds
   # every target. Local time: 7 to 13 s, from an empty .lake.

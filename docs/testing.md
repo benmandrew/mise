@@ -17,7 +17,7 @@ Run the tests in the Nix shell (`nix develop`, or direnv with `.envrc`), so that
 
 | Harness | What it checks |
 |---|---|
-| `check` | The acceptance gate, `scripts/check.sh`. It builds everything (the `#guard` tests in `test/MiseTest/` run during the build), rejects `sorry` and `admit`, checks the axioms of the headline theorems, checks that the generated docs are current and runs `test/run lint`. |
+| `check` | The acceptance gate, `scripts/check.sh`. It builds everything (the `#guard` tests in `test/MiseTest/` run during the build), rejects `sorry` and `admit`, checks the axioms of the theorems in `test/MiseTest/Axioms.lean`, checks that the generated docs are current and runs `test/run lint`. |
 | `stage3-diff` | The parser and evaluation models read 100 random manifests as Ninja does, and both reject 17 malformed ones. |
 | `stage4-hello` | `examples/hello-c` builds and runs, and the DSL's commands match `ninja -t commands`. |
 | `sugar` | `source-globs`, `foreach`, `%` inputs and aliases build what they should against real Ninja. |

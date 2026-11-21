@@ -75,7 +75,7 @@ Ninja rejects cyclic rule variables. The model uses fuel of the binding count pl
 
 `rule` wraps every command in `wrapCommand` unless `wrap := false`. The script moves each existing output `f` to `f.mise-old` and runs the command in a subshell. If the command exits 0 and every output exists, it deletes the old files; for a `restat` rule it first moves an old file back when `cmp -s` finds it equal. Otherwise it deletes what the command wrote, moves every old file back and exits nonzero. The implicit outputs reach the script through the edge variable `mise_iouts`.
 
-- The model's `St.run` writes every output and has no failing commands. A real command that exits 0 without writing an output makes Ninja rerun it on every build, which breaks `rebuild_noop`; the wrapper turns that into a failure. A failure restores the old files and Ninja records nothing, so the state is unchanged.
+- A failure restores the old files and Ninja records nothing, so the state is unchanged.
 - The wrapper moves old files aside because it cannot redirect writes: `$out` is one space-separated string, and a command names its implicit outputs itself.
 - An interrupt between the rename and the restore leaves an output missing, which Ninja rebuilds. A depfile written by a failed command stays, but Ninja reads it only after a success.
 - A shell comment in the command would hide the closing parenthesis of the subshell, so the command must not contain one.

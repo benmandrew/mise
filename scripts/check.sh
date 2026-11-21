@@ -2,9 +2,11 @@
 # Acceptance checks shared by every stage:
 #   1. lake build succeeds;
 #   2. no `sorry` or `admit` in Lean sources;
-#   3. headline theorems use only propext, Classical.choice and Quot.sound;
+#   3. the theorems in test/MiseTest/Axioms.lean use only propext,
+#      Classical.choice and Quot.sound;
 #   4. docs/trusted.md and docs/theorems.typ match the definitions the
-#      headline theorems use, and docs/theorems.typ compiles with Typst;
+#      theorems in Mise/Theorems.lean use, and docs/theorems.typ compiles
+#      with Typst;
 #   5. every one of those definitions has a docstring;
 #   6. test/harnesses.toml lists every harness file and matches the CI
 #      workflows (test/run lint).
