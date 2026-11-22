@@ -70,18 +70,26 @@ triages the survivors of the last run again, from
 `test/out/trust-mutants/rows.json`, without building any mutant.
 
 The tests overlap: a test of a caller often kills mutants of the functions
-it calls. `--cover` builds each distinguished survivor of the last triage
-against all of its tests, in a module `MiseTest.Candidates` in the copy,
-and chooses a smallest set of tests that kills them all, the shortest among
-equals. It writes the set to `test/out/trust-mutants/cover.lean`, with the
-mutants each test kills, and the kill matrix to `kills.json` there.
+it calls. So when the triage finds distinguished survivors, the run builds
+each of them against all of the triage's tests, in a module
+`MiseTest.Candidates` in the copy, and chooses a smallest set of tests that
+kills them all, the shortest among equals. It writes the set to
+`test/out/trust-mutants/cover.lean`, with the mutants each test kills, and
+the kill matrix to `kills.json` there. `--no-cover` skips this step, and
+`--cover` runs only this step, on the last triage.
+
+The run prints a banner as each stage starts, with the time since the run
+started, and a line as each item of a stage finishes: a module of the
+control build, a mutant, a triaged survivor, or a survivor of the cover,
+with the count, the time in the stage and an estimate of the time left.
+At the end it prints the summary; the full report is in `results.md`.
 
 The exit status is 1 when a mutant that is not equivalent survives, or a
 mutant is an error.
 
 usage: trust-mutants.py [--via inproc|lake] [-j JOBS] [--generated [--all-edits]]
-                        [--samples N] [--no-triage] [MUTANT...]
-       trust-mutants.py --retriage [MUTANT...]
+                        [--samples N] [--no-triage] [--no-cover] [MUTANT...]
+       trust-mutants.py --retriage [--no-cover] [MUTANT...]
        trust-mutants.py --cover
 
 JOBS defaults to the number of CPUs, at most one per 4 GB of memory: an
@@ -258,6 +266,75 @@ def sh(cmd, cwd=None):
     return subprocess.run(cmd, cwd=cwd or TREE, capture_output=True, text=True)
 
 
+def dur(secs):
+    """`secs` as `1h02m`, `3m05s` or `42s`."""
+    secs = int(secs)
+    if secs >= 3600:
+        return f"{secs // 3600}h{secs % 3600 // 60:02d}m"
+    if secs >= 60:
+        return f"{secs // 60}m{secs % 60:02d}s"
+    return f"{secs}s"
+
+
+class Progress:
+    """The run's progress, one line at a time, so that it reads the same in
+    a terminal and in a CI log: a banner for each stage, with the time since
+    the run started, and for each item a stage counts, the count, the time
+    in the stage and an estimate of the time left."""
+
+    def __init__(self):
+        self.start, self.stages, self.k = time.time(), [], 0
+        self.lock = threading.Lock()
+        self.total = self.done = 0
+        self.t = self.start
+
+    def plan(self, stages):
+        self.stages = stages
+
+    def stage(self, name, total=0):
+        """Start the stage `name`, which has `total` items to count."""
+        with self.lock:
+            self.k = self.stages.index(name) + 1 if name in self.stages else self.k
+            self.total, self.done, self.t = total, 0, time.time()
+            of = f"Stage {self.k}/{len(self.stages)}: " if self.stages else ""
+            n = f" ({total})" if total else ""
+            print(f"\n== {of}{name}{n} · {dur(self.t - self.start)} in ==", flush=True)
+
+    def item(self, text, done=None, total=None):
+        """One item of the stage has finished; `done` and `total` replace
+        the stage's own count, for a tool that counts for itself."""
+        with self.lock:
+            self.done = done if done is not None else self.done + 1
+            total = total or self.total
+            el = time.time() - self.t
+            if total:
+                w = len(str(total))
+                left = f", ~{dur(el / self.done * (total - self.done))} left" if self.done < total else ""
+                print(f"[{self.done:>{w}}/{total} {100 * self.done // total:>3}%] {text}  ({dur(el)}{left})", flush=True)
+            else:
+                print(f"  {text}  ({dur(el)})", flush=True)
+
+    def note(self, text):
+        with self.lock:
+            print(f"  {text}", flush=True)
+
+    def skip(self, name, why):
+        with self.lock:
+            k = self.stages.index(name) + 1 if name in self.stages else self.k
+            print(f"\n== Stage {k}/{len(self.stages)}: {name}: skipped, {why} ==", flush=True)
+
+
+P = Progress()
+
+# The stages of a run.
+COPY = "copy the tree and replace the library's proofs with sorry"
+CONTROL = "build the unmutated copy"
+GENERATE = "generate mutants"
+MUTANTS_STAGE = "build the mutants"
+TRIAGE = "triage the survivors"
+COVER = "choose a smallest set of tests"
+
+
 def clone(srcs, dst):
     """Copy `srcs` to `dst`, with copy-on-write clones where the file system
     has them. Timestamps are kept, so a clone of a built tree stays built."""
@@ -314,6 +391,23 @@ def lake_errors(r):
     return errs
 
 
+LAKE_STEP = re.compile(r"\[(\d+)/(\d+)\] Built (\S+)")
+
+
+def build_watched():
+    """`build()` on `TREE`, with a progress line for each module that Lake
+    builds."""
+    p = subprocess.Popen(["lake", "build", "MiseTest"], cwd=TREE, stdout=subprocess.PIPE,
+                         stderr=subprocess.STDOUT, text=True)
+    out = []
+    for line in p.stdout:
+        out.append(line)
+        if m := LAKE_STEP.search(line):
+            P.item(m.group(3), int(m.group(1)), int(m.group(2)))
+    p.wait()
+    return lake_errors(subprocess.CompletedProcess(p.args, p.returncode, "".join(out), ""))
+
+
 def build(tree=TREE, staged=False):
     """The errors of `lake build MiseTest` in `tree`. With `staged`, the
     errors of building `KILLERS` alone, if there are any."""
@@ -362,7 +456,7 @@ def generate(keep_all):
                        capture_output=True, text=True, env={**os.environ, "MUTANTS_OUT": str(out)})
     if r.returncode != 0:
         sys.exit(f"MutantGen failed:\n{(r.stdout + r.stderr)[-2000:]}")
-    print(r.stdout.strip().splitlines()[-1], flush=True)
+    P.note(r.stdout.strip().splitlines()[-1])
     seen = {(m[2], mutate((TREE / m[2]).read_bytes(), m)) for m in MUTANTS}
     rows, repeats = [], 0
     for g in json.loads(out.read_text())["mutants"]:
@@ -377,7 +471,7 @@ def generate(keep_all):
         rows.append(m)
         effs = set(g["effects"].values())
         EFFECT[m[0]] = next((e for e in EFFECTS if e in effs), "unknown")
-    print(f"{len(rows)} generated mutants, after {repeats} that repeat another", flush=True)
+    P.note(f"{len(rows)} generated mutants, after {repeats} that repeat another")
     return rows
 
 
@@ -398,7 +492,7 @@ def row(m, errs, secs):
     v, kind, where = verdict(errs)
     if v == "error" and name in GENERATED:
         v = "stillborn"
-    print(f"{name}: {v}{f' ({kind})' if kind else ''}; {where}; {secs:.0f}s", flush=True)
+    P.item(f"{name}: {v}{f' ({kind})' if kind else ''}{f'; {where}' if where else ''}; {secs:.0f}s")
     r = name, defn, what, v, kind, where
     with RESULTS_LOCK, RESULTS.open("a") as f:
         f.write(table_row(r) + "\n")
@@ -578,6 +672,25 @@ def edit_of(m):
     return {"name": name, "file": f, "start": start, "stop": stop, "text": new}
 
 
+def triage_poll(tri, k, out):
+    """`out` with the triage results that the `k` processes have written
+    since, each reported as it arrives."""
+    for i in range(k):
+        f = tri / f"out-{i}.jsonl"
+        if not f.exists():
+            continue
+        for line in f.read_text().splitlines():
+            if not line.endswith("}"):
+                continue
+            r = json.loads(line)
+            if r["name"] in out:
+                continue
+            out[r["name"]] = r
+            why = "" if r["verdict"] != "undecided" else f": {' '.join(r['detail'].split())[:90]}"
+            P.item(f"{r['name']}: {r['verdict']}{why}")
+    return out
+
+
 def triage(todo, rows, jobs, samples):
     """The triage of the mutants that survive, by `MutantCheck` on `jobs`
     processes: for each, its `verdict` ("distinguished", "equivalent" or
@@ -585,13 +698,15 @@ def triage(todo, rows, jobs, samples):
     live = {r[0] for r in rows if r[3] == "SURVIVED"}
     edits = sorted((edit_of(m) for m in todo if m[0] in live), key=lambda e: (e["file"], e["start"]))
     if not edits:
+        P.skip(TRIAGE, "no survivors")
         return {}
+    P.stage(TRIAGE, len(edits))
     tri = OUT / "triage"
     shutil.rmtree(tri, ignore_errors=True)
     tri.mkdir(parents=True)
     # Contiguous chunks, so that each process elaborates few files again.
     k = min(jobs, len(edits))
-    procs = []
+    procs, out = [], {}
     for i in range(k):
         chunk = edits[len(edits) * i // k:len(edits) * (i + 1) // k]
         (tri / f"in-{i}.json").write_text(json.dumps(chunk))
@@ -601,13 +716,11 @@ def triage(todo, rows, jobs, samples):
             cwd=TREE, stdout=(tri / f"log-{i}.txt").open("w"), stderr=subprocess.STDOUT,
             env={**os.environ, "MUTANT_SAMPLES": str(samples)}))
         time.sleep(STAGGER)
-    for p in procs:
-        p.wait()
-    out = {}
-    for i in range(k):
-        for line in (tri / f"out-{i}.jsonl").read_text().splitlines():
-            r = json.loads(line)
-            out[r["name"]] = r
+        out = triage_poll(tri, k, out)
+    while any(p.poll() is None for p in procs):
+        time.sleep(1)
+        out = triage_poll(tri, k, out)
+    out = triage_poll(tri, k, out)
     for e in edits:
         out.setdefault(e["name"], {"name": e["name"], "verdict": "undecided",
                                    "detail": f"MutantCheck stopped; see {tri.relative_to(ROOT)}/log-*.txt"})
@@ -677,12 +790,17 @@ def min_cover(kills, cost):
 def cover(jobs):
     """Build each distinguished survivor of the last triage against all the
     tests the triage wrote, and choose a smallest set of them that kills
-    every one: the kill matrix and the cover, written to `OUT`."""
+    every one: the kill matrix and the cover, written to `OUT`. Its summary,
+    and whether every mutant behaved as expected."""
     last = json.loads((OUT / "rows.json").read_text())
     todo = {m[0]: tuple(m[:4]) + (tuple(m[4]) if isinstance(m[4], list) else m[4], m[5]) for m in last["todo"]}
     tri = {r["name"]: r for f in sorted((OUT / "triage").glob("out-*.jsonl"))
            for r in map(json.loads, f.read_text().splitlines())}
     dist = sorted(n for n, r in tri.items() if r["verdict"] == "distinguished" and n in todo)
+    if not dist:
+        P.skip(COVER, "no distinguished survivors")
+        return None, True
+    P.stage(COVER, len(dist))
     # One test per mutant, each in its own range of lines.
     # The library alone, so that a mutant elaborates no other test module.
     lines = ["import Mise", ""]
@@ -720,11 +838,14 @@ def cover(jobs):
             # The control: the unmutated module that reaches the most.
             if m is None:
                 mod = max(plans, key=lambda mod: len(plans[mod][0]["modules"]))
-            errs, _ = w.run(mod, m)
+            errs, secs = w.run(mod, m)
             with lock:
                 failed[m[0] if m else None] = errs
-            print(f"{m[0] if m else '(unmutated)'}: {len({test_at(e[1]) for e in errs if e[0] == path})} tests fail",
-                  flush=True)
+            n = len({test_at(e[1]) for e in errs if e[0] == path})
+            if m:
+                P.item(f"{m[0]}: {n} of {len(dist)} tests fail; {secs:.0f}s")
+            else:
+                P.note(f"the unmutated copy fails {n} tests (must be 0)")
         w.close()
 
     with ThreadPoolExecutor(jobs) as ex:
@@ -753,12 +874,12 @@ def cover(jobs):
         out += [f"-- kills {', '.join(sorted(kills[t]))}", tri[t]["test"], ""]
     (OUT / "cover.lean").write_text("\n".join(out))
     (OUT / "kills.json").write_text(json.dumps({t: sorted(ms) for t, ms in kills.items()}, indent=1))
-    print()
-    print(out[0])
+    summary = (f"{out[0].removeprefix('-- ')} They are in {(OUT / 'cover.lean').relative_to(ROOT)}, "
+               f"the kill matrix in {(OUT / 'kills.json').relative_to(ROOT)}.")
     for o in odd:
-        print("  " + o)
-    print(f"tests in {(OUT / 'cover.lean').relative_to(ROOT)}, the kill matrix in {(OUT / 'kills.json').relative_to(ROOT)}")
-    return 0 if not odd else 1
+        P.note(o)
+    P.note(summary)
+    return summary, not odd
 
 
 def cell(s):
@@ -766,7 +887,7 @@ def cell(s):
     return " ".join(s.split()).replace("|", "\\|")
 
 
-def report(rows, tri, secs, via):
+def report(rows, tri, secs, via, cov=None):
     """The results report: a summary, every mutant, then the survivors by
     effect with their triage, and the tests that kill those with a witness."""
     v = {r[0]: ("equivalent" if r[3] == "SURVIVED" and tri.get(r[0], {}).get("verdict") == "equivalent" else r[3])
@@ -777,6 +898,8 @@ def report(rows, tri, secs, via):
     lines = [f"{n['killed']} of {len(rows) - n['stillborn'] - n['equivalent']} mutants killed "
              f"({n['equivalent']} equivalent, {n['stillborn']} stillborn); {len(live)} survive, "
              f"{len(dist)} of them with a witness; {n['error']} errors; {secs:.0f} s, via {via}.", ""]
+    if cov:
+        lines += [cov, ""]
     lines += HEADER + [table_row((r[0], r[1], r[2], v[r[0]], r[4], r[5])) for r in rows]
     if live:
         lines += ["", "## Survivors", "",
@@ -814,37 +937,45 @@ def main():
     ap.add_argument("--samples", type=int, default=100000,
                     help="random samples per survivor in the triage (default: 100000)")
     ap.add_argument("--cover", action="store_true",
-                    help="choose a smallest set of the last triage's tests that kills its distinguished survivors")
+                    help="only choose a smallest set of the last triage's tests that kills its distinguished survivors")
+    ap.add_argument("--no-cover", action="store_true",
+                    help="do not choose a smallest set of tests after the triage")
     a = ap.parse_args()
     start = time.time()
     if a.cover:
-        return cover(a.jobs)
+        P.plan([COVER])
+        _, ok = cover(a.jobs)
+        return 0 if ok else 1
+    after = ([] if a.no_triage else [TRIAGE]) + ([] if a.no_triage or a.no_cover else [COVER])
     if a.retriage:
+        P.plan(after)
         last = json.loads((OUT / "rows.json").read_text())
         rows = [tuple(r) for r in last["rows"]]
         todo = [tuple(m[:4]) + (tuple(m[4]) if isinstance(m[4], list) else m[4], m[5]) for m in last["todo"]]
         GENERATED.update(last["generated"])
         EFFECT.update(last["effect"])
         tri = triage([m for m in todo if not a.only or m[0] in a.only], rows, a.jobs, a.samples)
-        text, ok = report(rows, tri, last["secs"] + time.time() - start, last["via"])
-        RESULTS.write_text(text)
-        print(text)
-        return 0 if ok else 1
+        cov, cok = cover(a.jobs) if COVER in after else (None, True)
+        return finish(rows, tri, last["secs"] + time.time() - start, last["via"], cov, cok)
+    P.plan([COPY, CONTROL] + ([GENERATE] if a.generated else []) + [MUTANTS_STAGE] + after)
+    P.stage(COPY)
     copy_tree()
     for name, _, f, _, old, _ in MUTANTS:
         c = (TREE / f).read_text().count(old)
         if c != 1:
             sys.exit(f"{name}: the text to replace occurs {c} times in {f}")
     n = prepare()
-    t = time.time()
-    errs = build()
-    print(f"unmutated, {n} theorems as sorry: {'fails' if errs else 'passes'}, {time.time() - t:.0f}s", flush=True)
+    P.note(f"{n} theorems replaced with sorry")
+    P.stage(CONTROL)
+    errs = build_watched()
+    P.note(f"the unmutated copy {'fails' if errs else 'passes'}")
     if errs:
         for f, line, msg in errs[:5]:
             print(f"  {f}:{line}: {msg.strip()[:300]}")
         sys.exit("the unmutated tests fail; mutant results would mean nothing")
     todo = list(MUTANTS)
     if a.generated:
+        P.stage(GENERATE)
         gen = generate(a.all_edits)
         GENERATED.update(m[0] for m in gen)
         todo += gen
@@ -856,6 +987,7 @@ def main():
     shutil.rmtree(WORK, ignore_errors=True)
     WORK.mkdir()
     RESULTS.write_text("\n".join([f"Running {len(todo)} mutants via {a.via}; rows in the order they finish.", ""] + HEADER) + "\n")
+    P.stage(MUTANTS_STAGE, len(todo))
     with ThreadPoolExecutor(a.jobs) as ex:
         if a.via == "lake":
             futures = [ex.submit(via_lake, m) for m in todo]
@@ -874,11 +1006,20 @@ def main():
         "rows": rows, "todo": todo, "generated": sorted(GENERATED), "effect": EFFECT,
         "secs": time.time() - start, "via": a.via}))
     tri = {} if a.no_triage else triage(todo, rows, a.jobs, a.samples)
-    text, ok = report(rows, tri, time.time() - start, a.via)
+    cov, cok = cover(a.jobs) if COVER in after else (None, True)
+    return finish(rows, tri, time.time() - start, a.via, cov, cok)
+
+
+def finish(rows, tri, secs, via, cov, cover_ok):
+    """Write the report, print its summary, and return the exit status."""
+    text, ok = report(rows, tri, secs, via, cov)
     RESULTS.write_text(text)
-    print()
-    print(text)
-    return 0 if ok else 1
+    print(f"\n== Done in {dur(time.time() - P.start)} ==", flush=True)
+    print(text.split("\n")[0])
+    if cov:
+        print(cov)
+    print(f"The full report is in {RESULTS.relative_to(ROOT)}.")
+    return 0 if ok and cover_ok else 1
 
 
 if __name__ == "__main__":
