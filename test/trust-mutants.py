@@ -54,8 +54,9 @@ or `#guard` computed a false result, and "elaborates" when a test no longer
 type-checks: an unknown constructor, a wrong number of arguments, or a proof
 step that fails. A mutant that breaks the library itself is an error, since
 the tests never run. With staged builds, a mutant that the first stage
-kills reports only the first stage's errors. The results table goes to
-`test/out/trust-mutants/results.md`. The exit status is 1 when a mutant
+kills reports only the first stage's errors. Each row is appended to
+`test/out/trust-mutants/results.md` as its mutant finishes, and the sorted
+table with a summary replaces it at the end. The exit status is 1 when a mutant
 survives or is an error.
 
 usage: trust-mutants.py [--via inproc|lake] [-j JOBS] [--generated [--all-edits]] [MUTANT...]
@@ -347,14 +348,28 @@ def generate(keep_all):
     return rows
 
 
+HEADER = ["| Mutant | Definition | Change | Verdict | Kill | Where |", "|---|---|---|---|---|---|"]
+RESULTS = OUT / "results.md"
+RESULTS_LOCK = threading.Lock()
+
+
+def table_row(r):
+    """The line of results row `r` in the results table."""
+    return f"| `{r[0]}` | `{r[1]}` | {r[2].replace('|', chr(92) + '|')} | {r[3]} | {r[4]} | {r[5]} |"
+
+
 def row(m, errs, secs):
-    """The results row of mutant `m`, printed as it finishes."""
+    """The results row of mutant `m`, printed and appended to the results
+    table as it finishes, so that a run that stops keeps the rows so far."""
     name, defn, _, what, _, _ = m
     v, kind, where = verdict(errs)
     if v == "error" and name in GENERATED:
         v = "stillborn"
     print(f"{name}: {v}{f' ({kind})' if kind else ''}; {where}; {secs:.0f}s", flush=True)
-    return name, defn, what, v, kind, where
+    r = name, defn, what, v, kind, where
+    with RESULTS_LOCK, RESULTS.open("a") as f:
+        f.write(table_row(r) + "\n")
+    return r
 
 
 def via_lake(m):
@@ -549,6 +564,7 @@ def main():
 
     shutil.rmtree(WORK, ignore_errors=True)
     WORK.mkdir()
+    RESULTS.write_text("\n".join([f"Running {len(todo)} mutants via {a.via}; rows in the order they finish.", ""] + HEADER) + "\n")
     with ThreadPoolExecutor(a.jobs) as ex:
         if a.via == "lake":
             futures = [ex.submit(via_lake, m) for m in todo]
@@ -565,12 +581,9 @@ def main():
 
     k = sum(r[3] == "killed" for r in rows)
     sb = sum(r[3] == "stillborn" for r in rows)
-    lines = [f"{k} of {len(rows) - sb} mutants killed ({sb} stillborn), {time.time() - start:.0f} s, via {a.via}.", "",
-             "| Mutant | Definition | Change | Verdict | Kill | Where |", "|---|---|---|---|---|---|"]
-    lines += [f"| `{r[0]}` | `{r[1]}` | {r[2].replace('|', chr(92) + '|')} | {r[3]} | {r[4]} | {r[5]} |" for r in rows]
-    report = "\n".join(lines) + "\n"
-    OUT.mkdir(parents=True, exist_ok=True)
-    (OUT / "results.md").write_text(report)
+    lines = [f"{k} of {len(rows) - sb} mutants killed ({sb} stillborn), {time.time() - start:.0f} s, via {a.via}.", ""]
+    report = "\n".join(lines + HEADER + [table_row(r) for r in rows]) + "\n"
+    RESULTS.write_text(report)
     print()
     print(report)
     return 0 if k + sb == len(rows) else 1
