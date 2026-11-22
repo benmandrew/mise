@@ -2,14 +2,18 @@
 """Mutation testing of the definitions the theorems are stated in.
 
 Each mutant is one small edit to a definition that a statement in
-`Mise/Theorems.lean` uses, and makes at least one of those theorems weaker:
-a hypothesis that holds less often, or a conclusion that says less. A proof
-cannot catch such a mutant, because the weaker theorem is still true, so a
-test in `test/MiseTest/` must. (Some mutants also make another theorem
-false, but the tests should still pin each definition by themselves.)
-Mutants that make a theorem stronger or false are the proofs' job and are
-not listed. Proofs do not tell the two apart: they break on almost any
-change to a definition they unfold, equivalent ones included.
+`Mise/Theorems.lean` uses, or that trust item 1 is stated in (such as the
+printer). `test/MiseTest/MutantGen.lean` generates them: mechanical edits at
+every place such a definition states a condition or computes a value. An
+edit is kept when it makes at least one theorem weaker (a hypothesis that
+holds less often, or a conclusion that says less) or its effect is unknown;
+`--all-edits` keeps every edit. A proof cannot catch a mutant that makes
+its theorem weaker, because the weaker theorem is still true, so a test in
+`test/MiseTest/` must. (Some mutants also make another theorem false, but
+the tests should still pin each definition by themselves.) Mutants that
+only make a theorem stronger are the proofs' job and are dropped. Proofs
+do not tell the two apart: they break on almost any change to a definition
+they unfold, equivalent ones included.
 
 The driver
 
@@ -21,7 +25,9 @@ The driver
    the build depends only on the definitions. The copy's tests use
    `#eval!`, because `#eval` refuses a value that depends on `sorry`;
 3. builds `MiseTest` on the unmutated copy, which must succeed;
-4. builds each mutant in two stages. The first builds only the test modules
+4. generates the mutants in the copy. A mutant that gives the same file as
+   an earlier one is skipped;
+5. builds each mutant in two stages. The first builds only the test modules
    in `KILLERS`, which should kill every mutant; the second builds the rest
    of `MiseTest`, and runs only when the first finds no error. `--jobs`
    builds run at once.
@@ -40,21 +46,13 @@ clone and runs `lake build` there. It does not depend on Lean's internal
 elaboration API, so use it when that API changes or a mutant crashes the
 in-process build.
 
-`--generated` adds the mutants that `test/MiseTest/MutantGen.lean`
-generates in the prepared copy, after step 3: mechanical edits at every
-place a trusted definition states a condition or computes a value, kept
-when they weaken at least one theorem or their effect is unknown
-(`--all-edits` keeps every edit). The definitions that trust item 1 is
-stated in, such as the printer, are targets too, with unknown effect. A generated mutant that gives the same file as an earlier one is
-skipped. A generated edit that breaks the library is "stillborn": it does
-not type-check, so no theorem is stated about it, and it does not fail the
-run.
-
 A mutant is killed when a test fails. The kill is "evaluates" when `decide`
 or `#guard` computed a false result, and "elaborates" when a test no longer
 type-checks: an unknown constructor, a wrong number of arguments, or a proof
-step that fails. A mutant that breaks the library itself is an error, since
-the tests never run. With staged builds, a mutant that the first stage
+step that fails. A mutant that breaks the library itself is "stillborn": it
+does not type-check, so no theorem is stated about it, and it does not fail
+the run. An error outside the library, such as a crash of the in-process
+build, is an error. With staged builds, a mutant that the first stage
 kills reports only the first stage's errors. Each row is appended to
 `test/out/trust-mutants/results.md` as its mutant finishes, and the sorted
 table with a summary replaces it at the end.
@@ -88,7 +86,7 @@ At the end it prints the summary; the full report is in `results.md`.
 The exit status is 1 when a mutant that is not equivalent survives, or a
 mutant is an error.
 
-usage: trust-mutants.py [--via inproc|lake] [-j JOBS] [--generated [--all-edits]]
+usage: trust-mutants.py [--via inproc|lake] [-j JOBS] [--all-edits]
                         [--samples N] [--no-triage] [--no-cover] [MUTANT...]
        trust-mutants.py --retriage [--no-cover] [MUTANT...]
        trust-mutants.py --cover
@@ -122,74 +120,6 @@ CHECK = ROOT / "test" / "MiseTest" / "MutantCheck.lean"
 # builds these first, and the rest of `MiseTest` only if they pass.
 KILLERS = ["MiseTest.Boundary", "MiseTest.Reachable"]
 
-SOUND = "Mise/Model/Sound.lean"
-SPEC = "Mise/Spec/Basic.lean"
-THMS = "Mise/Theorems.lean"
-BASIC = "Mise/Model/Basic.lean"
-GRAPH = "Mise/Frontend/Graph.lean"
-TASK = "Mise/Task/Basic.lean"
-CMP = "Mise/Model/Cmp.lean"
-
-# (name, definition, file, what it does, old text, new text). Each old text
-# occurs exactly once in its file.
-MUTANTS = [
-    ("reach-no-init", "Reach", SOUND, "no start state, so nothing is reachable",
-     "  | init {st : St V} : st.Fresh → (∀ p, st.log p = none) → (∀ p, st.deps p = none) → Reach es st\n", ""),
-    ("reach-no-edit", "Reach", SOUND, "drop source edits",
-     "  | edit {st : St V} (p : Path) (v : V) : Reach es st → (∀ e ∈ es, p ∉ e.outs) → Reach es (st.edit p v)\n", ""),
-    # Deleting `step` would leave `Reach` without `sem`, so Lean would drop
-    # that argument and every use of `Reach` would fail to type-check.
-    ("reach-no-step", "Reach", SOUND, "no edge can be visited",
-     "Reach es st → e ∈ es → Reach es (st.step sem e)", "Reach es st → e ∈ ([] : List MEdge) → Reach es (st.step sem e)"),
-    ("reach-clock-0", "Reach", SOUND, "a start state has clock 0",
-     "st.Fresh → (∀ p, st.log p = none)", "st.clock = 0 → st.Fresh → (∀ p, st.log p = none)"),
-    ("reach-edit-unread", "Reach", SOUND, "only a path no edge reads can be edited",
-     "(∀ e ∈ es, p ∉ e.outs) → Reach es (st.edit p v)", "(∀ e ∈ es, p ∉ e.outs ∧ p ∉ e.ins) → Reach es (st.edit p v)"),
-    ("reach-step-first", "Reach", SOUND, "only the first edge can be visited",
-     "Reach es st → e ∈ es → Reach es (st.step sem e)", "Reach es st → e ∈ es.take 1 → Reach es (st.step sem e)"),
-    ("fresh-strict", "St.Fresh", BASIC, "every mtime is earlier than the clock",
-     "(∀ p v t, st.fs p = some (v, t) → t ≤ st.clock)", "(∀ p v t, st.fs p = some (v, t) → t < st.clock)"),
-    ("correct-src-true", "Correct", SPEC, "sources may hold anything",
-     "  (∀ k, b.isSource k = true → R k = S k) ∧\n", "  True ∧\n"),
-    ("correct-tgt-true", "Correct", SPEC, "targets may hold anything",
-     "  (∀ k, b.isSource k = false → R k = (b.task k).run R)\n", "  True\n"),
-    ("spec-self", "Spec", THMS, "compare the result with its own sources",
-     "(g.spec sem).Correct st.content (f st).content", "(g.spec sem).Correct (f st).content (f st).content"),
-    ("cmdtask-no-ins", "cmdTask", GRAPH, "a static command ignores its inputs",
-     "(fetchAll ins).bind fun vs => .pure (sem.exec cmd vs)", ".pure (sem.exec cmd [])"),
-    ("cmdtask-static", "cmdTask", GRAPH, "a depfile command is treated as static",
-     "  if dyn then sem.dyn cmd else", "  if false then sem.dyn cmd else"),
-    ("issource-never", "Graph.isSource", GRAPH, "no path is a source",
-     "def Graph.isSource (g : Graph) (k : Path) : Bool := (findOut GEdge.allOuts k g.edges).isNone",
-     "def Graph.isSource (_ : Graph) (_ : Path) : Bool := false"),
-    ("checks-true", "Checks", THMS, "every path is checked",
-     "∃ o ∈ e.outs, ∃ D, st.effIns e o = some D ∧ p ∈ D", "True"),
-    ("checks-outs", "Checks", THMS, "an edge's own outputs are checked",
-     "st.effIns e o = some D ∧ p ∈ D", "st.effIns e o = some D ∧ (p ∈ D ∨ p ∈ e.outs)"),
-    ("checks-oo", "Checks", THMS, "order-only inputs are checked",
-     "st.effIns e o = some D ∧ p ∈ D", "st.effIns e o = some D ∧ (p ∈ D ∨ p ∈ e.oo)"),
-    ("ran-empty", "ran", THMS, "a build runs no edge",
-     "List MEdge := (buildTrace sem (edges g) st).2", "List MEdge := (buildTrace sem (edges g) st).2.take 0"),
-    ("ran-first", "ran", THMS, "a build runs at most its first dirty edge",
-     "List MEdge := (buildTrace sem (edges g) st).2", "List MEdge := (buildTrace sem (edges g) st).2.take 1"),
-    ("edits-ignored", "St.edits", BASIC, "a list of edits changes nothing",
-     "  | (p, v) :: es => (st.edit p v).edits es", "  | (_, _) :: es => st.edits es"),
-    ("order-exact", "ValidOrder", THMS, "manifest order is the only valid order",
-     "es.Perm (edges g) ∧ Sched es", "es = edges g ∧ Sched es"),
-    ("sched-no-deps", "Sched", BASIC, "no edge reads an earlier edge's output",
-     "Disjoint e.reads e'.outs ∧ Disjoint e.outs e'.outs",
-     "Disjoint e.reads e'.outs ∧ Disjoint e'.reads e.outs ∧ Disjoint e.outs e'.outs"),
-    ("dynok-no-source", "DynOK", GRAPH, "a depfile command may not read an undeclared source",
-     "fun k => g.isSource k = true ∨ k ∈ e.allIns", "fun k => k ∈ e.allIns"),
-    ("dynok-no-oo", "DynOK", GRAPH, "a depfile command may not read an order-only input",
-     "fun k => g.isSource k = true ∨ k ∈ e.allIns", "fun k => g.isSource k = true ∨ k ∈ e.inputs"),
-    ("fetchesonly-pure", "FetchesOnly", TASK, "only a task that fetches nothing qualifies",
-     "  | fetch (k : K) (c : V → Task K V α) :\n      P k → (∀ v, FetchesOnly P (c v)) → FetchesOnly P (.fetch k c)\n", ""),
-    ("wrapped-noop", "runWrapped", CMP, "a wrapped run changes nothing",
-     "  if r.2 then { st.run sem e with fs := r.1 } else { st with fs := r.1 }", "  let _ := r\n  st"),
-    ("wrapped-no-log", "runWrapped", CMP, "a successful wrapped run writes no log entry",
-     "{ st.run sem e with fs := r.1 }", "{ st with fs := r.1, clock := st.clock + 1 }"),
-]
 
 DECL = re.compile(r"^(?:@\[[^\]]*\]\s*)?(?:(?:private|protected|noncomputable|nonrec)\s+)*(?:theorem|lemma|example)\b")
 OPEN = {"(": ")", "[": "]", "{": "}", "⟨": "⟩"}
@@ -430,35 +360,30 @@ def verdict(errs):
     return "killed", "evaluates" if evaluates else "elaborates", ", ".join(where[:4]) + (" …" if len(where) > 4 else "")
 
 
-# The names of the generated mutants.
-GENERATED = set()
-
 # The effect of each mutant on the theorems: "weaker" when it weakens at
-# least one, else "unknown" or "stronger". A mutant in `MUTANTS` weakens one.
+# least one, else "unknown" or "stronger".
 EFFECT = {}
 EFFECTS = ["weaker", "unknown", "stronger"]
 
 
 def mutate(data, m):
-    """The bytes `data` of mutant `m`'s file with its edit applied: a text
-    replacement for a mutant in `MUTANTS`, a byte range `(start, stop)` for
-    a generated one."""
-    _, _, _, _, old, new = m
-    if isinstance(old, tuple):
-        return data[:old[0]] + new.encode() + data[old[1]:]
-    return data.replace(old.encode(), new.encode())
+    """The bytes `data` of mutant `m`'s file with its edit applied: the byte
+    range `(start, stop)` becomes the new text."""
+    _, _, _, _, (start, stop), new = m
+    return data[:start] + new.encode() + data[stop:]
 
 
 def generate(keep_all):
     """The mutants of `MiseTest.MutantGen`, run in the prepared and built
-    copy, as `MUTANTS` rows, without those that repeat an earlier mutant."""
+    copy, as rows (name, definition, file, what it does, (start, stop), new
+    text), without those that repeat an earlier mutant."""
     out = OUT / "generated.json"
     r = subprocess.run(["lake", "env", "lean", "test/MiseTest/MutantGen.lean"], cwd=TREE,
                        capture_output=True, text=True, env={**os.environ, "MUTANTS_OUT": str(out)})
     if r.returncode != 0:
         sys.exit(f"MutantGen failed:\n{(r.stdout + r.stderr)[-2000:]}")
     P.note(r.stdout.strip().splitlines()[-1])
-    seen = {(m[2], mutate((TREE / m[2]).read_bytes(), m)) for m in MUTANTS}
+    seen = set()
     rows, repeats = [], 0
     for g in json.loads(out.read_text())["mutants"]:
         if not (g["keep"] or keep_all):
@@ -491,7 +416,7 @@ def row(m, errs, secs):
     table as it finishes, so that a run that stops keeps the rows so far."""
     name, defn, _, what, _, _ = m
     v, kind, where = verdict(errs)
-    if v == "error" and name in GENERATED:
+    if v == "error" and where.startswith("`Mise/"):
         v = "stillborn"
     P.item(f"{name}: {v}{f' ({kind})' if kind else ''}{f'; {where}' if where else ''}; {secs:.0f}s")
     r = name, defn, what, v, kind, where
@@ -664,12 +589,7 @@ def default_jobs():
 def edit_of(m):
     """Mutant `m` as `MutantCheck` reads it: a byte range of its file in
     `TREE` and the text that replaces it."""
-    name, _, f, _, old, new = m
-    if isinstance(old, (tuple, list)):
-        start, stop = old
-    else:
-        start = (TREE / f).read_bytes().find(old.encode())
-        stop = start + len(old.encode())
+    name, _, f, _, (start, stop), new = m
     return {"name": name, "file": f, "start": start, "stop": stop, "text": new}
 
 
@@ -794,7 +714,7 @@ def cover(jobs):
     every one: the kill matrix and the cover, written to `OUT`. Its summary,
     and whether every mutant behaved as expected."""
     last = json.loads((OUT / "rows.json").read_text())
-    todo = {m[0]: tuple(m[:4]) + (tuple(m[4]) if isinstance(m[4], list) else m[4], m[5]) for m in last["todo"]}
+    todo = {m[0]: tuple(m[:4]) + (tuple(m[4]), m[5]) for m in last["todo"]}
     tri = {r["name"]: r for f in sorted((OUT / "triage").glob("out-*.jsonl"))
            for r in map(json.loads, f.read_text().splitlines())}
     dist = sorted(n for n, r in tri.items() if r["verdict"] == "distinguished" and n in todo)
@@ -907,10 +827,10 @@ def report(rows, tri, secs, via, cov=None):
                   "By effect on the theorems, then definition. A witness is an input on which the "
                   "definition and the mutant differ.", "",
                   "| Mutant | Definition | Change | Effect | Triage | Detail |", "|---|---|---|---|---|---|"]
-        order = sorted(live, key=lambda r: (EFFECTS.index(EFFECT.get(r[0], "weaker")), r[1], r[0]))
+        order = sorted(live, key=lambda r: (EFFECTS.index(EFFECT.get(r[0], "unknown")), r[1], r[0]))
         for r in order:
             t = tri.get(r[0], {})
-            lines.append(f"| `{r[0]}` | `{r[1]}` | {cell(r[2])} | {EFFECT.get(r[0], 'weaker')} | "
+            lines.append(f"| `{r[0]}` | `{r[1]}` | {cell(r[2])} | {EFFECT.get(r[0], 'unknown')} | "
                          f"{t.get('verdict', '')} | {cell(t.get('detail', ''))[:300]} |")
     if dist:
         lines += ["", "## Tests that kill the survivors", "",
@@ -929,9 +849,8 @@ def main():
                     help=f"builds to run at once (default: the number of CPUs, at most one per {JOB_GB} GB of memory)")
     ap.add_argument("--via", choices=["inproc", "lake"], default="inproc",
                     help="build mutants in long-lived Lean processes (default), or with lake build")
-    ap.add_argument("--generated", action="store_true", help="add the mutants of MiseTest.MutantGen")
     ap.add_argument("--all-edits", action="store_true",
-                    help="with --generated, also run the edits that only strengthen theorems")
+                    help="also run the edits that only strengthen theorems")
     ap.add_argument("--no-triage", action="store_true", help="do not triage the mutants that survive")
     ap.add_argument("--retriage", action="store_true",
                     help="triage the survivors of the last run again, without building any mutant")
@@ -952,19 +871,14 @@ def main():
         P.plan(after)
         last = json.loads((OUT / "rows.json").read_text())
         rows = [tuple(r) for r in last["rows"]]
-        todo = [tuple(m[:4]) + (tuple(m[4]) if isinstance(m[4], list) else m[4], m[5]) for m in last["todo"]]
-        GENERATED.update(last["generated"])
+        todo = [tuple(m[:4]) + (tuple(m[4]), m[5]) for m in last["todo"]]
         EFFECT.update(last["effect"])
         tri = triage([m for m in todo if not a.only or m[0] in a.only], rows, a.jobs, a.samples)
         cov, cok = cover(a.jobs) if COVER in after else (None, True)
         return finish(rows, tri, last["secs"] + time.time() - start, last["via"], cov, cok)
-    P.plan([COPY, CONTROL] + ([GENERATE] if a.generated else []) + [MUTANTS_STAGE] + after)
+    P.plan([COPY, CONTROL, GENERATE, MUTANTS_STAGE] + after)
     P.stage(COPY)
     copy_tree()
-    for name, _, f, _, old, _ in MUTANTS:
-        c = (TREE / f).read_text().count(old)
-        if c != 1:
-            sys.exit(f"{name}: the text to replace occurs {c} times in {f}")
     n = prepare()
     P.note(f"{n} theorems replaced with sorry")
     P.stage(CONTROL)
@@ -974,12 +888,8 @@ def main():
         for f, line, msg in errs[:5]:
             print(f"  {f}:{line}: {msg.strip()[:300]}")
         sys.exit("the unmutated tests fail; mutant results would mean nothing")
-    todo = list(MUTANTS)
-    if a.generated:
-        P.stage(GENERATE)
-        gen = generate(a.all_edits)
-        GENERATED.update(m[0] for m in gen)
-        todo += gen
+    P.stage(GENERATE)
+    todo = generate(a.all_edits)
     unknown = set(a.only) - {m[0] for m in todo}
     if unknown:
         sys.exit(f"unknown mutants: {sorted(unknown)}")
@@ -1004,7 +914,7 @@ def main():
     rows = [done[m[0]] for m in todo]
     # What `--retriage` needs to triage these survivors again.
     (OUT / "rows.json").write_text(json.dumps({
-        "rows": rows, "todo": todo, "generated": sorted(GENERATED), "effect": EFFECT,
+        "rows": rows, "todo": todo, "effect": EFFECT,
         "secs": time.time() - start, "via": a.via}))
     tri = {} if a.no_triage else triage(todo, rows, a.jobs, a.samples)
     cov, cok = cover(a.jobs) if COVER in after else (None, True)
