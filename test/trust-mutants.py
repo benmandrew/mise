@@ -61,9 +61,11 @@ survives or is an error.
 
 usage: trust-mutants.py [--via inproc|lake] [-j JOBS] [--generated [--all-edits]] [MUTANT...]
 
-JOBS defaults to the number of CPUs, at most one per 3 GB of memory: an
-in-process worker uses about 2.5 GB. A worker starts a new process for each
-mutated module, since a process keeps every module's imports it has loaded.
+JOBS defaults to the number of CPUs, at most one per 4 GB of memory: an
+in-process worker holds about 2.5 GB, and up to 4 GB for a few seconds after
+its process starts. Workers start 5 seconds apart, so that those peaks do not
+coincide. A worker starts a new process for each mutated module, since a
+process keeps every module's imports it has loaded.
 """
 import argparse
 import json
@@ -488,6 +490,10 @@ class Worker:
             self.p = None
 
 
+# The seconds between the starts of two in-process workers (see the header).
+STAGGER = 5
+
+
 def run_inproc(todo, jobs, ex):
     """Build the mutants in `todo` on `jobs` workers, each a long-lived Lean
     process, with the unmutated control first; the futures of their rows.
@@ -503,6 +509,7 @@ def run_inproc(todo, jobs, ex):
     lock = threading.Lock()
 
     def work(k):
+        time.sleep(k * STAGGER)
         w, rows = Worker(plan, f"worker-{k}"), []
         while True:
             with lock:
@@ -517,8 +524,8 @@ def run_inproc(todo, jobs, ex):
     return [ex.submit(work, k) for k in range(jobs)]
 
 
-# The memory of one in-process worker, in GB, rounded up (see the header).
-JOB_GB = 3
+# The peak memory of one in-process worker, in GB (see the header).
+JOB_GB = 4
 
 
 def default_jobs():
