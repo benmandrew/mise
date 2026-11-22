@@ -35,11 +35,6 @@ listed.
 
 namespace Trusted
 
-/-- Assumptions of `docs/theorems.md` that are stated in terms of definitions,
-with the definitions they name. -/
-def assumptions : List (String × List Name) :=
-  [("trust item 1", [`Mise.Syntax.print, `Mise.Syntax.Manifest.WellFormed])]
-
 /-- Module, its position in import order (dependencies first), and the
 declaration's range as (line, column) pairs. -/
 def location (n : Name) : CommandElabM (String × Nat × Position × Position) := do

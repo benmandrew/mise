@@ -42,9 +42,10 @@ in-process build.
 
 `--generated` adds the mutants that `test/MiseTest/MutantGen.lean`
 generates in the prepared copy, after step 3: mechanical edits at every
-place a trusted definition states a condition, kept when they weaken at
-least one theorem or their effect is unknown (`--all-edits` keeps every
-edit). A generated mutant that gives the same file as an earlier one is
+place a trusted definition states a condition or computes a value, kept
+when they weaken at least one theorem or their effect is unknown
+(`--all-edits` keeps every edit). The definitions that trust item 1 is
+stated in, such as the printer, are targets too, with unknown effect. A generated mutant that gives the same file as an earlier one is
 skipped. A generated edit that breaks the library is "stillborn": it does
 not type-check, so no theorem is stated about it, and it does not fail the
 run.

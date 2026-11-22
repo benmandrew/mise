@@ -10,8 +10,9 @@ are stated in, for `test/trust-mutants.py`. Run it with
 to the file named by the environment variable `MUTANTS_OUT` (default
 `test/out/trust-mutants/generated.json`).
 
-The targets are the trusted declarations of `MiseTest.TrustWalk`. The
-generator elaborates each target's source file again, keeping the info
+The targets are the trusted declarations of `MiseTest.TrustWalk`: those the
+statements reach, and those the trust items in `Trusted.assumptions` reach,
+whose sign is unknown. The generator elaborates each target's source file again, keeping the info
 trees, so that it knows the type of every subterm. It then walks the syntax
 of each target and proposes these edits:
 
@@ -19,14 +20,28 @@ of each target and proposes these edits:
   side of `∧`, the antecedent of `→`, or one side of `∨`, the edit that
   leaves the other side alone is written as deleting this side;
 * replace a `Bool` condition with `true` or `false` (a definition's body, an
-  `if` condition, an operand of `&&`, `||`, `!` or of `= true`);
+  `if` condition, an operand of `&&`, `||`, `!` or of `= true`), and a
+  literal `true` or `false` in a body with the other;
+* replace the condition of an `if` with `True` or `False`, and swap its
+  branches;
 * delete a constructor of an inductive proposition;
 * swap `<` with `≤`, and `>` with `≥`;
 * put `.take 0` or `.take 1` on a list: a definition's body, an argument of
   an application, or the right side of `∈` (`.take 1` only, since `.take 0`
   there is `False`);
 * replace an explicit argument of an application with another explicit
-  argument of the same type.
+  argument of the same type;
+* replace an application, a field access `x.f` or an operator such as `++`
+  with an argument of the same type: `p ++ q` with `p` or `q`, `l.filter f`
+  with `l`, `o.getD d` with `d`.
+
+In a structure, the edits apply to each field's default value, as to a body,
+and to each field that is a proposition, as to a constructor's hypothesis.
+
+A term-mode proof gets no edits. The copy's build turns `by` blocks into
+placeholder proofs (`debug.byAsSorry`) but not these, so an edit also
+replaces with a placeholder each term-mode proof in its own declaration and
+in the declarations of the same file that use it (`withProofs`).
 
 Edits that give the same proposition as another edit are skipped: `False`
 for one side of `∧` gives the same as `False` for the whole, and so on.
@@ -248,6 +263,8 @@ structure Term where
   ty : Expr
   /-- The subterm is a proof or a type, which an edit should not touch. -/
   skip : Bool
+  /-- The subterm is a proof. -/
+  proof : Bool := false
 
 /-- Where a subterm sits, which decides the edits it gets. -/
 inductive Place where
@@ -258,6 +275,8 @@ inductive Place where
   | andOp | orOp | impAnte | impCons | notOp | allBody | exBody
   /-- A `Bool` condition. -/
   | bool
+  /-- The condition of an `if`, a `Bool` or a decidable proposition. -/
+  | ite
   /-- The list on the right of `∈`. -/
   | coll
   /-- An explicit argument of an application. -/
@@ -274,6 +293,8 @@ structure GCtx where
 
 structure GState where
   edits : Array Edit := #[]
+  /-- The term-mode proofs that the walk found. -/
+  proofs : Array (Nat × Nat) := #[]
   pols : NameMap (Array Int) := {}
 
 abbrev GenM := ReaderT GCtx (StateRefT GState MetaM)
@@ -291,7 +312,8 @@ def termOf (s : Syntax) : GenM (Option Term) := do
       let e ← instantiateMVars ti.expr
       let t ← instantiateMVars (← inferType e)
       let tr ← whnfR t
-      return some { expr := e, ty := tr, skip := (← isProp t) || (tr.isSort && !tr.isProp) }
+      let proof ← isProp t
+      return some { expr := e, ty := tr, skip := proof || (tr.isSort && !tr.isProp), proof }
   catch _ => return none
 
 def textOf (s : Syntax) : GenM String := do
@@ -338,10 +360,15 @@ def sitesAt (s : Syntax) (p : Int) (place : Place) (t : Option Term) : GenM Unit
       if place == .orOp then emit "drop" a b no (-p) s!"drop `{brief txt}`"
       else emit "false" a b no (-p) s!"`{brief txt}` → `False`"
   else if t.ty.isConstOf ``Bool then
-    if (place == .top || place == .bool) && txt != "true" && txt != "false" then
+    if txt == "true" || txt == "false" then
+      -- A literal result: a branch, or a field's default value.
+      if place == .top then
+        let (new, eff) := if txt == "true" then ("false", -p) else ("true", p)
+        emit new a b new eff s!"`{txt}` → `{new}`"
+    else if place == .top || place == .bool || place == .ite then
       emit "true" a b s!"({paren txt} || true)" p s!"`{brief txt}` → `true`"
       emit "false" a b s!"({paren txt} && false)" (-p) s!"`{brief txt}` → `false`"
-  else if t.ty.isAppOfArity ``List 1 then
+  else if t.ty.isAppOfArity ``List 1 && txt != "[]" then
     let take (k : Nat) := s!"({paren txt}.take {k})"
     if place == .top || place == .arg then
       emit "take0" a b (take 0) (-p) s!"`{brief txt}` → `{brief (take 0)}`"
@@ -370,6 +397,53 @@ def argPols (s : Syntax) (args : Array Syntax) (ts : Array (Option Term)) : GenM
       | none => 0
     | none => 0
 
+/-- The names of the local variables among the arguments of the term at
+`s` that have the term's own type. -/
+def sameTypeLocals (s : Syntax) : GenM (Array String) := do
+  let some r := range? s | return #[]
+  let some (ci, ti) := (← read).infos[r]? | return #[]
+  try
+    ci.runMetaM ti.lctx do
+      let e ← instantiateMVars ti.expr
+      let ty ← whnfR (← instantiateMVars (← inferType e))
+      let mut out := #[]
+      for x in e.getAppArgs do
+        if let .fvar id := x then
+          if let some d := ti.lctx.find? id then
+            if (← whnfR (← instantiateMVars d.type)) == ty then out := out.push d.userName.toString
+      return out
+  catch _ => return #[]
+
+/-- `s` has a `·` outside parentheses, which belongs to an enclosing
+function: `e.ins ++ ·` in `(e.ins ++ ·)`. -/
+partial def freeCdot (s : Syntax) : Bool :=
+  s.getKind == ``Lean.Parser.Term.cdot ||
+    s.getKind != ``Lean.Parser.Term.paren && s.getArgs.any freeCdot
+
+/-- Replace the term `s` with its subterm `x`, when the two have the same
+type: `p ++ q` becomes `p`, and `l.filter f` becomes `l`. -/
+def toArg (s : Syntax) (t : Option Term) (x : Syntax) : GenM Unit := do
+  let (some t, some tx) := (t, ← termOf x) | return
+  if t.skip || tx.skip || t.ty != tx.ty then return
+  let some (a, b) := range? s | return
+  let (whole, txt) := (← textOf s, ← textOf x)
+  if freeCdot s || txt.isEmpty then return
+  emit "arg" a b (paren txt) 0 s!"`{brief whole}` → `{brief txt}`"
+
+/-- `x.f` for a local `x`, as an identifier: `x`, when the term at `s`,
+whose head is the identifier, has the type of `x`. -/
+def toReceiver (s ident : Syntax) : GenM Unit := do
+  let n := ident.getId
+  if n.getNumParts < 2 then return
+  let recv := n.getPrefix.toString
+  if freeCdot s || !(← sameTypeLocals s).contains recv then return
+  let some (a, b) := range? s | return
+  let whole ← textOf s
+  emit "arg" a b recv 0 s!"`{brief whole}` → `{recv}`"
+
+def binOps : List SyntaxNodeKind :=
+  [`«term_++_», `«term_+_», `«term_-_», `«term_*_», `«term_/_», `«term_%_», `«term_<|>_»]
+
 partial def walkS (s : Syntax) (p : Int) (place : Place) : GenM Unit := do
   let k := s.getKind
   if k == ``Lean.Parser.Term.paren then return ← walkS s[1] p place
@@ -377,6 +451,13 @@ partial def walkS (s : Syntax) (p : Int) (place : Place) : GenM Unit := do
   if k == ``Lean.Parser.Term.byTactic || k == ``Lean.Parser.Termination.suffix ||
       k == ``Lean.Parser.Command.docComment then return
   let t ← termOf s
+  -- A proof in term mode, which the copy's build does not replace with a
+  -- placeholder as it does `by` blocks: an edit elsewhere in the
+  -- declaration can break it, so each edit replaces it too (`withProofs`).
+  if let some t := t then
+    if t.proof && !s.isIdent then
+      if let some r := range? s then modify fun st => { st with proofs := st.proofs.push r }
+      return
   -- In a constructor, a term that mentions the inductive itself keeps its
   -- shape: `(I x ∧ False)` and `((∀ v, I v) ∨ True)` are nested
   -- occurrences, which the kernel rejects, and `I` must keep its
@@ -420,7 +501,12 @@ partial def walkS (s : Syntax) (p : Int) (place : Place) : GenM Unit := do
   | `«term!_» => walkS s[1] (-p) .bool
   | `termIfThenElse =>
     let br := if place == .top || place == .bool then place else .cond
-    walkS s[1] 0 .bool; walkS s[3] p br; walkS s[5] p br
+    walkS s[1] 0 .ite; walkS s[3] p br; walkS s[5] p br
+    if !nested then
+      let (c, x, y) := (← textOf s[1], ← textOf s[3], ← textOf s[5])
+      if let some (a, b) := range? s then
+        if x != y then
+          emit "swap" a b s!"(if {c} then {paren y} else {paren x})" 0 s!"swap the branches of `if {brief c}`"
   | `«term_<_» | `«term_≤_» | `«term_>_» | `«term_≥_» =>
     if let some (a, b) := range? s[1] then
       let op := s[1].getAtomVal
@@ -428,7 +514,9 @@ partial def walkS (s : Syntax) (p : Int) (place : Place) : GenM Unit := do
         emit "cmp" a b new (d * p) s!"`{brief (← textOf s)}`: `{op}` → `{new}`"
     kids
   | ``Lean.Parser.Term.fun =>
-    if s[1].getKind == ``Lean.Parser.Term.basicFun then walkS s[1][3] p .cond else kids
+    if s[1].getKind == ``Lean.Parser.Term.basicFun then
+      walkS s[1][3] p (if place == .top then .top else .cond)
+    else kids
   | ``Lean.Parser.Term.match =>
     for alt in s[5][0].getArgs do walkS alt[3] p (if place == .top then .top else .cond)
     for d in s[3].getArgs do walkS d 0 .cond
@@ -438,6 +526,12 @@ partial def walkS (s : Syntax) (p : Int) (place : Place) : GenM Unit := do
     if s[0].isIdent && some s[0].getId == (← read).decl.componentsRev.head? then return
     let args := s[1].getArgs
     let ts ← args.mapM termOf
+    unless nested do
+      for x in args do
+        if x.getKind != ``Lean.Parser.Term.namedArgument && x.getKind != ``Lean.Parser.Term.ellipsis then
+          toArg s t x
+      if s[0].getKind == ``Lean.Parser.Term.proj then toArg s t s[0][0]
+      else if s[0].isIdent then toReceiver s s[0]
     let pp ← argPols s args ts
     for h : i in [0:args.size] do
       let x := args[i]
@@ -454,7 +548,13 @@ partial def walkS (s : Syntax) (p : Int) (place : Place) : GenM Unit := do
         if si == sj || si.any (· == '\n') then continue
         let some (a, b) := range? xj | continue
         emit "dup" a b si 0 s!"`{brief sj}` → `{brief si}` in `{brief (← textOf s)}`"
-  | _ => kids
+  | ``Lean.Parser.Term.proj =>
+    unless nested do toArg s t s[0]
+    kids
+  | k =>
+    if s.isIdent && !nested && place != .none then toReceiver s s
+    if binOps.contains k && !nested then toArg s t s[0]; toArg s t s[2]
+    kids
 
 /-- The spine of a constructor's type: each antecedent of `→` is a
 hypothesis, with the inductive's own sign. The conclusion gets no edits. -/
@@ -498,7 +598,38 @@ def walkDecl (cmd : Syntax) : GenM Unit := do
         if b[2].getNumArgs > 1 then
           if (← termOf b[2][1]).any (·.ty.isProp) then walkS b[2][1] 1 .cond
       if sig[1].getNumArgs > 0 then walkSpine sig[1][0][1]
+  | `Lean.Parser.Command.structure =>
+    -- A field that is a proposition is a hypothesis of the constructor, and
+    -- `True` for it makes the structure hold more often. A default value
+    -- is a body, with no known sign.
+    for f in d.topDown do
+      if f.getKind != ``Lean.Parser.Command.structSimpleBinder then continue
+      let sig := f[2]
+      if sig[1].getNumArgs > 0 then
+        let ty := sig[1][0][1]
+        if (← termOf ty).any (·.ty.isProp) then walkS ty 1 .cond
+      if f[3].getNumArgs > 0 then walkS f[3][0][1] 0 .top
   | _ => pure ()
+
+/-- The placeholder proof, split so that the scan in `scripts/check.sh` does
+not match it. -/
+def placeholder : String := "sor" ++ "ry"
+
+/-- Edit `e` with every term-mode proof in `proofs` outside it replaced by
+`placeholder`, as one edit over the span of all of them. -/
+def withProofs (src : String) (proofs : Array (Nat × Nat)) (e : Edit) : Edit := Id.run do
+  let ps := proofs.filter fun (a, b) => b ≤ e.start || e.stop ≤ a
+  if ps.isEmpty then return e
+  let parts := ((ps.map fun (a, b) => (a, b, placeholder)).push (e.start, e.stop, e.text)).qsort
+    (·.1 < ·.1)
+  let lo := parts[0]!.1
+  let hi := parts.foldl (fun m (_, b, _) => max m b) 0
+  let mut out := ""
+  let mut i := lo
+  for (a, b, t) in parts do
+    out := out ++ String.Pos.Raw.extract src ⟨i⟩ ⟨a⟩ ++ t
+    i := b
+  return { e with start := lo, stop := hi, text := out ++ String.Pos.Raw.extract src ⟨i⟩ ⟨hi⟩ }
 
 /-! ## Driver -/
 
@@ -551,6 +682,12 @@ def main : MetaM Unit := do
     trusted := trusted.insert t tr
     targets := tr.foldl (·.insert ·) targets
     signs := signs.insert t (← signsOf ti.type)
+  -- The trust items stated in terms of definitions. Their sign is unknown.
+  let mut assumed : Array (String × NameSet) := #[]
+  for (label, roots) in Trusted.assumptions do
+    let tr := Trusted.trustedFrom env roots.toArray
+    assumed := assumed.push (label, tr)
+    targets := tr.foldl (·.insert ·) targets
   -- Targets by source file.
   let mut byFile : Std.HashMap String (Array (Name × Position)) := {}
   for d in Trusted.sortNames targets do
@@ -564,12 +701,25 @@ def main : MetaM Unit := do
   for (path, decls) in byFile.toArray.qsort (·.1 < ·.1) do
     let (infos, cmds, fm, src, errors) ← elabFile path
     if errors > 0 then throwError "MutantGen: {path} has {errors} errors when elaborated again"
-    for (d, pos) in decls do
+    let cmdOf (pos : Position) : Option Syntax :=
       let b := (fm.ofPosition pos).byteIdx
-      let inside (c : Syntax) : Bool := match range? c with
+      cmds.find? fun c => match range? c with
         | some (x, y) => x ≤ b && b < y
         | none => false
-      let some cmd := cmds.find? inside | continue
+    -- The term-mode proofs of each of the file's targets. An edit to one
+    -- declaration can break a proof in another that uses it: `Sem.withCmp`
+    -- proves a field of `Sem`.
+    let mut proofs : Array (Name × Array (Nat × Nat)) := #[]
+    for (d, pos) in decls do
+      let some cmd := cmdOf pos | continue
+      let ((), s) ← ((walkDecl cmd).run { src, fileMap := fm, infos, decl := d }).run {}
+      if !s.proofs.isEmpty then proofs := proofs.push (d, s.proofs)
+    let uses (y x : Name) : Bool := y == x || match env.find? y with
+      | some ci => (ci.type.getUsedConstants ++ (ci.value?.map (·.getUsedConstants)).getD #[]).any
+          (x.isPrefixOf ·)
+      | none => false
+    for (d, pos) in decls do
+      let some cmd := cmdOf pos | continue
       let before := st.edits.size
       let ((), st') ← ((walkDecl cmd).run { src, fileMap := fm, infos, decl := d }).run st
       st := st'
@@ -593,6 +743,11 @@ def main : MetaM Unit := do
           let v := if e.eff == 0 || sg == 0 then "unknown" else if e.eff * sg > 0 then "weaker" else "stronger"
           if v != "stronger" then keep := true
           effects := effects.push ((t.replacePrefix `Mise.Theorems .anonymous).toString, toJson v)
+        for (label, tr) in assumed do
+          if tr.contains d then
+            keep := true
+            effects := effects.push (label, toJson "unknown")
+        let e := withProofs src (proofs.filter (uses ·.1 d) |>.flatMap (·.2)) e
         let name := s!"{shortName d}:{e.kind}.{k}"
         rows := rows.push <| Json.mkObj [
           ("name", toJson name), ("decl", toJson (shortName d)), ("file", toJson path),

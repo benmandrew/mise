@@ -26,6 +26,11 @@ def implementation : List (Name × String) :=
   [(`Mise.Frontend.emit, "The theorems hold for whatever manifest `emit g` is. The text `mise` writes is `print (emit g)` (`ValidGraph.ninja`), and `well_formed` and trust item 1 say how Ninja reads it."),
    (`Mise.Frontend.Graph.Valid, "Every theorem assumes `g.Valid`, and `mise` refuses a graph that fails it (`Build.graph` returns a `ValidGraph`). A check that is too strict makes `mise` refuse more graphs, and cannot make a theorem false.")]
 
+/-- Assumptions of `docs/theorems.md` that are stated in terms of definitions,
+with the definitions they name. -/
+def assumptions : List (String × List Name) :=
+  [("trust item 1", [`Mise.Syntax.print, `Mise.Syntax.Manifest.WellFormed])]
+
 def isImplementation (n : Name) : Bool := implementation.any (·.1 == n)
 
 /-- Auxiliary constants a reader would not look up by name. -/
