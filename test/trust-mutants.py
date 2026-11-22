@@ -69,6 +69,16 @@ random inputs per survivor, `--no-triage` skips the triage, and `--retriage`
 triages the survivors of the last run again, from
 `test/out/trust-mutants/rows.json`, without building any mutant.
 
+`--survivors` builds only the mutants that survived the last run, and keeps
+its other rows and its decided triage verdicts. It is for the loop of adding
+tests that kill survivors: a killed mutant stays killed while the tests only
+gain checks, and a triage verdict compares a definition with its mutant, so
+the tests do not change it. The run records a hash of the copy's library
+(without proofs), the generator, the triage and the toolchain, and
+`--survivors` refuses to run when the hash has changed, since the mutants
+may then differ. It cannot tell whether a test was removed or weakened;
+run in full after that.
+
 The tests overlap: a test of a caller often kills mutants of the functions
 it calls. So when the triage finds distinguished survivors, the run builds
 each of them against all of the triage's tests, in a module
@@ -87,7 +97,7 @@ At the end it prints the summary; the full report is in `results.md`.
 The exit status is 1 when a mutant that is not equivalent survives, or a
 mutant is an error.
 
-usage: trust-mutants.py [--via inproc|lake] [-j JOBS] [--all-edits]
+usage: trust-mutants.py [--via inproc|lake] [-j JOBS] [--all-edits] [--survivors]
                         [--samples N] [--no-triage] [--no-cover] [MUTANT...]
        trust-mutants.py --retriage [--no-cover] [MUTANT...]
        trust-mutants.py --cover
@@ -99,6 +109,7 @@ coincide. A worker starts a new process for each mutated module, since a
 process keeps every module's imports it has loaded.
 """
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -633,15 +644,19 @@ def triage_poll(tri, k, out):
     return out
 
 
-def triage(todo, rows, jobs, samples):
+def triage(todo, rows, jobs, samples, known=None):
     """The triage of the mutants that survive, by `MutantCheck` on `jobs`
     processes: for each, its `verdict` ("distinguished", "equivalent" or
-    "undecided") and the rest of its result."""
+    "undecided") and the rest of its result. A survivor with a decided
+    verdict in `known`, from an earlier run on the same inputs, keeps it."""
     live = {r[0] for r in rows if r[3] == "SURVIVED"}
-    edits = sorted((edit_of(m) for m in todo if m[0] in live), key=lambda e: (e["file"], e["start"]))
+    kept = {n: r for n, r in (known or {}).items()
+            if n in live and r["verdict"] in ("distinguished", "equivalent")}
+    edits = sorted((edit_of(m) for m in todo if m[0] in live and m[0] not in kept),
+                   key=lambda e: (e["file"], e["start"]))
     if not edits:
-        P.skip(TRIAGE, "no survivors")
-        return {}
+        P.skip(TRIAGE, "no survivors" if not live else "every survivor was triaged before")
+        return kept
     P.stage(TRIAGE, len(edits))
     tri = OUT / "triage"
     shutil.rmtree(tri, ignore_errors=True)
@@ -666,7 +681,27 @@ def triage(todo, rows, jobs, samples):
     for e in edits:
         out.setdefault(e["name"], {"name": e["name"], "verdict": "undecided",
                                    "detail": f"MutantCheck stopped; see {tri.relative_to(ROOT)}/log-*.txt"})
-    return out
+    return {**kept, **out}
+
+
+def inputs_hash():
+    """A hash of what the mutants and their triage depend on: the copy's
+    library, whose theorems have no proofs, the generator, the triage and
+    the toolchain. Two runs with the same hash generate the same mutants."""
+    h = hashlib.sha256()
+    files = sorted((TREE / "Mise").rglob("*.lean")) + [
+        TREE / "test" / "MiseTest" / f for f in ["MutantGen.lean", "TrustWalk.lean", "MutantCheck.lean"]
+    ] + [TREE / "lean-toolchain"]
+    for f in files:
+        h.update(str(f.relative_to(TREE)).encode() + b"\0" + f.read_bytes() + b"\0")
+    return h.hexdigest()
+
+
+def save_rows(rows, todo, tri, secs, via, inputs):
+    """What `--retriage` and `--survivors` need from this run."""
+    (OUT / "rows.json").write_text(json.dumps({
+        "rows": rows, "todo": todo, "effect": EFFECT, "triage": tri,
+        "secs": secs, "via": via, "inputs": inputs}))
 
 
 CANDIDATES = "MiseTest.Candidates"
@@ -881,6 +916,9 @@ def main():
                     help="only choose a smallest set of the last triage's tests that kills its distinguished survivors")
     ap.add_argument("--no-cover", action="store_true",
                     help="do not choose a smallest set of tests after the triage")
+    ap.add_argument("--survivors", action="store_true",
+                    help="build only the last run's survivors and keep its other results; "
+                         "assumes that no test was removed or weakened since")
     a = ap.parse_args()
     start = time.time()
     if a.cover:
@@ -895,6 +933,7 @@ def main():
         todo = [tuple(m[:4]) + (tuple(m[4]), m[5]) for m in last["todo"]]
         EFFECT.update(last["effect"])
         tri = triage([m for m in todo if not a.only or m[0] in a.only], rows, a.jobs, a.samples)
+        save_rows(rows, todo, tri, last["secs"], last["via"], last.get("inputs"))
         cov, cok = cover(a.jobs) if COVER in after else (None, True)
         return finish(rows, tri, last["secs"] + time.time() - start, last["via"], cov, cok)
     P.plan([COPY, CONTROL, GENERATE, MUTANTS_STAGE] + after)
@@ -902,6 +941,7 @@ def main():
     copy_tree()
     n = prepare()
     P.note(f"{n} theorems replaced with sorry")
+    inputs = inputs_hash()
     P.stage(CONTROL)
     errs = build_watched()
     P.note(f"the unmutated copy {'fails' if errs else 'passes'}")
@@ -915,29 +955,46 @@ def main():
     if unknown:
         sys.exit(f"unknown mutants: {sorted(unknown)}")
     todo = [m for m in todo if not a.only or m[0] in a.only]
+    carried, known = {}, {}
+    if a.survivors:
+        if not (OUT / "rows.json").exists():
+            sys.exit("--survivors needs an earlier run")
+        last = json.loads((OUT / "rows.json").read_text())
+        if last.get("inputs") != inputs:
+            sys.exit("the library or the generator changed since the last run, so its mutants may differ; "
+                     "run without --survivors")
+        # A killed mutant stays killed while the tests only gain checks.
+        prev = {r[0]: tuple(r) for r in last["rows"]}
+        carried = {m[0]: prev[m[0]] for m in todo if m[0] in prev and prev[m[0]][3] not in ("SURVIVED", "error")}
+        known = last.get("triage", {})
+        EFFECT.update(last["effect"])
+        P.note(f"{len(carried)} results kept from the last run")
+    build = [m for m in todo if m[0] not in carried]
 
     shutil.rmtree(WORK, ignore_errors=True)
     WORK.mkdir()
-    RESULTS.write_text("\n".join([f"Running {len(todo)} mutants via {a.via}; rows in the order they finish.", ""] + HEADER) + "\n")
-    P.stage(MUTANTS_STAGE, len(todo))
-    with ThreadPoolExecutor(a.jobs) as ex:
-        if a.via == "lake":
-            futures = [ex.submit(via_lake, m) for m in todo]
-        else:
-            futures = run_inproc(todo, a.jobs, ex)
-        results = [r for fu in as_completed(futures) for r in fu.result()]
+    RESULTS.write_text("\n".join([f"Running {len(build)} mutants via {a.via}; rows in the order they finish.", ""] + HEADER) + "\n")
+    results = []
+    if not build:
+        P.skip(MUTANTS_STAGE, "every result is kept from the last run")
+    else:
+        P.stage(MUTANTS_STAGE, len(build))
+        with ThreadPoolExecutor(a.jobs) as ex:
+            if a.via == "lake":
+                futures = [ex.submit(via_lake, m) for m in build]
+            else:
+                futures = run_inproc(build, a.jobs, ex)
+            results = [r for fu in as_completed(futures) for r in fu.result()]
     control = [r[1] for r in results if r[0] == "(unmutated)"]
     if control and control[0]:
         for f, line, msg in control[0][:5]:
             print(f"  {f}:{line}: {msg.strip()[:300]}")
         sys.exit("the unmutated tests fail in the in-process build, though Lake passes them; rerun with `--via lake`")
     done = {r[0]: r for r in results if r[0] != "(unmutated)"}
-    rows = [done[m[0]] for m in todo]
-    # What `--retriage` needs to triage these survivors again.
-    (OUT / "rows.json").write_text(json.dumps({
-        "rows": rows, "todo": todo, "effect": EFFECT,
-        "secs": time.time() - start, "via": a.via}))
-    tri = {} if a.no_triage else triage(todo, rows, a.jobs, a.samples)
+    rows = [done.get(m[0]) or carried[m[0]] for m in todo]
+    save_rows(rows, todo, known, time.time() - start, a.via, inputs)
+    tri = {} if a.no_triage else triage(todo, rows, a.jobs, a.samples, known)
+    save_rows(rows, todo, tri or known, time.time() - start, a.via, inputs)
     cov, cok = cover(a.jobs) if COVER in after else (None, True)
     return finish(rows, tri, time.time() - start, a.via, cov, cok)
 
