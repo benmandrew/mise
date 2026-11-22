@@ -98,7 +98,8 @@ uses = ["graph-fuzz"]
 # theorems are stated in, with every library proof replaced by `sorry`.
 [harness.trust-mutants]
 cmd = ["test/trust-mutants.py"]
-time = "2 min"
+time = "30 s on 8 cores"
+paths = ["test/trust-mutants.lean"]
 lean = ["MiseTest"]
 
 # --- Against other references ------------------------------------------

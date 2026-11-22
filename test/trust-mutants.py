@@ -21,29 +21,59 @@ The driver
    the build depends only on the definitions. The copy's tests use
    `#eval!`, because `#eval` refuses a value that depends on `sorry`;
 3. builds `MiseTest` on the unmutated copy, which must succeed;
-4. for each mutant, applies the edit and builds `MiseTest` again.
+4. builds each mutant in two stages. The first builds only the test modules
+   in `KILLERS`, which should kill every mutant; the second builds the rest
+   of `MiseTest`, and runs only when the first finds no error. `--jobs`
+   builds run at once.
+
+There are two ways to build a mutant. `--via inproc`, the default, starts
+one long-lived Lean process per job, `test/trust-mutants.lean`, and feeds it
+mutants one at a time. For each mutant it elaborates the mutated module and
+the modules that import it from source, in memory, on the modules the
+mutated one does not reach, which it loads once per module and reuses. This
+saves starting and importing a Lean process for each module: about a fifth
+of the CPU time of `--via lake`. All the modules of a stage share one
+environment, where Lake gives each module only its own imports, so the
+driver also runs the unmutated tree this way, as a control that must pass.
+`--via lake` clones the built copy for each mutant, applies the edit to the
+clone and runs `lake build` there. It does not depend on Lean's internal
+elaboration API, so use it when that API changes or a mutant crashes the
+in-process build.
 
 A mutant is killed when a test fails. The kill is "evaluates" when `decide`
 or `#guard` computed a false result, and "elaborates" when a test no longer
 type-checks: an unknown constructor, a wrong number of arguments, or a proof
 step that fails. A mutant that breaks the library itself is an error, since
-the tests never run. The results table goes to
+the tests never run. With staged builds, a mutant that the first stage
+kills reports only the first stage's errors. The results table goes to
 `test/out/trust-mutants/results.md`. The exit status is 1 when a mutant
 survives or is an error.
 
-usage: trust-mutants.py [MUTANT...]
+usage: trust-mutants.py [--via inproc|lake] [-j JOBS] [MUTANT...]
+
+JOBS defaults to the number of CPUs.
 """
 import argparse
+import json
+import os
 import re
 import shutil
 import subprocess
 import sys
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "test" / "out" / "trust-mutants"
 TREE = OUT / "tree"
+WORK = OUT / "work"
+INPROC = ROOT / "test" / "trust-mutants.lean"
+
+# The test modules that should kill every mutant (see `CLAUDE.md`). A build
+# builds these first, and the rest of `MiseTest` only if they pass.
+KILLERS = ["MiseTest.Boundary", "MiseTest.Reachable"]
 
 SOUND = "Mise/Model/Sound.lean"
 SPEC = "Mise/Spec/Basic.lean"
@@ -190,17 +220,24 @@ def sh(cmd, cwd=None):
     return subprocess.run(cmd, cwd=cwd or TREE, capture_output=True, text=True)
 
 
+def clone(srcs, dst):
+    """Copy `srcs` to `dst`, with copy-on-write clones where the file system
+    has them. Timestamps are kept, so a clone of a built tree stays built."""
+    args = [str(s) for s in srcs] + [str(dst)]
+    if sys.platform == "darwin" and sh(["/bin/cp", "-Rc", *args], cwd=ROOT).returncode == 0:
+        return
+    gnu = sys.platform.startswith("linux")
+    subprocess.run(["cp", "-Rp", *(["--reflink=auto"] if gnu else []), *args], check=True)
+
+
 def copy_tree():
-    """Copy the sources and the build directory, with copy-on-write clones
-    where the file system has them."""
+    """Copy the sources and the build directory to `TREE`."""
     shutil.rmtree(TREE, ignore_errors=True)
     (TREE / "test").mkdir(parents=True)
     items = [".lake", "Mise", "Main.lean", "Mise.lean", "lakefile.toml", "lean-toolchain", "lake-manifest.json", "fuzz"]
     tests = [p.name for p in (ROOT / "test").iterdir() if p.name != "out"]
-    for src, dst in [(items, TREE), ([f"test/{t}" for t in tests], TREE / "test")]:
-        args = [str(ROOT / s) for s in src] + [str(dst)]
-        if sys.platform != "darwin" or sh(["/bin/cp", "-Rc", *args], cwd=ROOT).returncode != 0:
-            subprocess.run(["cp", "-R", *args], check=True)
+    clone([ROOT / s for s in items], TREE)
+    clone([ROOT / "test" / t for t in tests], TREE / "test")
 
 
 def prepare():
@@ -226,9 +263,8 @@ def prepare():
 ERR = re.compile(r"^error: (?:\./)*(\S+?\.lean):(\d+):\d+: ", re.M)
 
 
-def build():
-    """The errors of `lake build MiseTest`, as (file, line, message)."""
-    r = sh(["lake", "build", "MiseTest"])
+def lake_errors(r):
+    """The errors in the output of a `lake build`, as (file, line, message)."""
     text = r.stdout + r.stderr
     marks = list(ERR.finditer(text))
     errs = []
@@ -238,6 +274,14 @@ def build():
     if r.returncode != 0 and not errs:
         errs.append(("?", 0, text[-1500:]))
     return errs
+
+
+def build(tree=TREE, staged=False):
+    """The errors of `lake build MiseTest` in `tree`. With `staged`, the
+    errors of building `KILLERS` alone, if there are any."""
+    if staged and (errs := lake_errors(sh(["lake", "build", *KILLERS], cwd=tree))):
+        return errs
+    return lake_errors(sh(["lake", "build", "MiseTest"], cwd=tree))
 
 
 def verdict(errs):
@@ -253,9 +297,161 @@ def verdict(errs):
     return "killed", "evaluates" if evaluates else "elaborates", ", ".join(where[:4]) + (" …" if len(where) > 4 else "")
 
 
+def row(m, errs, secs):
+    """The results row of mutant `m`, printed as it finishes."""
+    name, defn, _, what, _, _ = m
+    v, kind, where = verdict(errs)
+    print(f"{name}: {v}{f' ({kind})' if kind else ''}; {where}; {secs:.0f}s", flush=True)
+    return name, defn, what, v, kind, where
+
+
+def via_lake(m):
+    """Build mutant `m` in its own clone of `TREE`; its results row."""
+    name, _, f, _, old, new = m
+    tree = WORK / name
+    clone([TREE], tree)
+    (tree / f).write_text((tree / f).read_text().replace(old, new))
+    t = time.time()
+    errs = build(tree, staged=True)
+    shutil.rmtree(tree)
+    return [row(m, errs, time.time() - t)]
+
+
+def module_of(f):
+    """The module name of a file in the tree."""
+    return f.removeprefix("test/").removesuffix(".lean").replace("/", ".")
+
+
+def file_of(mod):
+    """The file of a module in the tree, relative to it."""
+    return ("test/" if mod.split(".")[0] == "MiseTest" else "") + mod.replace(".", "/") + ".lean"
+
+
+def module_graph():
+    """The imports of each module that `lake build MiseTest` builds."""
+    imps, todo = {}, ["MiseTest"]
+    while todo:
+        mod = todo.pop()
+        if mod in imps or not (TREE / file_of(mod)).exists():
+            continue
+        imps[mod] = re.findall(r"^import (\S+)", (TREE / file_of(mod)).read_text(), re.M)
+        todo += imps[mod]
+    return imps
+
+
+def stages(imps, mod):
+    """The stages of the in-process build of a mutant of `mod`: the modules
+    that `mod` reaches and that `KILLERS` import, then every module that
+    `mod` reaches. Each stage is in import order, with the imports it needs
+    from outside itself. A stage is closed under imports within the modules
+    `mod` reaches, so the modules outside it are unchanged and come from
+    their `.olean` files."""
+    reach = {mod}
+    while more := {m for m, ii in imps.items() if m not in reach and reach.intersection(ii)}:
+        reach |= more
+    up, todo = set(), list(KILLERS)
+    while todo:
+        m = todo.pop()
+        if m in imps and m not in up:
+            up.add(m)
+            todo += imps[m]
+    order = []
+    def visit(m):
+        if m in reach and m not in order:
+            for i in imps[m]:
+                visit(i)
+            order.append(m)
+    for m in sorted(reach):
+        visit(m)
+    out = []
+    for part in [reach & up, reach]:
+        if not part or (out and part == reach & up):
+            continue
+        mods = [m for m in order if m in part]
+        out.append({
+            "imports": sorted({i for m in mods for i in imps[m] if i not in part}),
+            "modules": [{"name": m, "file": file_of(m), "imports": [i for i in imps[m] if i in part],
+                         "byAsSorry": file_of(m).startswith("Mise")} for m in mods]})
+    return out
+
+
+class Worker:
+    """One `test/trust-mutants.lean` process, fed one mutant at a time."""
+
+    def __init__(self, plan, tag):
+        self.plan, self.log = plan, WORK / f"{tag}.stderr"
+        self.p, self.seen = None, set()
+
+    def run(self, mod, m):
+        """The errors of mutant `m` of module `mod`, or of the unmutated
+        control when `m` is None. A crash is an error, and the next call
+        starts a new process."""
+        if self.p is None:
+            self.p = subprocess.Popen(["lake", "env", "lean", "--run", str(INPROC), str(self.plan)], cwd=TREE,
+                                      stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                      stderr=self.log.open("a"), text=True)
+            self.seen = set()
+        self.seen.add(mod)
+        src = (TREE / m[2]).read_text().replace(m[4], m[5]) if m else None
+        other = []
+        try:
+            self.p.stdin.write(json.dumps({"name": m[0] if m else "", "module": mod, "src": src}) + "\n")
+            self.p.stdin.flush()
+            for line in self.p.stdout:
+                if line.startswith("{"):
+                    r = json.loads(line)
+                    return [(e["file"], e["line"], e["msg"]) for e in r["errors"]], r["secs"]
+                other.append(line)
+        except BrokenPipeError:
+            pass
+        self.p.kill()
+        self.p.wait()
+        self.p = None
+        err = " ".join(("".join(other) + self.log.read_text()).split())[:300] or "no output"
+        return [("?", 0, f"the in-process build stopped ({err}); rerun with `--via lake`")], 0
+
+    def close(self):
+        if self.p:
+            self.p.stdin.close()
+            self.p.wait()
+
+
+def run_inproc(todo, jobs, ex):
+    """Build the mutants in `todo` on `jobs` workers, each a long-lived Lean
+    process, with the unmutated control first; the futures of their rows.
+    A worker prefers a mutant of a module it has already loaded."""
+    imps = module_graph()
+    plans = {mod: stages(imps, mod) for mod in {module_of(m[2]) for m in todo}}
+    plan = WORK / "plan.json"
+    plan.write_text(json.dumps([{"module": mod, "stages": st} for mod, st in plans.items()]))
+    # The control runs every stage, from the module that reaches the most.
+    top = max(plans, key=lambda mod: len(plans[mod][-1]["modules"]))
+    pending = [(top, None)] + sorted(((module_of(m[2]), m) for m in todo),
+                                     key=lambda x: -len(plans[x[0]][0]["modules"]))
+    lock = threading.Lock()
+
+    def work(k):
+        w, rows = Worker(plan, f"worker-{k}"), []
+        while True:
+            with lock:
+                if not pending:
+                    break
+                mod, m = pending.pop(next((i for i, (mod, _) in enumerate(pending) if mod in w.seen), 0))
+            errs, secs = w.run(mod, m)
+            rows.append(row(m, errs, secs) if m else ("(unmutated)", errs))
+        w.close()
+        return rows
+
+    return [ex.submit(work, k) for k in range(jobs)]
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("only", nargs="*", help="run only these mutants")
+    ap.add_argument("-j", "--jobs", type=int, default=os.cpu_count() or 2,
+                    help="builds to run at once (default: the number of CPUs)")
+    ap.add_argument("--via", choices=["inproc", "lake"], default="inproc",
+                    help="build mutants in long-lived Lean processes (default), or with lake build")
     a = ap.parse_args()
     unknown = set(a.only) - {m[0] for m in MUTANTS}
     if unknown:
@@ -276,18 +472,24 @@ def main():
             print(f"  {f}:{line}: {msg.strip()[:300]}")
         sys.exit("the unmutated tests fail; mutant results would mean nothing")
 
-    rows = []
-    for name, defn, f, what, old, new in todo:
-        src = (TREE / f).read_text()
-        (TREE / f).write_text(src.replace(old, new))
-        t = time.time()
-        v, kind, where = verdict(build())
-        (TREE / f).write_text(src)
-        rows.append((name, defn, what, v, kind, where))
-        print(f"{name}: {v}{f' ({kind})' if kind else ''}; {where}; {time.time() - t:.0f}s", flush=True)
+    shutil.rmtree(WORK, ignore_errors=True)
+    WORK.mkdir()
+    with ThreadPoolExecutor(a.jobs) as ex:
+        if a.via == "lake":
+            futures = [ex.submit(via_lake, m) for m in todo]
+        else:
+            futures = run_inproc(todo, a.jobs, ex)
+        results = [r for fu in as_completed(futures) for r in fu.result()]
+    control = [r[1] for r in results if r[0] == "(unmutated)"]
+    if control and control[0]:
+        for f, line, msg in control[0][:5]:
+            print(f"  {f}:{line}: {msg.strip()[:300]}")
+        sys.exit("the unmutated tests fail in the in-process build, though Lake passes them; rerun with `--via lake`")
+    done = {r[0]: r for r in results if r[0] != "(unmutated)"}
+    rows = [done[m[0]] for m in todo]
 
     k = sum(r[3] == "killed" for r in rows)
-    lines = [f"{k} of {len(rows)} mutants killed, {time.time() - start:.0f} s.", "",
+    lines = [f"{k} of {len(rows)} mutants killed, {time.time() - start:.0f} s, via {a.via}.", "",
              "| Mutant | Definition | Change | Verdict | Kill | Where |", "|---|---|---|---|---|---|"]
     lines += [f"| `{r[0]}` | `{r[1]}` | {r[2]} | {r[3]} | {r[4]} | {r[5]} |" for r in rows]
     report = "\n".join(lines) + "\n"
