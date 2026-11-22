@@ -136,14 +136,23 @@ example : two.DynOK depSem := by
     simp only [depSem, fetchAll]
     exact .fetch _ _ (by decide) fun _ => .fetch _ _ (by decide) fun _ => .fetch _ _ (by decide) fun _ => .pure _
 
-/-! ### `ran` and `Checks` on more than one edge -/
-
 /-- The sources of `two` hold their own names, written at time 0. -/
 def start2 : St String :=
   { fs := fun p => if p ∈ two.sources then some (p, 0) else none, log := fun _ => none, clock := 0 }
 
 theorem start2_fresh : start2.Fresh :=
   ⟨fun p v t h => by simp [start2] at h ⊢; omega, fun _ _ _ h => nomatch h⟩
+
+/-! ### `Graph.spec` on a depfile edge (conclusion of `build_correct`) -/
+
+/-- The specification of `a.o` is the depfile command: it reads `a.c`,
+`util.h` and the generated `config.h`. If `Graph.spec` treated it as a
+static command, it would read `a.c` alone, and `build_correct` would accept
+a build that ignored the headers. -/
+example : ((two.spec depSem).task "a.o").run (build depSem two start2).content = "a.cutil.hconfig.in" := by
+  decide
+
+/-! ### `ran` and `Checks` on more than one edge -/
 
 /-- `Reach.step` may visit any edge of the manifest, not only the first. -/
 example : Reachable depSem two (((start2.step depSem gen).step depSem aO).step depSem bO) :=
