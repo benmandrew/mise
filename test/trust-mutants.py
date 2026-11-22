@@ -60,7 +60,9 @@ survives or is an error.
 
 usage: trust-mutants.py [--via inproc|lake] [-j JOBS] [--generated [--all-edits]] [MUTANT...]
 
-JOBS defaults to the number of CPUs.
+JOBS defaults to the number of CPUs, at most one per 3 GB of memory: an
+in-process worker uses about 2.5 GB. A worker starts a new process for each
+mutated module, since a process keeps every module's imports it has loaded.
 """
 import argparse
 import json
@@ -436,6 +438,10 @@ class Worker:
         """The errors of mutant `m` of module `mod`, or of the unmutated
         control when `m` is None. A crash is an error, and the next call
         starts a new process."""
+        if self.p is not None and mod not in self.seen:
+            # The process keeps the imports of every module it has loaded, so
+            # a new module gets a new process.
+            self.close()
         if self.p is None:
             self.p = subprocess.Popen(["lake", "env", "lean", "--run", str(INPROC), str(self.plan)], cwd=TREE,
                                       stdin=subprocess.PIPE, stdout=subprocess.PIPE,
@@ -464,12 +470,13 @@ class Worker:
         if self.p:
             self.p.stdin.close()
             self.p.wait()
+            self.p = None
 
 
 def run_inproc(todo, jobs, ex):
     """Build the mutants in `todo` on `jobs` workers, each a long-lived Lean
     process, with the unmutated control first; the futures of their rows.
-    A worker prefers a mutant of a module it has already loaded."""
+    A worker prefers a mutant of the module it has loaded."""
     imps = module_graph()
     plans = {mod: stages(imps, mod) for mod in {module_of(m[2]) for m in todo}}
     plan = WORK / "plan.json"
@@ -495,11 +502,21 @@ def run_inproc(todo, jobs, ex):
     return [ex.submit(work, k) for k in range(jobs)]
 
 
+# The memory of one in-process worker, in GB, rounded up (see the header).
+JOB_GB = 3
+
+
+def default_jobs():
+    """The number of CPUs, at most one per `JOB_GB` of physical memory."""
+    mem = os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES") / 2**30
+    return max(1, min(os.cpu_count() or 2, int(mem // JOB_GB)))
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("only", nargs="*", help="run only these mutants")
-    ap.add_argument("-j", "--jobs", type=int, default=os.cpu_count() or 2,
-                    help="builds to run at once (default: the number of CPUs)")
+    ap.add_argument("-j", "--jobs", type=int, default=default_jobs(),
+                    help=f"builds to run at once (default: the number of CPUs, at most one per {JOB_GB} GB of memory)")
     ap.add_argument("--via", choices=["inproc", "lake"], default="inproc",
                     help="build mutants in long-lived Lean processes (default), or with lake build")
     ap.add_argument("--generated", action="store_true", help="add the mutants of MiseTest.MutantGen")
