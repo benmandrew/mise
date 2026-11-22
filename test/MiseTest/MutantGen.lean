@@ -377,7 +377,18 @@ partial def walkS (s : Syntax) (p : Int) (place : Place) : GenM Unit := do
   if k == ``Lean.Parser.Term.byTactic || k == ``Lean.Parser.Termination.suffix ||
       k == ``Lean.Parser.Command.docComment then return
   let t ← termOf s
-  sitesAt s p place t
+  -- In a constructor, a term that mentions the inductive itself keeps its
+  -- shape: `(I x ∧ False)` and `((∀ v, I v) ∨ True)` are nested
+  -- occurrences, which the kernel rejects, and `I` must keep its
+  -- parameters. While the constructor is elaborated, `I` is a local, not a
+  -- constant, so match it by name.
+  let decl := (← read).decl
+  let self := decl.componentsRev.head?
+  let nested := (← isInductive decl) &&
+    (s.find? fun x => x.isIdent && some x.getId == self).isSome
+  if nested && k == ``Lean.Parser.Term.app && s[0].isIdent && some s[0].getId == self then
+    return ← walkS s[0] 0 .none
+  unless nested do sitesAt s p place t
   let kids : GenM Unit := do for c in s.getArgs do walkS c 0 .cond
   let isPropAt (x : Syntax) : GenM Bool := return (← termOf x).any (·.ty.isProp)
   match k with
@@ -423,8 +434,7 @@ partial def walkS (s : Syntax) (p : Int) (place : Place) : GenM Unit := do
     for d in s[3].getArgs do walkS d 0 .cond
   | ``Lean.Parser.Term.app =>
     walkS s[0] 0 .none
-    -- An inductive's own occurrence in a constructor must keep its
-    -- parameters. While it is elaborated, it is a local, not a constant.
+    -- A recursive call keeps its arguments, so that it still terminates.
     if s[0].isIdent && some s[0].getId == (← read).decl.componentsRev.head? then return
     let args := s[1].getArgs
     let ts ← args.mapM termOf
@@ -566,7 +576,7 @@ def main : MetaM Unit := do
       let mut seen : Std.HashSet (Nat × Nat × String) := {}
       -- Name each edit by its kind and its place among the edits of that
       -- kind in the declaration, in source order: line numbers differ
-      -- between the real tree and the copy, whose proofs are `sorry`.
+      -- between the real tree and the copy, whose proofs are replaced.
       let mut count : Std.HashMap String Nat := {}
       let edits := (st.edits.extract before st.edits.size).qsort fun x y =>
         x.start < y.start || x.start == y.start && x.stop < y.stop
