@@ -29,7 +29,8 @@ The driver
    an earlier one is skipped;
 5. builds each mutant in two stages. The first builds only the test modules
    in `KILLERS`, which should kill every mutant; the second builds the rest
-   of `MiseTest`, and runs only when the first finds no error. `--jobs`
+   of the test modules of `MiseTest`, and runs only when the first finds no
+   error. The modules without tests (`NO_TESTS`) are not built. `--jobs`
    builds run at once.
 
 There are two ways to build a mutant. `--via inproc`, the default, starts
@@ -340,11 +341,13 @@ def build_watched():
 
 
 def build(tree=TREE, staged=False):
-    """The errors of `lake build MiseTest` in `tree`. With `staged`, the
-    errors of building `KILLERS` alone, if there are any."""
+    """The errors of building the test modules of `MiseTest` in `tree`
+    (all but `NO_TESTS`). With `staged`, the errors of building `KILLERS`
+    alone, if there are any."""
     if staged and (errs := lake_errors(sh(["lake", "build", *KILLERS], cwd=tree))):
         return errs
-    return lake_errors(sh(["lake", "build", "MiseTest"], cwd=tree))
+    tests = re.findall(r"^import (\S+)", (tree / "test" / "MiseTest.lean").read_text(), re.M)
+    return lake_errors(sh(["lake", "build", *(m for m in tests if m not in NO_TESTS)], cwd=tree))
 
 
 def verdict(errs):
@@ -460,22 +463,39 @@ def module_graph(roots=("MiseTest",)):
     return imps
 
 
+# The modules that `MiseTest` imports but that hold no tests: the review
+# tools, and `#print axioms`, which no mutant can make fail. The second stage
+# leaves them out, and with them the import of `Lean` that `Gloss` and
+# `TrustWalk` need.
+NO_TESTS = {"MiseTest.Gloss", "MiseTest.TrustWalk", "MiseTest.Axioms"}
+
+
+def closure(imps, roots):
+    """The modules that `roots` reach through imports, `roots` included."""
+    out, todo = set(), list(roots)
+    while todo:
+        m = todo.pop()
+        if m in imps and m not in out:
+            out.add(m)
+            todo += imps[m]
+    return out
+
+
 def stages(imps, mod, killers=KILLERS, first_only=False):
-    """The stages of the in-process build of a mutant of `mod`: the modules
-    that `mod` reaches and that `KILLERS` import, then every module that
-    `mod` reaches. Each stage is in import order, with the imports it needs
-    from outside itself. A stage is closed under imports within the modules
-    `mod` reaches, so the modules outside it are unchanged and come from
-    their `.olean` files."""
+    """The stages of the in-process build of a mutant of `mod`, each in
+    import order. The first holds the modules that `mod` reaches and that
+    `killers` import. The second holds the rest of the modules that `mod`
+    reaches and that the test modules of `MiseTest` import (all but
+    `NO_TESTS`), and runs on the environment the first stage leaves. So the
+    first stage's imports are the modules both stages import from outside
+    the modules `mod` reaches: those are unchanged and come from their
+    `.olean` files."""
     reach = {mod}
     while more := {m for m, ii in imps.items() if m not in reach and reach.intersection(ii)}:
         reach |= more
-    up, todo = set(), list(killers)
-    while todo:
-        m = todo.pop()
-        if m in imps and m not in up:
-            up.add(m)
-            todo += imps[m]
+    first = reach & closure(imps, killers)
+    tests = [m for m in imps.get("MiseTest", []) if m not in NO_TESTS]
+    second = set() if first_only else reach & closure(imps, tests) - first
     order = []
     def visit(m):
         if m in reach and m not in order:
@@ -484,13 +504,14 @@ def stages(imps, mod, killers=KILLERS, first_only=False):
             order.append(m)
     for m in sorted(reach):
         visit(m)
+    both = first | second
     out = []
-    for part in [reach & up] if first_only else [reach & up, reach]:
-        if not part or (out and part == reach & up):
+    for part in (first, second):
+        if not part:
             continue
         mods = [m for m in order if m in part]
         out.append({
-            "imports": sorted({i for m in mods for i in imps[m] if i not in part}),
+            "imports": [] if out else sorted({i for m in both for i in imps[m] if i not in both}),
             "modules": [{"name": m, "file": file_of(m), "imports": [i for i in imps[m] if i in part],
                          "byAsSorry": file_of(m).startswith("Mise")} for m in mods]})
     return out
@@ -555,7 +576,7 @@ def run_inproc(todo, jobs, ex):
     plan = WORK / "plan.json"
     plan.write_text(json.dumps([{"module": mod, "stages": st} for mod, st in plans.items()]))
     # The control runs every stage, from the module that reaches the most.
-    top = max(plans, key=lambda mod: len(plans[mod][-1]["modules"]))
+    top = max(plans, key=lambda mod: sum(len(st["modules"]) for st in plans[mod]))
     pending = [(top, None)] + sorted(((module_of(m[2]), m) for m in todo),
                                      key=lambda x: -len(plans[x[0]][0]["modules"]))
     lock = threading.Lock()

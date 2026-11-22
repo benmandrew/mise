@@ -4,20 +4,22 @@ import Lean
 
 `lake env lean --run test/trust-mutants.lean PLAN` builds mutants without
 starting a Lean process per module. `PLAN` is a JSON file that lists each
-mutated module with its stages. A stage is a list of modules in import order,
-with the modules they import from outside the stage. The process then reads
+mutated module with its stages. A stage is a list of modules in import order;
+the first also lists the modules that the stages import from outside
+themselves, and the later ones list none. The process then reads
 mutants from standard input, one JSON line each (`{name, module, src}`, where
 `src` is the mutated text of `module`, or null for the unmutated control),
 and writes one JSON line for each: its name, its errors as
 `{file, line, msg}`, and the seconds it took.
 
-The first mutant of a module loads the imports of each stage it reaches,
-and later mutants of that module reuse them. Each mutant elaborates the
-stage's modules from source, one after another, on the same environment,
-with the mutated module's text replaced. A module whose import has errors is
-skipped, as Lake skips it. A mutant stops at the first stage with errors;
-the driver puts the test modules that kill most mutants in the first stage,
-so the later ones rarely run. -/
+The first mutant of a module loads the first stage's imports, which are
+those of every stage, and later mutants of that module reuse them. Each
+mutant elaborates the stage's modules from source, one after another, on the
+same environment, with the mutated module's text replaced. A later stage
+runs on the environment the stage before it left, so no module is
+elaborated twice. A module whose import has errors is skipped, as Lake
+skips it. A mutant stops at the first stage with errors; the driver puts the
+test modules that kill most mutants in the first stage. -/
 
 open Lean Elab
 
@@ -71,9 +73,9 @@ def elabModule (env : Environment) (m : Module) (src : String) : IO (Environment
     return ({ file := msg.fileName, line := msg.pos.line, msg := ← msg.data.toString } : Err)
   return (s.commandState.env, errs)
 
-/-- The errors of one stage for one mutant. -/
+/-- The errors of one stage for one mutant, and the environment it leaves. -/
 def runStage (env0 : Environment) (st : Stage) (srcs : Std.HashMap String String) (mt : Mutant) :
-    IO (Array Err) := do
+    IO (Array Err × Environment) := do
   let mut env := env0
   let mut failed : Std.HashSet String := {}
   let mut errs := #[]
@@ -86,7 +88,7 @@ def runStage (env0 : Environment) (st : Stage) (srcs : Std.HashMap String String
     env := env'
     unless es.isEmpty do failed := failed.insert m.name
     errs := errs ++ es
-  return errs
+  return (errs, env)
 
 unsafe def main (args : List String) : IO UInt32 := do
   let [path] := args | throw (IO.userError "usage: trust-mutants.lean PLAN")
@@ -94,7 +96,7 @@ unsafe def main (args : List String) : IO UInt32 := do
   let plan : Std.HashMap String (Array Stage) := plans.foldl (fun m p => m.insert p.module p.stages) {}
   initSearchPath (← findSysroot)
   let mut srcs : Std.HashMap String String := {}
-  let mut envs : Std.HashMap (String × Nat) Environment := {}
+  let mut envs : Std.HashMap String Environment := {}
   let stdin ← IO.getStdin
   let out ← IO.getStdout
   repeat
@@ -104,19 +106,23 @@ unsafe def main (args : List String) : IO UInt32 := do
     let some stages := plan[mt.module]? | throw (IO.userError s!"no stages for {mt.module}")
     let t ← now
     let mut errs := #[]
-    for h : i in [0:stages.size] do
-      let st := stages[i]
+    -- The environment the last stage left, on which the next one runs.
+    let mut last : Option Environment := none
+    for st in stages do
       for m in st.modules do
         unless srcs.contains m.name do srcs := srcs.insert m.name (← IO.FS.readFile m.file)
-      let env ← match envs[(mt.module, i)]? with
-        | some env => pure env
-        | none => do
+      let env ← match last, envs[mt.module]? with
+        | some env, _ => pure env
+        | none, some env => pure env
+        | none, none => do
           -- `importModules` clears the flag, so each call must set it again.
           enableInitializersExecution
           let env ← importModules (st.imports.map fun m => { module := m.toName }) {} (trustLevel := 1024) (loadExts := true)
-          envs := envs.insert (mt.module, i) env
+          envs := envs.insert mt.module env
           pure env
-      errs ← runStage env st srcs mt
+      let (es, env') ← runStage env st srcs mt
+      errs := es
+      last := some env'
       unless errs.isEmpty do break
     out.putStrLn (Json.compress (json% {name: $(mt.name), errors: $(errs), secs: $((← now) - t)}))
     out.flush
