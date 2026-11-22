@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Acceptance checks shared by every stage:
 #   1. lake build succeeds;
-#   2. no `sorry` or `admit` in Lean sources;
+#   2. no `sorry` or `admit` in Lean sources outside test/out/;
 #   3. the theorems in test/MiseTest/Axioms.lean use only propext,
 #      Classical.choice and Quot.sound;
 #   4. docs/trusted.md and docs/theorems.typ match the definitions the
@@ -15,7 +15,8 @@ cd "$(dirname "$0")/.."
 
 lake build
 
-if grep -rnwE 'sorry|admit' --include='*.lean' Mise test Main.lean; then
+# test/out/ holds generated copies of the tree, such as trust-mutants'.
+if grep -rnwE 'sorry|admit' --include='*.lean' --exclude-dir=out Mise test Main.lean; then
   echo "check: found sorry/admit" >&2
   exit 1
 fi

@@ -31,8 +31,7 @@ example : g.isSource "main.c" ∧ cc ∈ ran sem g ((build sem g start).edits [(
 
 /-- Ninja does not check an edge's own output as one of its inputs. -/
 example : ¬ Checks (build sem g start) cc "main.o" := by
-  rintro ⟨o, ho, D, hD, hp⟩
-  simp [cc, St.effIns] at ho hD; subst hD; simp at hp
+  simp [Checks, cc, St.effIns]
 
 /-! ### `Correct` (conclusion of `build_correct`, hypothesis of `correct_unique`) -/
 
@@ -69,7 +68,7 @@ this one checks how the two theorems use it. A `Spec` that compared the
 result with itself, `Correct (f st).content (f st).content`, would accept
 `emptyingBuild`, because its targets match the emptied source. -/
 example : ¬ Spec sem g emptyingBuild := fun h =>
-  absurd ((h (.init start_fresh (fun _ => rfl) (fun _ => rfl))).1 "main.c" (by decide))
+  absurd ((h (by reach_init start_fresh)).1 "main.c" (by decide))
     (by decide)
 
 /-! ### `wrapped_run` and `runWrapped` -/
@@ -78,7 +77,8 @@ example : ¬ Spec sem g emptyingBuild := fun h =>
 def edited : St String := (build sem.withCmp g start).edit "main.c" "v2"
 
 theorem edited_reachable : Reachable sem.withCmp g edited :=
-  .edit "main.c" "v2" (.step (.init start_fresh (fun _ => rfl) (fun _ => rfl)) (.head _)) (by decide)
+  .edit "main.c" "v2" (.step (show Reachable sem.withCmp g start by reach_init start_fresh) (.head _))
+    (by decide)
 
 /-- The command writes what `sem` says. -/
 def w : Path → Option String := fun o => some (edited.outVal sem cc o)
@@ -124,13 +124,45 @@ def depSem : Sem String :=
 
 /-! ### `DynOK` (hypothesis of four theorems) -/
 
-/-- A depfile compile may read an undeclared source and an order-only input. -/
+/-- A depfile compile may read an undeclared source and an order-only input.
+The proof builds `FetchesOnly` from its constructors, so it also tests
+`FetchesOnly`; the library lemma `fetchAll_fetchesOnly` would not. -/
 example : two.DynOK depSem := by
   intro e he hd
   simp [two] at he
   rcases he with rfl | rfl | rfl
   · simp [Graph.isDyn, Graph.ruleOf, two] at hd
-  all_goals exact (fetchAll_fetchesOnly _ (by decide)).bind fun _ => .pure _
+  all_goals
+    simp only [depSem, fetchAll]
+    exact .fetch _ _ (by decide) fun _ => .fetch _ _ (by decide) fun _ => .fetch _ _ (by decide) fun _ => .pure _
+
+/-! ### `ran` and `Checks` on more than one edge -/
+
+/-- The sources of `two` hold their own names, written at time 0. -/
+def start2 : St String :=
+  { fs := fun p => if p ∈ two.sources then some (p, 0) else none, log := fun _ => none, clock := 0 }
+
+theorem start2_fresh : start2.Fresh :=
+  ⟨fun p v t h => by simp [start2] at h ⊢; omega, fun _ _ _ h => nomatch h⟩
+
+/-- `Reach.step` may visit any edge of the manifest, not only the first. -/
+example : Reachable depSem two (((start2.step depSem gen).step depSem aO).step depSem bO) :=
+  .step (.step (.step (by reach_init start2_fresh) (by decide)) (by decide)) (by decide)
+
+/-- A first build runs all three edges, in manifest order. -/
+example : ran depSem two start2 = [gen, aO, bO] := by decide
+
+/-- Depfile compiles that read only their `.c` file. -/
+def srcSem : Sem String :=
+  { exec := fun _ ins => [String.join ins]
+    dyn := fun cmd => (fetchAll [srcOf cmd]).bind fun vs => .pure [String.join vs] }
+
+/-- `config.h` is an order-only input of `aO`. A compile that does not read
+it records no dependency on it, so Ninja does not check it. -/
+example : ¬ Checks (build srcSem two start2) aO "config.h" := by
+  have h : (build srcSem two start2).effIns aO "a.o" = some ["a.c", "a.c"] := by decide
+  simp only [aO] at h
+  simp [Checks, aO, h]
 
 /-! ### `ValidOrder` (hypothesis of `any_order`) -/
 

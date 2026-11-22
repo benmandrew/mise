@@ -27,6 +27,7 @@ Run the tests in the Nix shell (`nix develop`, or direnv with `.envrc`), so that
 | `build-fuzz` | The in-process build fuzzer, below. |
 | `parser-fuzz-text`, `parser-fuzz-gen` | The parser fuzzer, below. |
 | `mutants`, `mutants-inproc` | Each mutant in `test/mutants.py` changes one definition in `Mise/Model/Basic.lean`, and the random-graph harness (or the in-process fuzzer) must catch it. |
+| `trust-mutants` | Each mutant in `test/trust-mutants.py` weakens a definition that a statement in `Mise/Theorems.lean` uses, and a test in `test/MiseTest/` must catch it. |
 | `ninja-matrix` | `stage3-diff`, `stage4-hello`, `stage6-props --order 2` and `graph-fuzz` on each supported Ninja release, 1.12.1 and 1.13.2. It also checks that 1.10.2 and 1.11.1 refuse an emitted manifest. |
 | `toml-diff` | The `mise.toml` parser against Python's `tomllib` on random documents. When the Lean parser accepts a document, `tomllib` must read the same value. When only `tomllib` accepts it, the Lean error must say the feature is not supported. |
 | `conf-sandbox` | Trust item 2, on macOS. Every command runs under `sandbox-exec`, which kills it on a read outside its inputs and the toolchain, or a write outside its outputs. |
@@ -35,6 +36,8 @@ Run the tests in the Nix shell (`nix develop`, or direnv with `.envrc`), so that
 | `mtime-faults` | Breaks trust item 5 on purpose and records what Ninja does. It passes or fails nothing, and writes `test/out/mtime-faults/report.txt`. |
 
 `log-old-time` is the one mutant no check catches, because it is equivalent to the model. The log time is compared only with input mtimes, and no input carries the run's own time.
+
+A proof cannot catch a mutant that makes its theorem weaker, because the weaker theorem is still true. So `trust-mutants` replaces every library proof with `sorry` in a copy of the tree, and only the tests can catch a mutant. Its table separates kills that *evaluate*, where `decide` or `#guard` computes a false result, from kills that *elaborate*, where a test stops type-checking. A test can stop type-checking because of its shape alone, such as a constructor that gained an argument. So a test meant to catch a mutant closes its side conditions with `decide`, or with a tactic such as `reach_init` in `test/MiseTest/Reachable.lean`.
 
 ## The random-graph harness
 
@@ -61,6 +64,6 @@ The fuzzers link Ninja's own code and run in `nix develop .#fuzz`, which `test/r
 
 ## Continuous integration
 
-`.github/workflows/ci.yml` runs on every pull request and push to `main`: `check`, `ninja-matrix:quick` on each supported release, and the fast extras. `nightly.yml` runs the heavy harnesses daily, or on demand with `gh workflow run nightly.yml -f jobs=KEY`. Each job's step is `test/run ci.KEY` or `test/run nightly.KEY`, so the registry decides what a job runs. Linux is the main platform. macOS runs the Ninja conformance jobs and the macOS-only harnesses.
+`.github/workflows/ci.yml` runs on every pull request and push to `main`: `check` and `trust-mutants`, `ninja-matrix:quick` on each supported release, and the fast extras. `nightly.yml` runs the heavy harnesses daily, or on demand with `gh workflow run nightly.yml -f jobs=KEY`. Each job's step is `test/run ci.KEY` or `test/run nightly.KEY`, so the registry decides what a job runs. Linux is the main platform. macOS runs the Ninja conformance jobs and the macOS-only harnesses.
 
 The first job of each workflow, `changed`, runs `test/run affected`. It skips a job when none of the job's files has changed since the last commit on which the job succeeded, and `test/run deps KEY` lists those files. GitHub counts a skipped job as passed for a required check.

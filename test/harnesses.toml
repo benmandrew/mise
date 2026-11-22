@@ -94,6 +94,13 @@ paths = ["test/mutants.py"]
 exes = ["mise", "fuzzgen"]
 uses = ["graph-fuzz"]
 
+# The tests in test/MiseTest/, against mutants of the definitions the
+# theorems are stated in, with every library proof replaced by `sorry`.
+[harness.trust-mutants]
+cmd = ["test/trust-mutants.py"]
+time = "2 min"
+lean = ["MiseTest"]
+
 # --- Against other references ------------------------------------------
 
 [harness.toml-diff]
@@ -165,7 +172,7 @@ informational = true
 # --- CI jobs -----------------------------------------------------------
 
 [job.ci.proofs]
-run = ["check"]
+run = ["check", "trust-mutants"]
 
 [job.ci.ninja]
 run = ["ninja-matrix:quick"]
