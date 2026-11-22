@@ -40,6 +40,15 @@ clone and runs `lake build` there. It does not depend on Lean's internal
 elaboration API, so use it when that API changes or a mutant crashes the
 in-process build.
 
+`--generated` adds the mutants that `test/MiseTest/MutantGen.lean`
+generates in the prepared copy, after step 3: mechanical edits at every
+place a trusted definition states a condition, kept when they weaken at
+least one theorem or their effect is unknown (`--all-edits` keeps every
+edit). A generated mutant that gives the same file as an earlier one is
+skipped. A generated edit that breaks the library is "stillborn": it does
+not type-check, so no theorem is stated about it, and it does not fail the
+run.
+
 A mutant is killed when a test fails. The kill is "evaluates" when `decide`
 or `#guard` computed a false result, and "elaborates" when a test no longer
 type-checks: an unknown constructor, a wrong number of arguments, or a proof
@@ -49,7 +58,7 @@ kills reports only the first stage's errors. The results table goes to
 `test/out/trust-mutants/results.md`. The exit status is 1 when a mutant
 survives or is an error.
 
-usage: trust-mutants.py [--via inproc|lake] [-j JOBS] [MUTANT...]
+usage: trust-mutants.py [--via inproc|lake] [-j JOBS] [--generated [--all-edits]] [MUTANT...]
 
 JOBS defaults to the number of CPUs.
 """
@@ -297,20 +306,61 @@ def verdict(errs):
     return "killed", "evaluates" if evaluates else "elaborates", ", ".join(where[:4]) + (" …" if len(where) > 4 else "")
 
 
+# The names of the generated mutants.
+GENERATED = set()
+
+
+def mutate(data, m):
+    """The bytes `data` of mutant `m`'s file with its edit applied: a text
+    replacement for a mutant in `MUTANTS`, a byte range `(start, stop)` for
+    a generated one."""
+    _, _, _, _, old, new = m
+    if isinstance(old, tuple):
+        return data[:old[0]] + new.encode() + data[old[1]:]
+    return data.replace(old.encode(), new.encode())
+
+
+def generate(keep_all):
+    """The mutants of `MiseTest.MutantGen`, run in the prepared and built
+    copy, as `MUTANTS` rows, without those that repeat an earlier mutant."""
+    out = OUT / "generated.json"
+    r = subprocess.run(["lake", "env", "lean", "test/MiseTest/MutantGen.lean"], cwd=TREE,
+                       capture_output=True, text=True, env={**os.environ, "MUTANTS_OUT": str(out)})
+    if r.returncode != 0:
+        sys.exit(f"MutantGen failed:\n{(r.stdout + r.stderr)[-2000:]}")
+    print(r.stdout.strip().splitlines()[-1], flush=True)
+    seen = {(m[2], mutate((TREE / m[2]).read_bytes(), m)) for m in MUTANTS}
+    rows, repeats = [], 0
+    for g in json.loads(out.read_text())["mutants"]:
+        if not (g["keep"] or keep_all):
+            continue
+        m = (g["name"], g["decl"], g["file"], g["what"], (g["start"], g["stop"]), g["text"])
+        key = (m[2], mutate((TREE / m[2]).read_bytes(), m))
+        if key in seen:
+            repeats += 1
+            continue
+        seen.add(key)
+        rows.append(m)
+    print(f"{len(rows)} generated mutants, after {repeats} that repeat another", flush=True)
+    return rows
+
+
 def row(m, errs, secs):
     """The results row of mutant `m`, printed as it finishes."""
     name, defn, _, what, _, _ = m
     v, kind, where = verdict(errs)
+    if v == "error" and name in GENERATED:
+        v = "stillborn"
     print(f"{name}: {v}{f' ({kind})' if kind else ''}; {where}; {secs:.0f}s", flush=True)
     return name, defn, what, v, kind, where
 
 
 def via_lake(m):
     """Build mutant `m` in its own clone of `TREE`; its results row."""
-    name, _, f, _, old, new = m
+    name, _, f, _, _, _ = m
     tree = WORK / name
     clone([TREE], tree)
-    (tree / f).write_text((tree / f).read_text().replace(old, new))
+    (tree / f).write_bytes(mutate((tree / f).read_bytes(), m))
     t = time.time()
     errs = build(tree, staged=True)
     shutil.rmtree(tree)
@@ -392,7 +442,7 @@ class Worker:
                                       stderr=self.log.open("a"), text=True)
             self.seen = set()
         self.seen.add(mod)
-        src = (TREE / m[2]).read_text().replace(m[4], m[5]) if m else None
+        src = mutate((TREE / m[2]).read_bytes(), m).decode() if m else None
         other = []
         try:
             self.p.stdin.write(json.dumps({"name": m[0] if m else "", "module": mod, "src": src}) + "\n")
@@ -452,14 +502,13 @@ def main():
                     help="builds to run at once (default: the number of CPUs)")
     ap.add_argument("--via", choices=["inproc", "lake"], default="inproc",
                     help="build mutants in long-lived Lean processes (default), or with lake build")
+    ap.add_argument("--generated", action="store_true", help="add the mutants of MiseTest.MutantGen")
+    ap.add_argument("--all-edits", action="store_true",
+                    help="with --generated, also run the edits that only strengthen theorems")
     a = ap.parse_args()
-    unknown = set(a.only) - {m[0] for m in MUTANTS}
-    if unknown:
-        sys.exit(f"unknown mutants: {sorted(unknown)}")
-    todo = [m for m in MUTANTS if not a.only or m[0] in a.only]
     start = time.time()
     copy_tree()
-    for name, _, f, _, old, _ in todo:
+    for name, _, f, _, old, _ in MUTANTS:
         c = (TREE / f).read_text().count(old)
         if c != 1:
             sys.exit(f"{name}: the text to replace occurs {c} times in {f}")
@@ -471,6 +520,15 @@ def main():
         for f, line, msg in errs[:5]:
             print(f"  {f}:{line}: {msg.strip()[:300]}")
         sys.exit("the unmutated tests fail; mutant results would mean nothing")
+    todo = list(MUTANTS)
+    if a.generated:
+        gen = generate(a.all_edits)
+        GENERATED.update(m[0] for m in gen)
+        todo += gen
+    unknown = set(a.only) - {m[0] for m in todo}
+    if unknown:
+        sys.exit(f"unknown mutants: {sorted(unknown)}")
+    todo = [m for m in todo if not a.only or m[0] in a.only]
 
     shutil.rmtree(WORK, ignore_errors=True)
     WORK.mkdir()
@@ -489,15 +547,16 @@ def main():
     rows = [done[m[0]] for m in todo]
 
     k = sum(r[3] == "killed" for r in rows)
-    lines = [f"{k} of {len(rows)} mutants killed, {time.time() - start:.0f} s, via {a.via}.", "",
+    sb = sum(r[3] == "stillborn" for r in rows)
+    lines = [f"{k} of {len(rows) - sb} mutants killed ({sb} stillborn), {time.time() - start:.0f} s, via {a.via}.", "",
              "| Mutant | Definition | Change | Verdict | Kill | Where |", "|---|---|---|---|---|---|"]
-    lines += [f"| `{r[0]}` | `{r[1]}` | {r[2]} | {r[3]} | {r[4]} | {r[5]} |" for r in rows]
+    lines += [f"| `{r[0]}` | `{r[1]}` | {r[2].replace('|', chr(92) + '|')} | {r[3]} | {r[4]} | {r[5]} |" for r in rows]
     report = "\n".join(lines) + "\n"
     OUT.mkdir(parents=True, exist_ok=True)
     (OUT / "results.md").write_text(report)
     print()
     print(report)
-    return 0 if k == len(rows) else 1
+    return 0 if k + sb == len(rows) else 1
 
 
 if __name__ == "__main__":

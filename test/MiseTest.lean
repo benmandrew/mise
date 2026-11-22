@@ -11,3 +11,4 @@ import MiseTest.Toml
 import MiseTest.Bytes
 import MiseTest.Axioms
 import MiseTest.Gloss
+import MiseTest.TrustWalk
