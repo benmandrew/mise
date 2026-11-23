@@ -220,4 +220,225 @@ build gen: phony
 default a$ b.o
 " := by decide
 
+/-! ## Tests that kill generated mutants
+
+`test/trust-mutants.py` generates mutants of the trusted definitions, and
+its triage turns each survivor into a test on an input where the mutant and
+the definition differ. These are a smallest set of those tests that kills
+every such survivor, each checked by hand against the behaviour it pins.
+Many inputs use the empty string, which the generator draws first. -/
+
+/-! ### Well-formed manifests (`Manifest.WellFormed`, trust item 1) -/
+
+#guard !(Stmt.ok { rules := ["a"] }
+  (Stmt.rule { name := "a", bindings := [("command", [Seg.var "a"])] }))
+
+#guard !(Stmt.ok { } (Stmt.rule { name := "a", bindings := [("command", [])] }))
+
+#guard !(Stmt.ok { } (Stmt.binding "rule" []))
+
+#guard !(Stmt.ok { } (Stmt.binding "a" [Seg.lit "a", Seg.lit ""]))
+
+#guard !(Stmt.ok { rules := ["a"] } (Stmt.edge { outs := ["a"], implicitOuts := ["a"], rule := "a" }))
+
+#guard !(Stmt.ok { } (Stmt.rule { name := "", bindings := [("command", [Seg.lit "a"])] }))
+
+#guard !(Stmt.ok { } (Stmt.rule { name := "a", bindings := [("command", [Seg.lit ""])] }))
+
+#guard !(Stmt.ok { }
+  (Stmt.rule { name := "a", bindings := [("a", []), ("command", [Seg.var "a"])] }))
+
+#guard !(Stmt.ok { } (Stmt.binding "" []))
+
+#guard !(Stmt.ok { rules := [""] } (Stmt.edge { outs := ["a"], rule := "" }))
+
+#guard !(Stmt.ok { } (Stmt.edge { outs := ["a"], rule := "a" }))
+
+#guard !(Stmt.ok { rules := ["a"] } (Stmt.edge { outs := [], rule := "a" }))
+
+#guard !(Stmt.ok { rules := ["a"] } (Stmt.edge { outs := [""], rule := "a" }))
+
+#guard !(Stmt.ok { outs := ["phony"] } (Stmt.edge { outs := ["phony"], rule := "phony" }))
+
+#guard !(Stmt.ok { } (Stmt.edge { outs := ["a"], rule := "phony", bindings := [("", [])] }))
+
+#guard !(Stmt.ok { rules := ["a"] }
+  (Stmt.edge { outs := ["a"], rule := "a", bindings := [("pool", [])] }))
+
+#guard !(Stmt.ok { } (Stmt.edge { outs := ["phony"], rule := "phony", ins := ["phony"] }))
+
+#guard !(Stmt.ok { } (Stmt.default []))
+
+#guard !(Stmt.ok { known := [""] } (Stmt.default [""]))
+
+#guard !(Stmt.ok { } (Stmt.binding "dyndep" []))
+
+#guard !(canonical [])
+
+#guard !(canonical ['.', '.'])
+
+#guard canonical ['/', '.', 'a']
+
+#guard canonical ['.', 'a']
+
+#guard !(canonical ['/', '.'])
+
+#guard !(litChar '\x0d')
+
+#guard !(noAdjLits [Seg.var "", Seg.lit "", Seg.lit ""])
+
+#guard !(nodupB ["", "a", "a"])
+
+#guard !(pathChar '\x00')
+
+#guard !(validBinding ("a", [Seg.var "a", Seg.var ""]))
+
+#guard !(validEval [Seg.lit "a", Seg.lit "a"])
+
+#guard !(validIdent ",")
+
+#guard !(validLit "\n")
+
+#guard !(validPath "a/")
+
+/-! ### The printer -/
+
+#guard edgeLine { outs := [], implicitOuts := ["", ""], rule := "" } == ['b', 'u', 'i', 'l', 'd', ' ', '|', ' ', ' ', ':', ' ']
+
+/-! ### Variable evaluation and `Manifest.medges` -/
+
+-- An acyclic chain of rule bindings evaluates to the end. Fuel of the
+-- binding count, one less than `EdgeInfo.binding` gives, is enough for any
+-- acyclic rule, so no test pins the extra unit: the two differ only on a
+-- cyclic rule, which Ninja rejects. Its mutant is a known survivor.
+#guard EdgeInfo.binding []
+  { edge := { outs := [], rule := "" },
+    rule := { name := "cc", bindings := [("command", [Seg.var "depfile"]), ("depfile", [Seg.lit "a"])] },
+    own := none }
+  "command" == "a"
+
+#guard Ctx.outs (Ctx.add { } (Stmt.edge { outs := [""], rule := "" })) == [""]
+
+#guard Ctx.outs (Ctx.add { outs := [""] } (Stmt.edge { outs := [], rule := "" })) == [""]
+
+#guard Edge.allPaths { outs := [], rule := "", implicitIns := [""], orderOnly := [""] } == ["", ""]
+
+#guard EdgeInfo.command [("", ""), ("command", "a")]
+  { edge := { outs := [], rule := "" }, rule := { name := "", bindings := [] }, own := some [] } == "a"
+
+#guard EdgeInfo.isDyn [("", ""), ("deps", "a")]
+  { edge := { outs := [], rule := "" }, rule := { name := "", bindings := [] }, own := none }
+
+#guard EdgeInfo.lookup []
+  { edge := { outs := [], rule := "" }, rule := { name := "", bindings := [] }, own := some [] } 0 "in_newline" == ""
+
+#guard EdgeInfo.lookup []
+  { edge := { outs := [], rule := "", ins := ["", ""] }, rule := { name := "", bindings := [] }, own := some [] } 0
+  "in_newline" == "\n"
+
+#guard EdgeInfo.lookup []
+  { edge := { outs := ["", ""], rule := "" }, rule := { name := "", bindings := [] }, own := none } 0 "out" == " "
+
+#guard EdgeInfo.lookup [("a", ""), (",", "a")]
+  { edge := { outs := [], rule := "" }, rule := { name := "", bindings := [("", [Seg.var ","])] },
+    own := none }
+  1 "" == "a"
+
+#guard Elab.file
+  (Elab.step { file := [("", ""), ("a", "a")] } (Stmt.binding "" [Seg.var "a"])) == [("", "a"), ("", ""), ("a", "a")]
+
+#guard Elab.file
+  (Elab.step { } (Stmt.binding "" [Seg.var "", Seg.lit "a"])) == [("", "a")]
+
+#guard (Elab.step { file := [("", ""), ("a", "a")] }
+  (.edge { outs := [], rule := "", bindings := [("", [.var "a"])] })).edges[0]!.own == some [("", "a")]
+
+#guard Manifest.medges
+  {
+    stmts :=
+      [Stmt.binding "restat" [Seg.lit "a"], Stmt.edge { outs := [], rule := "" },
+        Stmt.binding "" []] } == [{ outs := [], ins := [], oo := [], cmd := "", dyn := false, restat := true }]
+
+#guard EdgeInfo.own (edgeInfo [] [] { outs := [], rule := "" }) == none
+
+#guard EdgeInfo.own (edgeInfo [] [] { outs := [], rule := "", bindings := [("", []), ("", [])] }) == some [("", ""), ("", "")]
+
+#guard EdgeInfo.own
+  (edgeInfo [] []
+    { outs := [], rule := "", bindings := [("", [Seg.lit "", Seg.lit "a"])] }) == some [("", "a")]
+
+#guard shellSafe '_'
+
+#guard shellSafe '+'
+
+/-! ### DSL graphs -/
+
+#guard GEdge.allIns { rule := "", outs := [], implicitIns := [""] } == [""]
+
+#guard GEdge.allIns { rule := "", outs := [], ins := [""] } == [""]
+
+#guard GEdge.allOuts { rule := "", outs := [""], implicitOuts := [""] } == ["", ""]
+
+#guard GEdge.look { rule := "", outs := ["", ""] } "out" == " "
+
+#guard !(Graph.isDyn { } { rule := "", outs := [] })
+
+#guard findOut (fun (a : Nat) => if a = 2 then [""] else []) "" [0, 0, 2] == some (2, 2)
+
+/-! ### The model's state and edges -/
+
+#guard MEdge.reads { outs := [], ins := [""], oo := [""], cmd := "" } == ["", ""]
+
+#guard St.fs
+  (St.edits
+    { fs := fun (_ : Path) => none, log := fun (_ : Path) => none, clock := 0 }
+    [("", 0), ("", 0)])
+  "" == some (0, 2)
+
+#guard !(St.outDirty (V := Nat)
+  { fs := fun (_ : Path) => some (0, 0), log := fun (_ : Path) => some ("", 0), clock := 0 }
+  { outs := [], ins := [], cmd := "" } "")
+
+#guard St.outDirty (V := Nat)
+  { fs := fun (_ : Path) => some (0, 0), log := fun (_ : Path) => some ("", 0), clock := 0 }
+  { outs := [], ins := [], cmd := "a" } ""
+
+#guard St.outDirty (V := Nat)
+  { fs := fun (a : Path) => if a = "" then some (0, 1) else some (0, 0),
+    log := fun (_ : Path) => some ("", 1), clock := 0 }
+  { outs := [], ins := ["a", ""], cmd := "" } "a"
+
+#guard command [] (fun (_ : Path) => some 0) 0 (fun (_ : Path) => none) "" == none
+
+/-! ### The command wrapper (`script`, `wrapped_run`) -/
+
+#guard aside "a" == "a.mise-old"
+
+#guard mvF "" "" (fun (_ : Path) => some (0, 0)) "a" == some (0, 0)
+
+#guard !(Prod.snd (α := Files Nat)
+  (script true [""] (fun (_ : Path) => none) true 0 fun (_ : Path) => some (0, 0)))
+
+#guard Prod.fst
+  (script false [""] (fun (_ : Path) => some 2) true 1 fun (_ : Path) => some (2, 0))
+  "" == some (2, 1)
+
+#guard Prod.fst
+  (script true ["", "a"] (fun (_ : Path) => some 0) true 0 fun (_ : Path) => none) "" == some (0, 0)
+
+#guard !(Prod.snd (α := Files Nat)
+  (script false [] (fun (_ : Path) => none) false 0 fun (_ : Path) => none))
+
+#guard settle true true (fun (a : Path) => if a = ".mise-old" then some (0, 0) else none) "" ".mise-old" == none
+
+#guard settle true false (fun (_ : Path) => some (0, 0)) "" "" == some (0, 0)
+
+#guard settle true true (fun (a : Path) => if a = "" then some (2, 1) else some (2, 0)) "" "" == some (2, 0)
+
+#guard settle false false (fun (a : Path) => if a = "" then some (0, 0) else none) "" "" == none
+
+#guard settle true true (fun (a : Path) => if a = "" then none else some (0, 0)) "" "" == none
+
+#guard stash (fun (a : Path) => if a = "" then none else some (0, 0)) "" ".mise-old" == none
+
 end MiseTest.Boundary
