@@ -95,6 +95,58 @@ example : Reachable sem.withCmp g (edited.runWrapped sem cc w true) :=
 example : (edited.runWrapped sem cc w true).content "main.o" = "compiled v2" ∧
     (edited.runWrapped sem cc w true).dirty cc = false := by decide
 
+/-- A failed wrapped run leaves the state as it was: the old output is
+back, no `.mise-old` file is left, and Ninja writes no log entry and the
+clock does not move. This is the first half of `wrapped_run`. -/
+example : (edited.runWrapped sem cc w false).fs "main.o" = edited.fs "main.o" ∧
+    (edited.runWrapped sem cc w false).fs (aside "main.o") = none ∧
+    (edited.runWrapped sem cc w false).log "main.o" = edited.log "main.o" ∧
+    (edited.runWrapped sem cc w false).clock = edited.clock := by decide
+
+/-- `g` after a full build under `cmp`: `main.o` holds `compiled v1`. -/
+def built : St String := build sem.withCmp g start
+
+/-- A command without `restat` that writes the same contents again still
+gives its output the next tick as mtime: the wrapper keeps the new file,
+and compares with `cmp` only for a `restat` rule. -/
+example : (built.runWrapped sem cc (fun _ => some "compiled v1") true).fs "main.o" =
+    some ("compiled v1", built.clock + 1) := by decide
+
+/-- Only a `restat` edge leaves an unchanged output untouched (`kept`). -/
+example : built.kept sem.withCmp cc "main.o" = false ∧
+    built.kept sem.withCmp { cc with restat := true } "main.o" = true := by decide
+
+/-! ## A command with two outputs -/
+
+/-- The first output holds `1 ` and the second `2 ` before each input's
+contents. -/
+def twoOut : Sem String :=
+  { exec := fun _ ins => ins.map ("1 " ++ ·) ++ ins.map ("2 " ++ ·), dyn := fun _ => .pure [] }
+
+/-- One edge that writes `a` and `b` from `x`. -/
+def pair : MEdge := { outs := ["a", "b"], ins := ["x"], cmd := "gen x" }
+
+/-- `x` holds `v`, written at time 0, and nothing else exists. -/
+def pairStart : St String :=
+  { fs := fun p => if p = "x" then some ("v", 0) else none, log := fun _ => none, clock := 0 }
+
+/-- Each output gets its own value from the command (`cmdTask`, `outVal`). -/
+example : pairStart.outVal twoOut pair "a" = "1 v" ∧ pairStart.outVal twoOut pair "b" = "2 v" := by decide
+
+/-- A wrapped run writes every output, not only the first. -/
+example : (pairStart.runWrapped twoOut pair (fun o => some (pairStart.outVal twoOut pair o)) true).fs "b" =
+    some ("2 v", 1) := by decide
+
+/-! ## Top-level variables in a rule -/
+
+-- A rule reads top-level variables: `cflags` in its command and `d` in
+-- `deps`. The model evaluates both in the final file scope, as Ninja does,
+-- including bindings older than the newest one.
+#guard Manifest.medges ⟨[.binding "d" [.lit "gcc"], .binding "cflags" [.lit "-O2"], .binding "x" [.lit "1"],
+    .rule { name := "cc", bindings := [("command", [.lit "cc ", .var "cflags"]), ("deps", [.var "d"])] },
+    .edge { outs := ["a.o"], rule := "cc" }]⟩ ==
+  [{ outs := ["a.o"], ins := [], oo := [], cmd := "cc -O2", dyn := true, restat := false }]
+
 /-! ## A depfile graph -/
 
 /-- A generator writes `config.h`. Two depfile compiles may read it: it is an
