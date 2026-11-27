@@ -169,7 +169,7 @@ theorem emitEdge_ok (c : Ctx) (names : List String) (srcs : List Path) (e : GEdg
       have h := this.1.2
       simp only [reserved, List.contains_append, Bool.or_eq_false_iff] at h
       exact h.2
-    simp only [validBinding, this.1.1, hpt, Bool.true_and, Bool.not_false, Bool.and_true, litVal]
+    simp only [validBinding, this.1.1, hpt, Bool.true_and, litVal]
     split
     · simp [validEval, noAdjLits]
     · rename_i hv
