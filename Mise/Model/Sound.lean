@@ -15,12 +15,19 @@ set_option linter.unusedSectionVars false
 namespace Mise.Model
 open Mise Mise.Syntax Mise.Frontend
 
-variable {V : Type} [Inhabited V] (sem : Sem V)
+variable {V : Type}
 
-omit [Inhabited V] in
 theorem fetchAll_deps (R : Store Path V) : ∀ ks : List Path, (fetchAll ks : Task Path V (List V)).deps R = ks
   | [] => rfl
   | k :: ks => by simp [fetchAll, Task.deps, fetchAll_deps R ks]
+
+theorem fetchAll_run (R : Store Path V) : ∀ ks : List Path, (fetchAll ks : Task Path V (List V)).run R = ks.map R
+  | [] => rfl
+  | k :: ks => by simp [fetchAll, Task.run, fetchAll_run R ks]
+
+theorem outs_toMEdge (file : Scope) : (MEdge.outs ∘ toMEdge file) = fun c => c.edge.allOuts := rfl
+
+variable [Inhabited V] (sem : Sem V)
 
 theorem any_congr {α : Type} {l : List α} {f g : α → Bool} (h : ∀ a ∈ l, f a = g a) : l.any f = l.any g := by
   induction l with
@@ -562,11 +569,6 @@ theorem fetched_up_to_date {pre post : List MEdge} {e : MEdge} (hs : Sched (pre 
 
 /-! ## Correctness -/
 
-omit [Inhabited V] in
-theorem fetchAll_run (R : Store Path V) : ∀ ks : List Path, (fetchAll ks : Task Path V (List V)).run R = ks.map R
-  | [] => rfl
-  | k :: ks => by simp [fetchAll, Task.run, fetchAll_run R ks]
-
 theorem outTask_run (R : Store Path V) (t : Task Path V (List V)) (i : Nat) :
     (outTask t i).run R = (t.run R).getD i default := by
   simp [outTask]
@@ -645,9 +647,6 @@ theorem consistent_of_correct {es : List MEdge} {st : St V} {S : Store Path V} (
   have := hc.2 o (by simp [specOf, hi])
   simp only [specOf, hi, outTask_run] at this
   exact ⟨this, hd e he o ho⟩
-
-omit [Inhabited V] in
-theorem outs_toMEdge (file : Scope) : (MEdge.outs ∘ toMEdge file) = fun c => c.edge.allOuts := rfl
 
 theorem denote_eq (m : Manifest) : denote sem m = specOf sem m.medges := by
   unfold denote specOf Manifest.medges

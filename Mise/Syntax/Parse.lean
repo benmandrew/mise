@@ -50,12 +50,12 @@ theorem spanWhile_length (p : Char → Bool) (l : List Char) :
     (spanWhile p l).2.length ≤ l.length := by
   induction l with
   | nil => simp [spanWhile]
-  | cons c r ih => unfold spanWhile; split <;> simp <;> omega
+  | cons c r ih => unfold spanWhile; split <;> simp; omega
 
 theorem eatSpaces_length (l : List Char) : (eatSpaces l).length ≤ l.length := by
   induction l with
   | nil => simp [eatSpaces]
-  | cons c r ih => unfold eatSpaces; split <;> simp <;> omega
+  | cons c r ih => unfold eatSpaces; split <;> simp; omega
 
 theorem readPath_length : ∀ {l p r : List Char}, readPath l = some (p, r) →
     p.length + r.length ≤ l.length

@@ -20,7 +20,10 @@ changes no other edge's dirtiness.
 namespace Mise.Model
 open Mise Mise.Syntax Mise.Frontend
 
-variable {V : Type} [Inhabited V] (sem : Sem V)
+variable {V : Type}
+
+section
+variable [Inhabited V] (sem : Sem V)
 
 /-! ## At most once -/
 
@@ -64,11 +67,12 @@ theorem trace_split : ∀ (l : List MEdge) (st : St V) {e : MEdge}, e ∈ (build
       obtain ⟨pre, post, rfl, h2⟩ := trace_split l _ h
       exact ⟨a :: pre, post, rfl, h2⟩
 
+end
+
 /-! ## Why an output is dirty -/
 
 namespace St
 
-omit [Inhabited V] in
 theorem exists_of_lt_newest (st : St V) {b : Nat} : ∀ {ps : List Path}, b < st.newest ps →
     ∃ p ∈ ps, b < st.mtime p
   | [], h => by simp [newest] at h
@@ -79,7 +83,6 @@ theorem exists_of_lt_newest (st : St V) {b : Nat} : ∀ {ps : List Path}, b < st
       obtain ⟨p, hp, h2⟩ := exists_of_lt_newest st this
       exact ⟨p, by simp [hp], h2⟩
 
-omit [Inhabited V] in
 /-- Ninja's reasons for a dirty output: the output, its log entry or its deps
 entry is missing, or the logged command differs, or an input is newer than
 the log entry, or, without `restat`, newer than the output. -/
@@ -115,15 +118,12 @@ theorem outDirty_cause {st : St V} {e : MEdge} {o : Path} (h : st.outDirty e o =
 def Track (st s : St V) (W : Path → Prop) : Prop :=
   st.clock ≤ s.clock ∧ ∀ p, s.fs p = st.fs p ∨ (st.clock < s.mtime p ∧ W p)
 
-omit [Inhabited V] in
 theorem Track.refl (st : St V) (W : Path → Prop) : Track st st W := ⟨Nat.le_refl _, fun _ => .inl rfl⟩
 
-omit [Inhabited V] in
 theorem Track.mono {st s : St V} {W W' : Path → Prop} (h : Track st s W) (hw : ∀ p, W p → W' p) :
     Track st s W' :=
   ⟨h.1, fun p => (h.2 p).imp_right fun ⟨a, b⟩ => ⟨a, hw p b⟩⟩
 
-omit [Inhabited V] in
 theorem Track.edit {st s : St V} {W : Path → Prop} (h : Track st s W) (p : Path) (v : V) :
     Track st (s.edit p v) fun q => W q ∨ q = p := by
   refine ⟨Nat.le_succ_of_le h.1, fun q => ?_⟩
@@ -138,7 +138,6 @@ theorem Track.edit {st s : St V} {W : Path → Prop} (h : Track st s W) (p : Pat
     · exact .inl (hfs.trans h1)
     · exact .inr ⟨by simp only [mtime, hfs]; exact h1, .inl h2⟩
 
-omit [Inhabited V] in
 theorem Track.edits {st : St V} : ∀ (E : List (Path × V)) {s : St V} {W : Path → Prop}, Track st s W →
     Track st (s.edits E) fun q => W q ∨ q ∈ E.map (·.1)
   | [], _, _, h => h.mono fun _ hp => .inl hp
@@ -148,6 +147,20 @@ theorem Track.edits {st : St V} : ∀ (E : List (Path × V)) {s : St V} {W : Pat
       · exact .inl hq
       · exact .inr (.inl hq)
       · exact .inr (.inr hq)
+
+end St
+
+theorem edits_other {st : St V} : ∀ (E : List (Path × V)) {p : Path}, (∀ pv ∈ E, pv.1 ≠ p) →
+    (st.edits E).fs p = st.fs p ∧ (st.edits E).log p = st.log p ∧ (st.edits E).deps p = st.deps p
+  | [], _, _ => ⟨rfl, rfl, rfl⟩
+  | (q, v) :: E, p, h => by
+    have h1 := edits_other (st := st.edit q v) E fun pv hpv => h pv (by simp [hpv])
+    have hq : p ≠ q := fun h' => h (q, v) (by simp) h'.symm
+    exact ⟨h1.1.trans (by simp [St.edit, hq]), h1.2.1, h1.2.2⟩
+
+variable [Inhabited V] (sem : Sem V)
+
+namespace St
 
 theorem Track.run {st s : St V} {W : Path → Prop} (h : Track st s W) (e : MEdge) :
     Track st (s.run sem e) fun q => W q ∨ q ∈ e.outs := by
@@ -185,15 +198,6 @@ theorem St.Track.build {st : St V} : ∀ (l : List MEdge) {s : St V} {W : Path �
     · exact .inr ⟨e, by simp [hd], ho⟩
     · refine .inr ⟨e', ?_, ho⟩
       split <;> simp [he']
-
-omit [Inhabited V] in
-theorem edits_other {st : St V} : ∀ (E : List (Path × V)) {p : Path}, (∀ pv ∈ E, pv.1 ≠ p) →
-    (st.edits E).fs p = st.fs p ∧ (st.edits E).log p = st.log p ∧ (st.edits E).deps p = st.deps p
-  | [], _, _ => ⟨rfl, rfl, rfl⟩
-  | (q, v) :: E, p, h => by
-    have h1 := edits_other (st := st.edit q v) E fun pv hpv => h pv (by simp [hpv])
-    have hq : p ≠ q := fun h' => h (q, v) (by simp) h'.symm
-    exact ⟨h1.1.trans (by simp [St.edit, hq]), h1.2.1, h1.2.2⟩
 
 /-- No edge before `e` in a schedule shares an output with it. -/
 theorem Sched.before {e : MEdge} {post : List MEdge} : ∀ {pre : List MEdge}, Sched (pre ++ e :: post) →

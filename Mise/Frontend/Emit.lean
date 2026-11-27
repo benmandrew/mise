@@ -594,11 +594,11 @@ theorem outs_emit (R : List Rule) :
     ((fun c : EdgeInfo => c.edge.allOuts) ∘ edgeInfo R emitFile ∘ emitEdge) = GEdge.allOuts := by
   funext e; rfl
 
-variable {V : Type} [Inhabited V]
+variable {V : Type}
 
 /-- **Headline.** Reading the emitted manifest through the Ninja model gives
 the graph's own meaning. -/
-theorem denote_emit (sem : Sem V) (g : Graph) (hg : g.Valid) :
+theorem denote_emit [Inhabited V] (sem : Sem V) (g : Graph) (hg : g.Valid) :
     denote sem (emit g) = g.spec sem := by
   have hfile := (elab_emit g).1
   have hedges := cmdEdges_emit g hg
@@ -617,14 +617,12 @@ theorem denote_emit (sem : Sem V) (g : Graph) (hg : g.Valid) :
 
 /-! ## Acyclicity -/
 
-omit [Inhabited V] in
 theorem fetchAll_fetchesOnly {K : Type} {P : K → Prop} :
     ∀ (ks : List K), (∀ k ∈ ks, P k) → (fetchAll ks : Task K V (List V)).FetchesOnly P
   | [], _ => .pure _
   | k :: ks, h => .fetch k _ (h k (by simp)) fun _ =>
       (fetchAll_fetchesOnly ks fun j hj => h j (by simp [hj])).bind fun _ => .pure _
 
-omit [Inhabited V] in
 /-- A command's task fetches only inputs, or for a depfile command only what
 its bound allows. -/
 theorem cmdTask_fetchesOnly {P : Path → Prop} (sem : Sem V) (dyn : Bool) (cmd : String) (ins : List Path)
@@ -634,6 +632,8 @@ theorem cmdTask_fetchesOnly {P : Path → Prop} (sem : Sem V) (dyn : Bool) (cmd 
   cases dyn
   · exact (fetchAll_fetchesOnly ins (hs rfl)).bind fun _ => .pure _
   · exact hd rfl
+
+variable [Inhabited V]
 
 theorem outTask_fetchesOnly {P : Path → Prop} {t : Task Path V (List V)} (h : t.FetchesOnly P) (i : Nat) :
     (outTask t i).FetchesOnly P :=

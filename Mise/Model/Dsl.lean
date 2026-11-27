@@ -68,9 +68,11 @@ theorem sched_emit (g : Graph) (hg : g.Valid) : Sched (emit g).medges := by
   rw [medges_emit g hg]
   exact sched_of_edgesOK g.cmd g.isDyn g.isRestat [] g.edges (Graph.check_parts hg).2.2.1
 
-variable {V : Type} [Inhabited V] (sem : Sem V)
+variable {V : Type}
 
-omit [Inhabited V] in
+section
+variable (sem : Sem V)
+
 /-- The static-ancestor condition holds for the emitted manifest when it
 holds for the graph. -/
 theorem reads_emit (g : Graph) (hg : g.Valid) (hd : g.DynOK sem) : Reads sem (emit g).medges := by
@@ -84,6 +86,14 @@ theorem reads_emit (g : Graph) (hg : g.Valid) (hd : g.DynOK sem) : Reads sem (em
     simp only [Graph.isSource, Option.isNone_iff_eq_none] at hk
     exact findOut_none_iff hk e'' he'' hko
   · exact .inr (by simpa only [MEdge.reads, gEdge, GEdge.allIns, GEdge.inputs, List.append_assoc] using hk)
+
+/-- With no depfile rules, the condition on depfile commands holds. -/
+theorem dynOK_static (g : Graph) (h : ∀ e ∈ g.edges, g.isDyn e = false) : g.DynOK sem :=
+  fun e he hd => by rw [h e he] at hd; cases hd
+
+end
+
+variable [Inhabited V] (sem : Sem V)
 
 /-- **End to end.** After any history of source edits and builds from empty
 logs, running the model of Ninja on the emitted manifest gives a clean
@@ -106,10 +116,5 @@ theorem source_emit (g : Graph) (hg : g.Valid) {k : Path} (hk : g.isSource k = t
   obtain ⟨e', he', rfl⟩ := List.mem_map.mp he
   simp only [Graph.isSource, Option.isNone_iff_eq_none] at hk
   exact findOut_none_iff hk e' he' hko
-
-omit [Inhabited V] in
-/-- With no depfile rules, the condition on depfile commands holds. -/
-theorem dynOK_static (g : Graph) (h : ∀ e ∈ g.edges, g.isDyn e = false) : g.DynOK sem :=
-  fun e he hd => by rw [h e he] at hd; cases hd
 
 end Mise.Model

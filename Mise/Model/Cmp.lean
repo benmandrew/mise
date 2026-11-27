@@ -33,7 +33,10 @@ that the script, `cmp`, `mv` and `rm` behave as `script` says.
 namespace Mise.Model
 open Mise Mise.Syntax Mise.Frontend
 
-variable {V : Type} [DecidableEq V]
+variable {V : Type}
+
+section
+variable [DecidableEq V]
 
 /-- The files after the wrapper runs a command with outputs `outs` at time
 `t`. `r` is what the command wrote to each output, or `none` when it failed
@@ -167,12 +170,13 @@ def script (cmp : Bool) (outs : List Path) (w : Path → Option V) (ok : Bool) (
   let s := ok && outs.all fun f => (fs₂ f).isSome
   (outs.foldl (settle cmp s) fs₂, s)
 
+end
+
 /-! ### Each loop acts on one output and its `.mise-old` file at a time -/
 
 section Loops
 variable {step : Files V → Path → Files V}
 
-omit [DecidableEq V] in
 theorem foldl_other (h1 : ∀ fs f p, p ≠ f → p ≠ aside f → step fs f p = fs p) :
     ∀ (outs : List Path) (fs : Files V) (p : Path), (∀ f ∈ outs, p ≠ f ∧ p ≠ aside f) →
       outs.foldl step fs p = fs p
@@ -181,7 +185,6 @@ theorem foldl_other (h1 : ∀ fs f p, p ≠ f → p ≠ aside f → step fs f p 
     rw [List.foldl_cons, foldl_other h1 outs _ p fun g hg => hp g (by simp [hg])]
     exact h1 fs f p (hp f (by simp)).1 (hp f (by simp)).2
 
-omit [DecidableEq V] in
 theorem foldl_at (h1 : ∀ fs f p, p ≠ f → p ≠ aside f → step fs f p = fs p)
     (h2 : ∀ fs fs' f, fs f = fs' f → fs (aside f) = fs' (aside f) →
       ∀ p, (p = f ∨ p = aside f) → step fs f p = step fs' f p) :
@@ -212,24 +215,23 @@ theorem aside_ne (f : Path) : f ≠ aside f := by
   have := congrArg String.length h
   simp [aside, String.length_append] at this
 
-omit [DecidableEq V] in
 theorem stash_other (fs : Files V) (f p : Path) (h1 : p ≠ f) (h2 : p ≠ aside f) : stash fs f p = fs p := by
   unfold stash
   by_cases ha : (fs f).isSome
   · simp [ha, mvF, h1, h2]
   · by_cases hb : (fs (aside f)).isSome <;> simp [ha, hb, rmF, h2]
 
-omit [DecidableEq V] in
 theorem stash_at (fs : Files V) (f : Path) : stash fs f f = none ∧ stash fs f (aside f) = fs f := by
   have hne := aside_ne f
   cases hf : fs f <;> cases hg : fs (aside f) <;> simp [stash, mvF, rmF, hf, hg, hne]
 
-omit [DecidableEq V] in
 theorem stash_local (fs fs' : Files V) (f : Path) (h1 : fs f = fs' f) (h2 : fs (aside f) = fs' (aside f))
     (p : Path) (hp : p = f ∨ p = aside f) : stash fs f p = stash fs' f p := by
   rcases hp with rfl | rfl
   · rw [(stash_at fs p).1, (stash_at fs' p).1]
   · rw [(stash_at fs f).2, (stash_at fs' f).2, h1]
+
+variable [DecidableEq V]
 
 theorem ite_app {α β : Type} (c : Prop) [Decidable c] (f g : α → β) (a : α) :
     (if c then f else g) a = if c then f a else g a := by

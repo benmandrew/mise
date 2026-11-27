@@ -285,7 +285,7 @@
 
 #file-heading("Mise/Model/Sound.lean")
 
-#def-head("Model.Reach", "def:Mise.Model.Reach", "Mise/Model/Sound.lean", 729, 738, "https://github.com/benmandrew/mise/blob/main/Mise/Model/Sound.lean#L729-L738")[
+#def-head("Model.Reach", "def:Mise.Model.Reach", "Mise/Model/Sound.lean", 728, 737, "https://github.com/benmandrew/mise/blob/main/Mise/Model/Sound.lean#L728-L737")[
 #"The states reachable from a start state by source edits and edge visits, in any order. The start state has empty build and deps logs, and every mtime and log time in it is at most its clock (";#raw("St.Fresh");#"). An edit changes a path that no edge in ";#raw("es");#" writes. A visit to an edge in ";#raw("es");#" runs it if it is dirty and otherwise changes nothing (";#raw("St.step");#"). Interrupted builds, builds of some targets, and full builds are all sequences of steps.";
 ]
 #raw(lang: "lean", block: true, "inductive Reach (es : List MEdge) : St V → Prop\n  | init {st : St V} : st.Fresh → (∀ p, st.log p = none) → (∀ p, st.deps p = none) → Reach es st\n  | edit {st : St V} (p : Path) (v : V) : Reach es st → (∀ e ∈ es, p ∉ e.outs) → Reach es (st.edit p v)\n  | step {st : St V} {e : MEdge} : Reach es st → e ∈ es → Reach es (st.step sem e)")
