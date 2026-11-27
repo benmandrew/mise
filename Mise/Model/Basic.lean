@@ -33,10 +33,15 @@ structure MEdge where
   /-- All outputs, explicit and implicit.
   Gloss: the outputs of {self} -/
   outs : List Path
+  /-- The explicit and implicit inputs: they count for dirtiness, and a static command reads them. -/
   ins : List Path
+  /-- The order-only inputs: Ninja builds them first, but they do not count for dirtiness. -/
   oo : List Path := []
+  /-- The evaluated command, as Ninja records it in the build log. -/
   cmd : String
+  /-- Whether the edge has a depfile, so that the command may also read paths outside `ins`, and Ninja reads them from the deps log. -/
   dyn : Bool := false
+  /-- Whether the edge has `restat`, so that the command may leave an output unchanged and Ninja then skips dependents on its account. -/
   restat : Bool := false
   deriving DecidableEq, Repr, Inhabited
 
@@ -74,7 +79,9 @@ structure St (V : Type) where
   Gloss: the file at {#2} in {self}
   Gloss.fun: the file system of {self} -/
   fs : Path → Option (V × Nat)
+  /-- The build log: for each output, the command and the time of its last run, or `none` when there is no entry. -/
   log : Path → Option (String × Nat)
+  /-- The deps log: for each output, the paths its last command read, or `none` when there is no entry. -/
   deps : Path → Option (List Path) := fun _ => none
   /-- The current time. Every edit and every command run advances it by
   one, and stamps what it writes with the new time.

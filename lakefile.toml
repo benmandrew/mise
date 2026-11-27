@@ -1,6 +1,7 @@
 name = "mise"
 version = "0.1.0"
 defaultTargets = ["Mise", "MiseTest", "mise"]
+leanOptions = { linter.all = true }
 
 [[lean_lib]]
 name = "Mise"

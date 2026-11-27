@@ -18,6 +18,7 @@ partial def ofLake : Lake.Toml.Value → Option Value
   | .table _ t => .table <$> t.items.toList.mapM fun (k, v) => (k.toString (escape := false), ·) <$> ofLake v
   | _ => none
 
+/-- Parse a TOML text with Lake's parser, or `none` if it rejects the text. -/
 def lake (text : String) : IO (Option Table) := do
   match ← (Lake.Toml.loadToml (Lean.Parser.mkInputContext text "t.toml")).toBaseIO with
   | .ok t => pure (t.items.toList.mapM fun (k, v) => (k.toString (escape := false), ·) <$> ofLake v)
@@ -84,6 +85,7 @@ def rejects (text : String) (ps : Params := []) (msg : String) : Bool := match l
   | .ok _ => false
   | .error e => (e.splitOn msg).length > 1
 
+/-- A description with one source and one rule `cc`, and no builds. -/
 def base : String := "sources = [\"a.c\"]\n[[rule]]\nname = \"cc\"\ncommand = \"cc $in -o $out\"\n"
 
 #guard (load (base ++ "[[build]]\nrule = \"cc\"\nouts = [\"a.o\"]\nins = [\"a.c\"]\n")).isOk
@@ -102,12 +104,15 @@ def cmds (text : String) : List String := match load text with
   | .ok g => g.1.edges.map g.1.cmd
   | .error _ => []
 
+/-- Whether `t` occurs in `s`. -/
 def has (s t : String) : Bool := (s.splitOn t).length > 1
 
+/-- A description with a `restat` rule `gen`, plus extra rule text and extra edge text. -/
 def restatBase (rule edge : String) : String :=
   "sources = [\"a.c\"]\n[[rule]]\nname = \"gen\"\ncommand = \"gen $in $out\"\nrestat = true\n" ++ rule ++
     "[[build]]\nrule = \"gen\"\nouts = [\"a.h\"]\nins = [\"a.c\"]\n" ++ edge
 
+/-- A description with a plain rule `gen`, plus extra rule text and extra edge text. -/
 def plainBase (rule edge : String) : String :=
   "sources = [\"a.c\"]\n[[rule]]\nname = \"gen\"\ncommand = \"gen $in $out\"\n" ++ rule ++
     "[[build]]\nrule = \"gen\"\nouts = [\"a.h\"]\nins = [\"a.c\"]\n" ++ edge
@@ -142,9 +147,11 @@ def ninjaOf (text : String) (globs : List (String × List Mise.Syntax.Path) := [
   | .ok g => g.ninja
   | .error e => "error: " ++ e
 
+/-- Two rules: `cc` to compile and `ld` to link. -/
 def rules2 : String :=
   "[[rule]]\nname = \"cc\"\ncommand = \"cc -c $in -o $out\"\n[[rule]]\nname = \"ld\"\ncommand = \"cc $in -o $out\"\n"
 
+/-- A description with explicit builds that compile `a.c` and `b.c` and link them. -/
 def explicitBuild : String :=
   "sources = [\"a.c\", \"b.c\", \"x.h\"]\n" ++ rules2 ++
   "[[build]]\nrule = \"cc\"\nouts = [\"o/a.o\"]\nins = [\"a.c\"]\nimplicit-ins = [\"x.h\"]\n" ++

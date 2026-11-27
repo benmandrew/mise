@@ -12,7 +12,9 @@ namespace Mise
 returns `a`, and `fetch k c` asks for the value of key `k` and continues
 with `c` applied to that value. -/
 inductive Task (K V : Type) (α : Type) where
+  /-- A task that fetches nothing and returns the value. -/
   | pure  : α → Task K V α
+  /-- Fetch the value of a key, then continue with the task the function builds from it. -/
   | fetch : K → (V → Task K V α) → Task K V α
 
 /-- A store maps every key to its current value. -/
@@ -170,7 +172,9 @@ theorem run_eq_of_agree (t : Task K V α) (s s' : Store K V)
 
 /-- On every branch of the tree, every `fetch` node's key satisfies `P`. -/
 inductive FetchesOnly (P : K → Prop) : Task K V α → Prop
+  /-- A task that returns at once fetches nothing. -/
   | pure (a : α) : FetchesOnly P (.pure a)
+  /-- A `fetch` of a key that satisfies `P`, whose every continuation also fetches only such keys. -/
   | fetch (k : K) (c : V → Task K V α) :
       P k → (∀ v, FetchesOnly P (c v)) → FetchesOnly P (.fetch k c)
 

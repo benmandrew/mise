@@ -17,7 +17,9 @@ that computes its value from the values of the keys it fetches. Correctness
 Gloss: specifications with keys {K} and values {V}
 Gloss.one: specification -/
 structure BuildSpec (K V : Type) where
+  /-- Whether a key is a source, whose value is given rather than computed. -/
   isSource : K → Bool
+  /-- The task that computes each key's value. -/
   task : K → Task K V V
 
 namespace Task
@@ -54,7 +56,9 @@ def Correct (S R : Store K V) : Prop :=
 only keys of strictly smaller rank. This is data, so that `cleanBuild` stays
 computable. -/
 structure Acyclic where
+  /-- The rank of each key. -/
   rank : K → Nat
+  /-- The task of every key that is not a source fetches, on every branch, only keys of strictly smaller rank. -/
   fetches : ∀ k, b.isSource k = false → (b.task k).FetchesOnly (fun j => rank j < rank k)
 
 variable {b}

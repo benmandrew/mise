@@ -38,8 +38,11 @@ def reserved : List String := ["in", "out", "in_newline", versionVar] ++ ruleKey
 variable takes its value from the edge's variables, or is empty when the
 edge has none of that name. An empty description is not emitted. -/
 structure GRule where
+  /-- The rule's name. -/
   name : String
+  /-- The command, as a Ninja value. -/
   command : EvalString
+  /-- The description Ninja prints when it runs the command, as a Ninja value; empty means none. -/
   description : EvalString := []
   /-- Emit `depfile = ${out}.d` and `deps = gcc`: the command writes a
   Makefile-style depfile listing what it read. -/
@@ -53,12 +56,19 @@ structure GRule where
 explicit, implicit and order-only inputs, and the edge's own variables
 with their literal values. -/
 structure GEdge where
+  /-- The name of the edge's rule. -/
   rule : String
+  /-- The explicit outputs, which `${out}` stands for. -/
   outs : List Path
+  /-- The implicit outputs. -/
   implicitOuts : List Path := []
+  /-- The explicit inputs, which `${in}` stands for. -/
   ins : List Path := []
+  /-- The implicit inputs. -/
   implicitIns : List Path := []
+  /-- The order-only inputs: Ninja builds them first, but they do not make the edge dirty. -/
   orderOnly : List Path := []
+  /-- The edge's own variables, with their literal values. -/
   vars : List (String × String) := []
   deriving DecidableEq, Repr, Inhabited
 
@@ -84,7 +94,9 @@ name builds the targets, and no command runs for the name itself. In a
 valid graph no edge reads an alias name (`aliasesOK`).
 Gloss: aliases -/
 structure GAlias where
+  /-- The alias's name, a path that no source or output uses. -/
   name : Path
+  /-- The targets that building the alias builds. -/
   targets : List Path
   deriving DecidableEq, Repr, Inhabited
 
@@ -93,10 +105,15 @@ order they were added, aliases, and default targets.
 Gloss: graphs
 Gloss.one: graph -/
 structure Graph where
+  /-- The declared source files. -/
   sources : List Path := []
+  /-- The rules. -/
   rules : List GRule := []
+  /-- The edges, in the order they were added. -/
   edges : List GEdge := []
+  /-- The aliases. -/
   aliases : List GAlias := []
+  /-- The default targets, emitted as a `default` statement: what Ninja builds when given no targets. -/
   defaults : List Path := []
   deriving Repr, Inhabited
 

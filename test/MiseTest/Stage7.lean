@@ -10,10 +10,13 @@ namespace MiseTest.Stage7
 open Mise Mise.Model Mise.Frontend Mise.Syntax
 open MiseTest.Stage6 (m products srcOf includes)
 
+/-- The words of a command's input with the `#` comments removed. -/
 def strip (c : String) : String := " ".intercalate ((c.splitOn " ").filter fun w => !w.startsWith "#")
 
+/-- A symbolic command run that ignores comments in its inputs. -/
 def exec (cmd : String) (vs : List String) : List String := [cmd ++ "(" ++ ",".intercalate (vs.map strip) ++ ")"]
 
+/-- The dynamic task of a compile command: read its source, then each header it includes, ignoring comments. -/
 def compile (cmd : String) : Task Path String (List String) :=
   .fetch (srcOf cmd) fun c => (fetchAll (includes c)).bind fun vs => .pure (exec cmd (c :: vs))
 
@@ -23,12 +26,16 @@ def sem : Sem String := { exec, dyn := compile, keep := (· == ·), keep_eq := f
 /-- The same commands, always writing. -/
 def semW : Sem String := { exec, dyn := compile }
 
+/-- The starting state of `gen-header`, as in Stage 6. -/
 def st0 : St String := MiseTest.Stage6.st0
 
+/-- The first output of each edge that a build of `es` from `st` runs, in order. -/
 def ran (sem : Sem String) (es : List MEdge) (st : St String) : List Path :=
   (buildTrace sem es st).2.map fun e => e.outs.headD ""
 
+/-- The state after a first full build. -/
 def b1 := ninjaBuild sem m st0
+/-- The state after a first build and a comment added to `config.in`. -/
 def c1 := b1.edit "config.in" "config@1 #note"
 
 #guard m.medges.map (·.restat) == [true, false, false, false]

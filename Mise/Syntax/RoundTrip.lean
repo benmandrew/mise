@@ -567,6 +567,7 @@ theorem parseHeader_default (ps : List Path) (hne : ps ≠ []) (hps : ps.all val
 
 /-! ## Bindings and blocks -/
 
+/-- The text of a binding after its indentation: `key = value`, with the value printed. -/
 def bindingRest (b : Binding) : List Char := b.1.toList ++ [' ', '=', ' '] ++ renderVal b.2
 
 theorem parseLet_rest (b : Binding) (hb : validBinding b = true) : parseLet (bindingRest b) = some b := by

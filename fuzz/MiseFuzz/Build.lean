@@ -18,6 +18,7 @@ its scheduling choices from the back.
 namespace MiseFuzz.Build
 open MiseTest.Fuzz Lean
 
+/-- The generator options for a fuzzer input: the low bit of the first byte sets `absent`. -/
 def optsOf (b : ByteArray) : Opts := { absent := b.size > 0 && b[0]! % 2 == 1 }
 
 /-- Set the edges that finished, and whether the failing edge was tried, of

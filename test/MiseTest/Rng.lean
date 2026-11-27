@@ -15,8 +15,11 @@ namespace MiseTest
 /-- A random source. With `bytes`, choices come from `bytes` from position
 `pos` on, and `state` is unused. -/
 structure Rng where
+  /-- The state of the seeded generator. -/
   state : UInt64
+  /-- The byte sequence to read choices from, if there is one. -/
   bytes : Option ByteArray := none
+  /-- The position of the next unread byte. -/
   pos : Nat := 0
 
 /-- A seeded source. -/
@@ -52,16 +55,20 @@ def Rng.draw (g : Rng) (n : Nat) : Nat × Rng :=
       let k := byteWidth n
       (readBE b g.pos k % n, { g with pos := g.pos + k })
 
+/-- The generator monad: a computation that draws from an `Rng`. -/
 abbrev GenM := StateM Rng
 
+/-- A number below `n`, drawn from the source. -/
 def rand (n : Nat) : GenM Nat := do
   let (x, g) := (← get).draw n
   set g
   pure x
 
+/-- An element of `xs`, chosen at random. -/
 def pick {α} [Inhabited α] (xs : List α) : GenM α := do
   pure (xs[← rand xs.length]!)
 
+/-- `true` with probability `num / den`. -/
 def chance (num den : Nat) : GenM Bool := do pure ((← rand den) < num)
 
 /-- Run a generator on a byte sequence. -/

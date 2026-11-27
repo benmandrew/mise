@@ -52,7 +52,9 @@ def Rule.get (r : Rule) (k : String) : Option EvalString := (r.bindings.reverse.
 /-- What Ninja stores for an edge after parsing it: the edge, its rule, and
 its own scope. -/
 structure EdgeInfo where
+  /-- The edge as parsed. -/
   edge : Edge
+  /-- The edge's rule. -/
   rule : Rule
   /-- The edge's own scope, or `none` when the edge has no bindings and uses
   the file scope. -/
@@ -90,8 +92,11 @@ def EdgeInfo.isRestat (file : Scope) (c : EdgeInfo) : Bool := c.binding file "re
 
 /-- The state of Ninja's parser after reading a prefix of the manifest. -/
 structure Elab where
+  /-- The file scope: the top-level bindings read so far. -/
   file : Scope := []
+  /-- The rules declared so far, starting with the built-in `phony`. -/
   rules : List Rule := [⟨"phony", []⟩]
+  /-- The edges read so far, in manifest order. -/
   edges : List EdgeInfo := []
   deriving Repr, Inhabited
 

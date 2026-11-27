@@ -16,12 +16,14 @@ def compileFoo : Task String String String := do
   let hs ← (includes src).mapM fetch
   pure (String.intercalate "+" (src.length.repr :: hs))
 
+/-- The store in which `foo.c` includes `a.h` and `b.h`. -/
 def store₁ : Store String String
   | "foo.c" => "#include a.h\n#include b.h\nint main;"
   | "a.h" => "A"
   | "b.h" => "B"
   | _ => ""
 
+/-- The store in which `foo.c` includes `c.h` only. -/
 def store₂ : Store String String
   | "foo.c" => "#include c.h\nint main;"
   | "c.h" => "C"

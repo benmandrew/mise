@@ -6,6 +6,7 @@ import Mise.Syntax.Parse
 namespace MiseTest.Stage3
 open Mise.Syntax
 
+/-- A manifest with awkward paths and values, one of whose defaults was never declared. -/
 def m : Manifest := ⟨[
   .binding "ninja_required_version" [.lit "1.10"],
   .binding "builddir" [.lit " build"],
@@ -19,6 +20,7 @@ def m : Manifest := ⟨[
 ]⟩
 
 
+/-- The first five statements of `m` with a default that is declared. -/
 def m' : Manifest := ⟨m.stmts.take 5 ++ [.default ["a b.o", "gen"]]⟩
 #guard decide m'.WellFormed
 #guard parse (print m') == some m'

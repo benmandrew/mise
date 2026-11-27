@@ -19,6 +19,7 @@ open Mise.Syntax
 def components : List String :=
   ["a", "b", "src", "out.o", "x y", "d$e", "f:g", "ü", "日本", "sp ace$:", "$$", "c:", " lead", "trail "]
 
+/-- A random path made of one to three components. -/
 def genPath : GenM Path := do
   let n := (← rand 3) + 1
   let mut cs : List String := []
@@ -36,8 +37,10 @@ def genFresh (k : Nat) (avoid : List Path) : GenM (List Path) := do
     if !(avoid.contains p) && !(out.contains p) then out := out ++ [p]
   pure out
 
+/-- The characters a generated identifier may use after its first. -/
 def identChars : List Char := "abcxyz_-.09".toList
 
+/-- A random identifier that starts with `v`. -/
 def genIdent : GenM String := do
   let n := (← rand 6) + 1
   let mut cs : List Char := ['v']
@@ -45,6 +48,7 @@ def genIdent : GenM String := do
     cs := cs ++ [← pick identChars]
   pure (String.ofList cs)
 
+/-- Literal pieces for generated values, chosen to exercise escaping. -/
 def litPieces : List String := ["cc", " ", "-o", "$", ":", "|", "ü", "  ", "#", "{", "}", "x=y"]
 
 /-- A random value, normalised so no two literals are adjacent. -/
@@ -61,12 +65,14 @@ def genEval (vars : List String) : GenM EvalString := do
         | _ => segs ++ [.lit s]
   pure segs
 
+/-- A random sublist of `xs` of at most `maxN` elements. -/
 def subset (xs : List Path) (maxN : Nat) : GenM (List Path) := do
   let mut out : List Path := []
   for x in xs do
     if out.length < maxN && (← chance 1 3) then out := out ++ [x]
   pure out
 
+/-- A random manifest: variables, rules, edges and a `default` statement. -/
 def genManifest : GenM Manifest := do
   let mut stmts : List Stmt := [.binding "ninja_required_version" [.lit "1.10"]]
   let mut topVars : List String := []
@@ -147,6 +153,7 @@ def commandTargets (m : Manifest) : List (Path × String) :=
   m.commands.filterMap fun (e, cmd) =>
     if e.rule == "phony" then none else e.outs.head?.map (·, cmd)
 
+/-- Every path the manifest mentions, once each, in order of first use. -/
 def allPaths (m : Manifest) : List Path :=
   (m.stmts.flatMap fun | .edge e => e.allPaths | _ => []).foldl
     (fun acc p => if acc.contains p then acc else acc ++ [p]) []

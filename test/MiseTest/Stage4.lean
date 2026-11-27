@@ -6,6 +6,7 @@ import MiseTest.Fixtures
 namespace MiseTest.Stage4
 open Mise.Frontend Mise.Syntax
 
+/-- The graph of the `hello-c` fixture, or the empty graph if it is rejected. -/
 def hello : Graph := match (Fixtures.helloC []).graph with
   | .ok g => g.1
   | .error _ => {}
@@ -36,6 +37,7 @@ def wrapped (out cmd : String) : String :=
 #guard shellEscape "it's" == "'it'\\''s'"
 #guard shellEscape "src/x-1.c" == "src/x-1.c"
 
+/-- Whether the builder rejects a build description. -/
 def rejects (b : Build Unit) : Bool := match b.graph with
   | .ok _ => false
   | .error _ => true
@@ -79,6 +81,7 @@ def rejects (b : Build Unit) : Bool := match b.graph with
 
 /-! Aliases: `phony` edges after the edges, which the Ninja model leaves out. -/
 
+/-- A graph with one source, one edge and an alias that names the edge's output and the source. -/
 def withAlias : Graph := match (do
     let a ← source "a.c"
     let r ← rule "cc" "cc -c $in -o $out"

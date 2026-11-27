@@ -5,6 +5,7 @@ import MiseTest.DiffGen
 namespace MiseTest.BytesTest
 open MiseTest MiseTest.DiffTest Mise.Syntax
 
+/-- The numbers drawn from a byte source for the given choice sizes, with the number of bytes read. -/
 def draws (b : List UInt8) (ns : List Nat) : List Nat × Nat :=
   let (xs, g) := (ns.mapM rand).run (Rng.ofBytes ⟨b.toArray⟩)
   (xs, g.pos)
@@ -22,6 +23,7 @@ def draws (b : List UInt8) (ns : List Nat) : List Nat × Nat :=
 
 -- Every byte sequence gives a well-formed manifest that round-trips through
 -- the parser model, the empty one included.
+/-- Byte sequences of several lengths, including the empty one. -/
 def inputs : List ByteArray :=
   [.empty, ⟨#[255]⟩, ⟨#[1, 2, 3, 4, 5, 6, 7, 8]⟩, ⟨(List.range 200).toArray.map (·.toUInt8)⟩,
    ⟨(List.range 400).toArray.map fun i => (i * 37 + 11).toUInt8⟩, ⟨(List.replicate 300 255).toArray⟩]

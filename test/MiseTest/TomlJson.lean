@@ -9,6 +9,7 @@ tree, so `test/toml_diff.py` compares the two byte for byte. -/
 namespace MiseTest.TomlJson
 open Mise.Frontend.Toml
 
+/-- Four hexadecimal digits of a number, padded with zeros. -/
 def hex4 (n : Nat) : String :=
   let d := Nat.toDigits 16 n
   String.ofList (List.replicate (4 - d.length) '0' ++ d)
@@ -30,6 +31,7 @@ def jsonStr (s : String) : String := Id.run do
           "\\u" ++ hex4 (0xd800 + m / 0x400) ++ "\\u" ++ hex4 (0xdc00 + m % 0x400)
   return out ++ "\""
 
+/-- The canonical JSON text of a TOML value, with keys sorted. -/
 partial def json : Value → String
   | .str s => jsonStr s
   | .bool b => if b then "true" else "false"
@@ -44,6 +46,7 @@ where
 end MiseTest.TomlJson
 
 open MiseTest.TomlJson Mise.Frontend.Toml in
+/-- Parse each file and print one line per file: `ok JSON` or `err MESSAGE`. -/
 def main (files : List String) : IO UInt32 := do
   let out ← IO.getStdout
   for f in files do

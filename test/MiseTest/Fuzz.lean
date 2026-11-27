@@ -42,12 +42,14 @@ open Mise Mise.Syntax Mise.Frontend Mise.Model Lean
 
 /-! ## What the helper computes -/
 
+/-- The starting value of the FNV-1a hash. -/
 def fnvOffset : UInt64 := 14695981039346656037
 
 /-- FNV-1a over the UTF-8 bytes of `s`. -/
 def feed (h : UInt64) (s : String) : UInt64 :=
   s.toUTF8.data.foldl (fun h b => (h ^^^ b.toUInt64) * 1099511628211) h
 
+/-- A 64-bit hash as 16 hexadecimal digits. -/
 def hex16 (h : UInt64) : String :=
   let d := Nat.toDigits 16 h.toNat
   String.ofList (List.replicate (16 - d.length) '0' ++ d)
@@ -63,10 +65,13 @@ def inner (cmd : String) : String :=
 /-- The command's arguments after the program name, as the shell splits them. -/
 def args (cmd : String) : List String := (((inner cmd).splitOn " ").filter (· != "")).drop 1
 
+/-- The output paths in a helper command. -/
 def outsOf (cmd : String) : List String := ((args cmd).drop 2).takeWhile (· != "--")
 
+/-- The input paths in a helper command. -/
 def insOf (cmd : String) : List String := ((args cmd).dropWhile (· != "--")).drop 1
 
+/-- The lines of a string. -/
 def lines (v : String) : List String := v.splitOn "\n"
 
 /-- Whether a helper in mode `x` leaves out an output with hash `h`. -/
@@ -85,10 +90,12 @@ def fzContent (cmd : String) (vs : List String) : List String :=
     let h := vs.foldl file (feed key (toString i ++ "\n"))
     if skip && absent h then "" else hex16 h ++ "\n"
 
+/-- The paths that a source's `include` lines name. -/
 def includes (v : String) : List Path :=
   (lines v).filterMap fun l =>
     if l.startsWith "include " && l.length > 8 then some (String.ofList (l.toList.drop 8)) else none
 
+/-- The list without repeated elements, keeping the first of each. -/
 def dedup (ps : List Path) : List Path := ps.foldl (fun acc p => if acc.contains p then acc else acc ++ [p]) []
 
 /-- Read `queue` breadth first, queueing every included path not yet seen. -/
@@ -100,6 +107,7 @@ def bfs : Nat → List Path → List Path → List String → Task Path String (
       (fun (s, n) k => if s.contains k then (s, n) else (s ++ [k], n ++ [k])) (seen, [])
     bfs f seen' (q ++ new) (acc ++ [v])
 
+/-- The helper's dynamic task: it reads the inputs and every file they include, then gives the outputs' contents. -/
 def fzDyn (cmd : String) : Task Path String (List String) :=
   let ins := dedup (insOf cmd)
   (bfs 10000 ins ins []).bind fun vs => .pure (fzContent cmd vs)
@@ -127,13 +135,16 @@ def ruleSpecs : List (String × String × Bool × Bool × Bool) :=
    ("sx", "sx", false, false, true), ("sxr", "sx", false, true, true),
    ("dx", "dx", true, false, true), ("dxr", "dx", true, true, true)]
 
+/-- The command line of a helper rule in the given mode. -/
 def ruleCmd (mode : String) : String := "./fz " ++ mode ++ " ${tag} $out ${iout} -- $in ${imp}"
 
+/-- The rules of the generated graphs, one per entry of `ruleSpecs`. -/
 def rules : List GRule :=
   ruleSpecs.map fun (name, mode, depfile, restat, wrapped) =>
     { name, command := (readValue (if wrapped then wrapCommand restat (ruleCmd mode) else ruleCmd mode).toList).getD [],
       depfile, restat }
 
+/-- Whether the named rule goes through the DSL's wrapper. -/
 def wrapped (rule : String) : Bool := ruleSpecs.any fun (n, _, _, _, w) => n == rule && w
 
 /-- The edge as the DSL's `edge` makes it: a wrapped edge's implicit outputs
@@ -143,35 +154,53 @@ def withIouts (e : GEdge) : GEdge :=
     { e with vars := e.vars ++ [(wrapOutsVar, shellList " " e.implicitOuts)] }
   else e
 
+/-- A source file in a case. -/
 structure Src where
+  /-- The path of the file. -/
   path : Path
+  /-- A number that the file's text records, so that bumping it changes the contents. -/
   version : Nat := 0
+  /-- The paths that the file includes. -/
   includes : List Path := []
+  /-- How many comment lines the file ends with. -/
   comments : Nat := 0
   /-- What this source may include. -/
   allowed : List Path := []
   deriving Inhabited, ToJson, FromJson
 
+/-- The file's contents. -/
 def Src.text (s : Src) : String :=
   s!"{s.path} v{s.version}\n" ++ String.join (s.includes.map fun p => s!"include {p}\n") ++
     String.join ((List.range s.comments).map fun k => s!"# note {k}\n")
 
 /-- `GEdge` with JSON instances. -/
 structure EdgeD where
+  /-- The rule's name. -/
   rule : String
+  /-- The explicit outputs. -/
   outs : List Path
+  /-- The implicit outputs. -/
   implicitOuts : List Path
+  /-- The explicit inputs. -/
   ins : List Path
+  /-- The implicit inputs. -/
   implicitIns : List Path
+  /-- The order-only inputs. -/
   orderOnly : List Path
+  /-- The edge's variable bindings. -/
   vars : List (String × String)
   deriving ToJson, FromJson
 
+/-- The edge as its JSON form. -/
 def EdgeD.ofEdge (e : GEdge) : EdgeD := ⟨e.rule, e.outs, e.implicitOuts, e.ins, e.implicitIns, e.orderOnly, e.vars⟩
+/-- The edge from its JSON form. -/
 def EdgeD.toEdge (e : EdgeD) : GEdge := ⟨e.rule, e.outs, e.implicitOuts, e.ins, e.implicitIns, e.orderOnly, e.vars⟩
 
+/-- A generated graph and the sources behind it. -/
 structure Case where
+  /-- The source files. -/
   srcs : List Src
+  /-- The edges of the graph. -/
   edges : List GEdge
   /-- Edges removed by `rmEdge`, which `addEdge` may put back. -/
   removed : List GEdge := []
@@ -189,10 +218,12 @@ def aliasesOf (srcs : List Path) (es : List GEdge) : List GAlias :=
   [({ name := "al-even", targets := even } : GAlias), { name := "al-odd", targets := odd }].filter
     (!·.targets.isEmpty)
 
+/-- The case as a graph. -/
 def Case.graph (c : Case) : Graph :=
   { sources := c.srcs.map (·.path), rules, edges := c.edges.map withIouts,
     aliases := aliasesOf (c.srcs.map (·.path)) c.edges }
 
+/-- Every output of every edge. -/
 def products (g : Graph) : List Path := g.edges.flatMap (·.allOuts)
 
 /-- What `ninja` may be asked to build: products and aliases. -/
@@ -216,10 +247,12 @@ def sample {α} [Inhabited α] (k : Nat) (xs : List α) : GenM (List α) := do
     rest := rest.eraseIdx i
   pure out
 
+/-- The variable bindings of a static edge: its tag, and its implicit outputs and inputs when there are any. -/
 def edgeVars (tag : String) (iouts imps : List Path) : List (String × String) :=
   [("tag", tag)] ++ (if iouts.isEmpty then [] else [("iout", " ".intercalate iouts)]) ++
     (if imps.isEmpty then [] else [("imp", " ".intercalate imps)])
 
+/-- The elements of `xs` not in `avoid`. -/
 def without (xs avoid : List Path) : List Path := xs.filter fun x => !avoid.contains x
 
 /-- A static edge named `name` that reads from `pool`, with order-only
@@ -240,13 +273,17 @@ turns such a run into a failure that changes no file (`natFail`). With
 wrapper instead, so outputs go missing, which the model cannot express; see
 "Where the model differs from Ninja" in `Mise/NOTES.md`. -/
 structure Opts where
+  /-- Whether some edges get a command that leaves out outputs. -/
   absent : Bool := false
+  /-- Whether some of those commands run outside the wrapper. -/
   nowrap : Bool := false
 
+/-- The options in a comma-separated list such as `absent,nowrap`. -/
 def Opts.parse (s : String) : Opts :=
   let fs := s.splitOn ","
   { absent := fs.contains "absent", nowrap := fs.contains "nowrap" }
 
+/-- A random case: headers, plain sources, main sources and edges. -/
 def genCase (o : Opts) : GenM Case := do
   let nh := 1 + (← rand 3)
   let np := 1 + (← rand 3)
@@ -293,10 +330,15 @@ still means the same after the shrinker drops other edits or edges. An edit
 whose source or edge is gone, or that would make the graph invalid, does
 nothing. -/
 inductive Edit where
+  /-- Change a source's contents by raising its version. -/
   | bump (src : Path)
+  /-- Add a comment line to a source. -/
   | comment (src : Path)
+  /-- Make a source include a path. -/
   | addInc (src : Path) (p : Path)
+  /-- Stop a source including a path. -/
   | rmInc (src : Path) (p : Path)
+  /-- Change an edge's tag, and so its command. -/
   | retag (out : Path)
   /-- Write a source again with the same contents, so only its mtime changes. -/
   | touch (src : Path)
@@ -316,6 +358,7 @@ inductive Edit where
   | age (out : Path)
   deriving Inhabited, ToJson, FromJson
 
+/-- A short description of the edit. -/
 def Edit.describe : Edit → String
   | .bump s => s!"bump {s}"
   | .comment s => s!"comment {s}"
@@ -330,9 +373,11 @@ def Edit.describe : Edit → String
   | .addEdge e => s!"add edge {e.outs.headD ""}"
   | .age o => s!"age {o}"
 
+/-- The bindings with the tag number raised by one. -/
 def bumpTag (vs : List (String × String)) : List (String × String) :=
   vs.map fun (k, v) => if k == "tag" then (k, "t" ++ toString ((String.ofList (v.toList.drop 1)).toNat! + 1)) else (k, v)
 
+/-- The case with `f` applied to the source at `p`. -/
 def Case.modSrc (c : Case) (p : Path) (f : Src → Src) : Case :=
   { c with srcs := c.srcs.map fun s => if s.path == p then f s else s }
 
@@ -345,6 +390,7 @@ def Case.canAdd (c : Case) (e : GEdge) : Bool :=
   let used := c.srcs.map (·.path) ++ products c.graph
   e.allIns.all used.contains && e.allOuts.all (!used.contains ·)
 
+/-- The case after an edit. -/
 def Case.apply (c : Case) : Edit → Case
   | .bump p => c.modSrc p fun s => { s with version := s.version + 1 }
   | .comment p => c.modSrc p fun s => { s with comments := s.comments + 1 }
@@ -378,14 +424,18 @@ def genAdd (c : Case) : GenM Edit := do
   let e ← genStatic s!"a{c.fresh}" rule pool gens
   pure (.addEdge (.ofEdge e))
 
+/-- A random edit of the case. -/
 def genEdit (c : Case) : GenM Edit := do
   if ← chance 1 12 then genAdd c else pick (← pick c.candidates)
 
 /-! ## TOML -/
 
+/-- A TOML string literal. -/
 def tstr (s : String) : String := "\"" ++ s ++ "\""
+/-- A TOML array of strings. -/
 def tarr (xs : List String) : String := "[" ++ ", ".intercalate (xs.map tstr) ++ "]"
 
+/-- The graph as the TOML that `mise` reads. -/
 def tomlOf (g : Graph) : String := Id.run do
   let mut t := s!"sources = {tarr g.sources}\n"
   for (name, mode, depfile, restat, wrapped) in ruleSpecs do
@@ -407,8 +457,10 @@ def tomlOf (g : Graph) : String := Id.run do
 
 /-! ## Running the model -/
 
+/-- A JSON object of strings. -/
 def jsonMap (kvs : List (String × String)) : Json := Json.mkObj (kvs.map fun (k, v) => (k, Json.str v))
 
+/-- The strings in ascending order. -/
 def sortStrs (xs : List String) : List String := (xs.toArray.qsort (· < ·)).toList
 
 /-- The same state as a table over `paths`. Model states are chains of
@@ -439,6 +491,7 @@ helper left out. -/
 def natFailRule (e : MEdge) : Bool :=
   (e.cmd.splitOn "; if ( ").length == 2 && ((args e.cmd).headD "").contains 'x'
 
+/-- Whether the run of `e` from `st` fails on its own; see `natFailRule`. -/
 def natFail (st : St String) (e : MEdge) : Bool :=
   natFailRule e && e.outs.any fun o => st.outVal sem e o == ""
 
@@ -499,17 +552,20 @@ def stopTrace (f : Path) (fin : List Path) (tried : Bool) :
 
 /-- How a step builds. -/
 structure StepD where
+  /-- The edits to make before the build. -/
   edits : List Edit := []
   /-- Build only these targets; every edge when empty. -/
   targets : List Path := []
   /-- The edge with this first output fails, and Ninja runs with `-k 0`, or
   stops at the failure when `stop` holds. -/
   fail : Option Path := none
+  /-- Whether the build stops at the failure instead of running on. -/
   stop : Bool := false
   /-- For a `stop` step, what the driver saw: the edges that finished and
   whether the failing edge was tried. Without it the model guesses as for
   `-k 0`, and the driver recomputes the case once it has seen the build. -/
   finished : Option (List Path) := none
+  /-- Whether the failing edge was tried. -/
   tried : Bool := false
   deriving ToJson, FromJson, Inhabited
 
@@ -590,6 +646,7 @@ def step (strict : Bool) (sd : StepD) (old : Option Case) (c : Case) (known : Li
       | none => Json.null)))]
   pure (j, st', known)
 
+/-- The state with no files, logs or deps. -/
 def empty : St String := { fs := fun _ => none, log := fun _ => none, clock := 0 }
 
 /-- `n` steps of edits. All but the last build may build some targets only
@@ -628,12 +685,17 @@ the steps. `fuzzgen` writes it into every case file, and `fuzzgen expect`
 reads one back and recomputes the expectations, so `test/fuzz.py` can
 shrink a failing case by editing its description. -/
 
+/-- A case before the model runs it. -/
 structure Desc where
+  /-- The source files. -/
   srcs : List Src
+  /-- The edges of the graph. -/
   edges : List EdgeD
+  /-- The steps of the run. -/
   steps : List StepD
   deriving ToJson, FromJson
 
+/-- Run a case through its steps with the model, giving the JSON that the shell tests read. -/
 def runCase (strict : Bool) (c0 : Case) (steps : List StepD) (checkToml : Bool := true) :
     Except String Json := do
   let (j0, st0, k0) ← step strict {} none c0 [] empty checkToml
@@ -651,6 +713,7 @@ def runCase (strict : Bool) (c0 : Case) (steps : List StepD) (checkToml : Bool :
   let desc : Desc := ⟨c0.srcs, c0.edges.map .ofEdge, steps⟩
   pure (Json.mkObj [("desc", toJson desc), ("steps", Json.arr js)])
 
+/-- The source for run `i` of a seed. -/
 def seeded (seed i : Nat) : Rng := Id.run do
   let mut g : Rng := .ofSeed (seed * 1000003 + i * 7919 + 1).toUInt64
   for _ in [0:4] do g := g.next.2
@@ -662,11 +725,13 @@ def genFull (o : Opts) : GenM (Case × List StepD) := do
   let n := 3 + (← rand 6)
   pure (c, ← genSteps o c n)
 
+/-- The case and steps for run `i` of a seed. -/
 def genOne (o : Opts) (seed i : Nat) : Case × List StepD := ((genFull o).run (seeded seed i)).1
 
 end MiseTest.Fuzz
 
 open MiseTest.Fuzz Lean in
+/-- The entry point: generate cases, or recompute the expectations of a description. -/
 def main (args : List String) : IO UInt32 := do
   -- `test/mutants.py` turns the model's own checks off, to see what the
   -- checks against Ninja catch.

@@ -732,8 +732,11 @@ a path that no edge in `es` writes. A visit to an edge in `es` runs it if it
 is dirty and otherwise changes nothing (`St.step`). Interrupted builds,
 builds of some targets, and full builds are all sequences of steps. -/
 inductive Reach (es : List MEdge) : St V → Prop
+  /-- A fresh state with empty build and deps logs. -/
   | init {st : St V} : st.Fresh → (∀ p, st.log p = none) → (∀ p, st.deps p = none) → Reach es st
+  /-- An edit to a path that no edge writes. -/
   | edit {st : St V} (p : Path) (v : V) : Reach es st → (∀ e ∈ es, p ∉ e.outs) → Reach es (st.edit p v)
+  /-- A visit to an edge, which runs it if it is dirty. -/
   | step {st : St V} {e : MEdge} : Reach es st → e ∈ es → Reach es (st.step sem e)
 
 theorem inv_of_reach {es : List MEdge} (hs : Sched es) (hr : Reads sem es) {st : St V} (h : Reach sem es st) :
@@ -788,7 +791,10 @@ theorem effIns_uniform {es : List MEdge} (hs : Sched es) {st : St V} (h : Reach 
 
 /-- Two edge lists with the same outputs and inputs, edge by edge. -/
 inductive SameShape : List MEdge → List MEdge → Prop
+  /-- Two empty lists. -/
   | nil : SameShape [] []
+  /-- Two edges with the same outputs, inputs, order-only inputs, depfile flag
+  and `restat` flag, before two lists with the same shape. -/
   | cons {e e' : MEdge} {es es' : List MEdge} :
       e.outs = e'.outs ∧ e.ins = e'.ins ∧ e.oo = e'.oo ∧ e.dyn = e'.dyn ∧ e.restat = e'.restat →
         SameShape es es' →

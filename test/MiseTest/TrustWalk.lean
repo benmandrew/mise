@@ -18,6 +18,7 @@ followed.
 
 namespace Trusted
 
+/-- Whether a name is in the `Mise` namespace. -/
 def isMise (n : Name) : Bool := n.getRoot == `Mise
 
 /-- Definitions a reader need not check, with the reason. A statement may
@@ -31,6 +32,7 @@ with the definitions they name. -/
 def assumptions : List (String × List Name) :=
   [("trust item 1", [`Mise.Syntax.print, `Mise.Syntax.Manifest.WellFormed])]
 
+/-- Whether a name is one of the definitions in `implementation`. -/
 def isImplementation (n : Name) : Bool := implementation.any (·.1 == n)
 
 /-- Auxiliary constants a reader would not look up by name. -/
@@ -119,6 +121,7 @@ partial def usesOf (env : Environment) (trusted : NameSet) (d : Name) : NameSet 
     else if o == d || isAux env n then todo := todo ++ next env n
   return out
 
+/-- The names of a set, sorted by their text. -/
 def sortNames (s : NameSet) : Array Name :=
   s.toArray.qsort (fun a b => a.toString < b.toString)
 

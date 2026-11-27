@@ -159,8 +159,11 @@ def two : Graph :=
               { rule := "cc", outs := ["a.o"], ins := ["a.c"], orderOnly := ["config.h"] },
               { rule := "cc", outs := ["b.o"], ins := ["b.c"], orderOnly := ["config.h"] }] }
 
+/-- The edge that generates `config.h`. -/
 def gen : MEdge := { outs := ["config.h"], ins := ["config.in"], cmd := "gen config.in config.h" }
+/-- The depfile compile edge for `a.o`. -/
 def aO : MEdge := { outs := ["a.o"], ins := ["a.c"], oo := ["config.h"], cmd := "cc -c a.c -o a.o", dyn := true }
+/-- The depfile compile edge for `b.o`. -/
 def bO : MEdge := { outs := ["b.o"], ins := ["b.c"], oo := ["config.h"], cmd := "cc -c b.c -o b.o", dyn := true }
 
 example : two.Valid ∧ edges two = [gen, aO, bO] := by decide

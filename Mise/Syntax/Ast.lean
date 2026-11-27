@@ -18,7 +18,9 @@ abbrev Path := String
 
 /-- A piece of an evaluated string: literal text or a variable reference. -/
 inductive Seg where
+  /-- Literal text. -/
   | lit (s : String)
+  /-- A reference to the variable `name`. -/
   | var (name : String)
   deriving DecidableEq, Repr, Inhabited
 
@@ -30,7 +32,9 @@ abbrev Binding := String × EvalString
 
 /-- A `rule` statement: its name and its indented bindings, in order. -/
 structure Rule where
+  /-- The rule's name. -/
   name : String
+  /-- The rule's bindings, in file order. -/
   bindings : List Binding
   deriving DecidableEq, Repr, Inhabited
 
@@ -38,21 +42,32 @@ structure Rule where
 rule, explicit inputs, implicit inputs (after `|`), order-only inputs
 (after `||`), and the edge's indented bindings. -/
 structure Edge where
+  /-- The explicit outputs. -/
   outs : List Path
+  /-- The implicit outputs, after `|`. -/
   implicitOuts : List Path := []
+  /-- The name of the edge's rule. -/
   rule : String
+  /-- The explicit inputs. -/
   ins : List Path := []
+  /-- The implicit inputs, after `|`. -/
   implicitIns : List Path := []
+  /-- The order-only inputs, after `||`. -/
   orderOnly : List Path := []
+  /-- The edge's own bindings, in file order. -/
   bindings : List Binding := []
   deriving DecidableEq, Repr, Inhabited
 
 /-- A top-level statement: a variable binding, a rule, a build edge, or a
 `default` statement naming targets. -/
 inductive Stmt where
+  /-- A top-level variable binding `key = value`. -/
   | binding (key : String) (value : EvalString)
+  /-- A `rule` statement. -/
   | rule (r : Rule)
+  /-- A `build` statement. -/
   | edge (e : Edge)
+  /-- A `default` statement naming the targets that Ninja builds when given none. -/
   | default (targets : List Path)
   deriving DecidableEq, Repr, Inhabited
 
@@ -60,6 +75,7 @@ inductive Stmt where
 Gloss: manifests
 Gloss.one: manifest -/
 structure Manifest where
+  /-- The statements, in file order. -/
   stmts : List Stmt
   deriving DecidableEq, Repr, Inhabited
 
@@ -164,8 +180,11 @@ def nodupB : List String → Bool
 
 /-- What the parser model knows after reading a prefix of the manifest. -/
 structure Ctx where
+  /-- The names of the rules declared so far, starting with the built-in `phony`. -/
   rules : List String := ["phony"]
+  /-- The outputs, explicit and implicit, of the edges read so far. -/
   outs : List Path := []
+  /-- Every path that an edge read so far names, as an output or an input. -/
   known : List Path := []
   deriving Repr, Inhabited
 

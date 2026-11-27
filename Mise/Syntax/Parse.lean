@@ -175,9 +175,13 @@ def parseEdgeLine (l : List Char) : Option Edge := do
 
 /-- The first line of a statement. -/
 inductive Header where
+  /-- A variable binding, `key = value`. -/
   | binding (b : Binding)
+  /-- The start of a rule declaration, `rule name`. -/
   | rule (name : String)
+  /-- A build statement, `build outs: rule ins`. -/
   | edge (e : Edge)
+  /-- A default statement, `default paths`. -/
   | default (ps : List Path)
 
 /-- Parse the first line of a statement: `rule name`, `build …`,
@@ -202,9 +206,13 @@ def parseHeader (l : List Char) : Option Header := do
 /-- How a line starts: blank (spaces only), a comment (`#` after any spaces),
 indented (a space, then other text), or at the top level. -/
 inductive LineKind where
+  /-- Spaces only. -/
   | blank
+  /-- A `#` after any spaces. -/
   | comment
+  /-- One or more spaces, then other text, kept in `rest`. -/
   | indented (rest : List Char)
+  /-- Text from the first column. -/
   | top
   deriving DecidableEq
 

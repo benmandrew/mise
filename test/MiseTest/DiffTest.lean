@@ -30,6 +30,7 @@ def writeCase (what d : String) (m : Manifest) : IO Bool := do
   return true
 
 open MiseTest.DiffTest Mise.Syntax in
+/-- Run the differential test: write the negative cases, one manifest from a byte file, or `N` random manifests. -/
 def main (args : List String) : IO UInt32 := do
   if let ["negative", dir] := args then
     for (name, text) in negatives do

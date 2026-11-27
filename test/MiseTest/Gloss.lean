@@ -56,8 +56,11 @@ namespace Gloss
 
 /-- Inline text: plain words, code, or a parenthesised group. -/
 inductive Inl where
+  /-- Plain words. -/
   | txt (s : String)
+  /-- Code, shown as written. -/
   | code (s : String)
+  /-- A parenthesised group. -/
   | grp (body : Array Inl)
   /-- The first mention of a variable, with its type's noun. It reads as one
   noun phrase, so it is never parenthesised. -/
@@ -70,15 +73,22 @@ inductive Inl where
   | cx (body : Array Inl)
   deriving Inhabited, BEq
 
+/-- A phrase: a sequence of inline pieces. -/
 abbrev Phrase := Array Inl
 
 /-- The glosses found in a docstring, and the docstring without them. -/
 structure Glosses where
+  /-- The main template, from the `Gloss` line. -/
   main : Option String := none
+  /-- The template for the first component of a pair. -/
   fst : Option String := none
+  /-- The template for the second component of a pair. -/
   snd : Option String := none
+  /-- The template for the function form. -/
   fn : Option String := none
+  /-- The singular noun for the type. -/
   one : Option String := none
+  /-- The docstring with the gloss lines removed. -/
   rest : String := ""
   deriving Inhabited
 
@@ -142,8 +152,11 @@ def coreSingulars : List (Name × String) := [
 
 /-- One piece of a parsed template. -/
 inductive Piece where
+  /-- Plain text. -/
   | txt (s : String)
+  /-- Code, shown as written. -/
   | code (s : String)
+  /-- A slot, named by its key, that an argument fills. -/
   | slot (key : String)
 
 /-- Split a template into text, code and slots. -/
@@ -167,7 +180,9 @@ def pieces (t : String) : Array Piece := Id.run do
 /-- Which template of a constant: the main one, a component of a pair, the
 function form, or the singular noun. -/
 inductive Which where
-  | main | fst | snd | fn | one
+  | /-- The main template. -/ main | /-- The template for the first component of a pair. -/ fst
+  | /-- The template for the second component of a pair. -/ snd | /-- The function form. -/ fn
+  | /-- The singular noun. -/ one
   deriving BEq, Hashable
 
 /-- The docstring key of a template: `Gloss`, `Gloss.fst` and so on. -/
@@ -178,6 +193,7 @@ def Which.key : Which → String
   | .fn => "Gloss.fun"
   | .one => "Gloss.one"
 
+/-- What the glossing monad records while it writes a statement. -/
 structure State where
   /-- Constants printed in Lean notation because they have no template. -/
   missing : NameSet := {}
@@ -192,6 +208,7 @@ structure State where
   introduces it and the type whose singular noun the phrase uses. -/
   intros : Std.HashMap FVarId (Phrase × Option Name) := {}
 
+/-- The glossing monad: `State` over `MetaM`. -/
 abbrev M := StateT State MetaM
 
 /-- Record that the output uses template `which` of `n`. -/
@@ -199,7 +216,9 @@ def use (n : Name) (which : Which) : M Unit :=
   if (`Mise).isPrefixOf n then modify fun s => { s with used := s.used.insert (n, which) }
   else pure ()
 
+/-- A phrase of plain text. -/
 def txt (s : String) : Phrase := #[.txt s]
+/-- A phrase of code. -/
 def code (s : String) : Phrase := #[.code s]
 
 /-- Join phrases with `sep`, and the last two with `last`. -/
@@ -209,6 +228,7 @@ def joinWith (sep last : String) : List Phrase → Phrase
   | [a, b] => a ++ txt last ++ b
   | a :: rest => a ++ txt sep ++ joinWith sep last rest
 
+/-- Join phrases as a list in English, with `and` before the last. -/
 def andList (ps : List Phrase) : Phrase := joinWith ", " (if ps.length > 2 then ", and " else " and ") ps
 
 /-- Whether a piece contains a connective or a binder outside parentheses. -/
@@ -252,6 +272,7 @@ def templateOf (n : Name) (which : Which := .main) : M (Option (Mode × String))
 def localName (e : Expr) : MetaM String := do
   return toString (← e.fvarId!.getDecl).userName
 
+/-- The expression, pretty printed, as a phrase of code. -/
 def ppCode (e : Expr) : MetaM Phrase := do
   return code (toString (← ppExpr e)).trimAscii.toString
 
@@ -445,6 +466,7 @@ partial def exists_ (e : Expr) : M Phrase := do
         txt " such that " ++ (← prop rest)
     existsRun t #[x] b
 
+/-- A run of existential binders of the same type, read as one phrase. -/
 partial def existsRun (t : Expr) (xs : Array Expr) (b : Expr) : M Phrase := do
   if let some (n', t', body') := asExists b then
     if t' == t then

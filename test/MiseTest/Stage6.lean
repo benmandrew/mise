@@ -8,6 +8,7 @@ each header it includes, with `config.h` found in `build/`. -/
 namespace MiseTest.Stage6
 open Mise Mise.Model Mise.Frontend Mise.Syntax
 
+/-- A symbolic command run: the command applied to the contents of its inputs. -/
 def exec (cmd : String) (vs : List String) : List String := [cmd ++ "(" ++ ",".intercalate vs ++ ")"]
 
 /-- The file after `-c` in a compile command. -/
@@ -16,31 +17,40 @@ def srcOf (cmd : String) : Path :=
   | _ :: f :: _ => f
   | _ => ""
 
+/-- The headers a file's contents include, with `config.h` found in `build/`. -/
 def includes (c : String) : List Path :=
   ((c.splitOn " ").filter (·.startsWith "+")).map fun w =>
     let h := w.drop 1 |>.toString
     if h == "config.h" then "build/config.h" else h
 
+/-- The dynamic task of a compile command: read its source, then each header it includes. -/
 def compile (cmd : String) : Task Path String (List String) :=
   .fetch (srcOf cmd) fun c => (fetchAll (includes c)).bind fun vs => .pure (exec cmd (c :: vs))
 
+/-- The model semantics with `exec` and the compile tasks. -/
 def sem : Sem String := { exec, dyn := compile }
 
+/-- The valid `gen-header` graph, or the empty graph if it is rejected. -/
 def vg : ValidGraph := match (Fixtures.genHeader []).graph with
   | .ok g => g
   | .error _ => ⟨{}, by decide⟩
 
+/-- The Ninja manifest of `vg`. -/
 def m : Manifest := emit vg.1
 
+/-- The files that a build makes. -/
 def products : List Path := ["build/config.h", "build/main.o", "build/util.o", "build/app"]
 
+/-- The source files with their contents. -/
 def srcs : List (Path × String) :=
   [("main.c", "main@1 +config.h +util.h"), ("util.c", "util@1 +config.h +util.h"), ("util.h", "util.h@1"),
    ("extra.h", "extra.h@1"), ("config.in", "config@1"), ("gen-config.py", "gen@1")]
 
+/-- The starting state: sources present at time zero, no logs. -/
 def st0 : St String :=
   { fs := fun p => (srcs.lookup p).map (·, 0), log := fun _ => none, clock := 0 }
 
+/-- The first output of each edge that a build from `st` runs, in order. -/
 def ran (st : St String) : List Path := (buildTrace sem m.medges st).2.map fun e => e.outs.headD ""
 
 /-- The same sources with empty logs. -/
@@ -53,7 +63,9 @@ def agreesClean (st : St String) : Bool :=
   let b := ninjaBuild sem m (fresh st)
   products.all fun k => a.content k == b.content k
 
+/-- The state after a first full build. -/
 def b1 := ninjaBuild sem m st0
+/-- The state after the first build and an edit of `main.c` that adds an include. -/
 def b2 := ninjaBuild sem m (b1.edit "main.c" "main@2 +config.h +util.h +extra.h")
 
 #guard m.medges.map (·.dyn) == [false, true, true, false]
@@ -79,6 +91,7 @@ def b2 := ninjaBuild sem m (b1.edit "main.c" "main@2 +config.h +util.h +extra.h"
 
 -- A depfile edge has one explicit output, since `${out}.d` must name one
 -- file; implicit outputs are allowed.
+/-- A one-edge graph with a depfile rule, given its outputs and implicit outputs. -/
 def dynG (outs implicitOuts : List Path) : Graph :=
   { sources := ["a.c"], rules := [{ name := "cc", command := [.lit "cc"], depfile := true }],
     edges := [{ rule := "cc", outs, implicitOuts, ins := ["a.c"] }] }

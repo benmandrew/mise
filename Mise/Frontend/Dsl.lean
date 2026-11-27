@@ -32,19 +32,23 @@ open Mise.Syntax
 /-- A file the build knows about. Only the builder can make one. -/
 structure Handle where
   private mk ::
+  /-- The file's path. -/
   path : Path
   deriving Repr, BEq, Inhabited
 
 /-- A declared rule. Only the builder can make one. -/
 structure RuleRef where
   private mk ::
+  /-- The rule's name. -/
   name : String
   /-- The command is wrapped by `wrapCommand`. -/
   wrapped : Bool := false
   deriving Repr, Inhabited
 
+/-- The builder monad: it extends a graph, and fails with a message when a declaration is not valid. -/
 abbrev Build := StateT Graph (Except String)
 
+/-- A graph together with a proof that it is valid. -/
 abbrev ValidGraph := { g : Graph // g.Valid }
 
 private def known (g : Graph) (p : Path) : Bool :=
@@ -66,6 +70,7 @@ def source (p : Path) : Build Handle := do
   set { g with sources := g.sources ++ [p] }
   pure ⟨p⟩
 
+/-- Declare several source files, in order. -/
 def sources (ps : List Path) : Build (List Handle) := ps.mapM source
 
 /-- Parse a Ninja value. -/
@@ -163,12 +168,14 @@ def dynEdge1 (r : RuleRef) (out : Path) (ins : List Handle := []) (mayReadGenera
 the command line as `--set key=value`. -/
 abbrev Params := List (String × String)
 
+/-- The value of parameter `k`, or `d` when it is not given. -/
 def Params.get (ps : Params) (k : String) (d : String) : String := (ps.lookup k).getD d
 
 /-- A declared alias. Only the builder can make one, and it is not a
 `Handle`, so no edge can read it. -/
 structure AliasRef where
   private mk ::
+  /-- The alias's name. -/
   name : Path
   deriving Repr, Inhabited
 

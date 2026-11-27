@@ -66,11 +66,17 @@ it with Lake's parser, and `test/toml-diff.sh` with Python's `tomllib`.
 namespace Mise.Frontend.Toml
 open Mise.Frontend Mise.Syntax
 
+/-- A TOML value in the supported subset. -/
 inductive Value where
+  /-- A string. -/
   | str (s : String)
+  /-- A boolean. -/
   | bool (b : Bool)
+  /-- A decimal integer. -/
   | int (n : Int)
+  /-- An array. -/
   | arr (xs : List Value)
+  /-- A table, with its keys in file order. -/
   | table (t : List (String × Value))
   deriving Repr, BEq
 
@@ -79,25 +85,35 @@ instance : Inhabited Value := ⟨.bool false⟩
 /-- A table, with its keys in file order. -/
 abbrev Table := List (String × Value)
 
+/-- The value of key `k` in `t`, if any. -/
 def find? (t : Table) (k : String) : Option Value := t.lookup k
 
 /-! ## Parser -/
 
+/-- The parser state: the remaining input and the current position. -/
 structure Pos where
+  /-- The characters not yet read. -/
   cs : List Char
+  /-- The current line, from 1. -/
   line : Nat := 1
+  /-- The current column, from 1. -/
   col : Nat := 1
 
+/-- The parser monad: state `Pos`, errors as strings. -/
 abbrev P := StateT Pos (Except String)
 
+/-- Fail with `msg`, prefixed by the current `line:column`. -/
 def fail (msg : String) : P α := do
   let s ← get
   throw s!"{s.line}:{s.col}: {msg}"
 
+/-- The next character, without reading it. -/
 def peek : P (Option Char) := do return (← get).cs.head?
 
+/-- The character after the next one, without reading either. -/
 def peek2 : P (Option Char) := do return ((← get).cs.drop 1).head?
 
+/-- Read one character, updating the line and column. -/
 def next : P Char := do
   let s ← get
   match s.cs with
@@ -106,6 +122,7 @@ def next : P Char := do
     return c
   | [] => fail "unexpected end of file"
 
+/-- Read the character `c`, or fail. -/
 def expect (c : Char) : P Unit := do
   if (← peek) == some c then discard next else fail s!"expected '{c}'"
 
@@ -142,12 +159,14 @@ def lineEnd : P Unit := do
   | some '\r' => discard next; expect '\n'
   | some _ => fail "expected the end of the line"
 
+/-- The value of a hexadecimal digit, if `c` is one. -/
 def hexDigit? (c : Char) : Option Nat :=
   if c.isDigit then some (c.toNat - '0'.toNat)
   else if 'a' ≤ c && c ≤ 'f' then some (c.toNat - 'a'.toNat + 10)
   else if 'A' ≤ c && c ≤ 'F' then some (c.toNat - 'A'.toNat + 10)
   else none
 
+/-- The character named by `n` hexadecimal digits after `\u` or `\U`. -/
 def unicodeEscape (n : Nat) : P Char := do
   let mut v := 0
   for _ in [0:n] do
@@ -156,6 +175,7 @@ def unicodeEscape (n : Nat) : P Char := do
     | none => fail "expected a hexadecimal digit"
   if h : v.isValidChar then return Char.ofNatAux v h else fail "escape is not a Unicode scalar value"
 
+/-- The rest of a basic string after the opening quote, appended to `acc`, with escapes decoded. -/
 partial def basicBody (acc : String) : P String := do
   if (← peek).isNone then fail "unterminated string"
   match ← next with
@@ -169,6 +189,7 @@ partial def basicBody (acc : String) : P String := do
     basicBody (acc.push c)
   | c => if isCtrl c then fail "control character or newline in a string" else basicBody (acc.push c)
 
+/-- The rest of a literal string after the opening quote, appended to `acc`. -/
 partial def literalBody (acc : String) : P String := do
   if (← peek).isNone then fail "unterminated string"
   match ← next with
@@ -181,8 +202,10 @@ def string (q : Char) : P String := do
   if (← peek) == some q && (← peek2) == some q then fail "multi-line strings are not supported"
   if q == '"' then basicBody "" else literalBody ""
 
+/-- Whether `c` may appear in a bare key. -/
 def isBare (c : Char) : Bool := c.isAlphanum || c == '_' || c == '-'
 
+/-- Read characters while `p` holds, appended to `acc`. -/
 partial def takeWhile (p : Char → Bool) (acc : String) : P String := do
   match ← peek with
   | some c => if p c then discard next; takeWhile p (acc.push c) else pure acc
@@ -211,10 +234,12 @@ def integer (tok : String) : Option Int :=
     let n := (String.join groups).toNat!
     some (if neg then -(n : Int) else n)
 
+/-- Add `k = v` to `t`, or fail if `k` is already there; `what` says where, for the error. -/
 def addKey (what : String) (t : Table) (k : String) (v : Value) : P Table := do
   if (t.lookup k).isSome then fail s!"duplicate key {repr k}{what}" else pure (t ++ [(k, v)])
 
 mutual
+/-- A value: string, boolean, integer, array or inline table. -/
 partial def value : P Value := do
   match ← peek with
   | some '"' => .str <$> string '"'
@@ -232,6 +257,7 @@ partial def value : P Value := do
       | none => fail s!"unsupported value {tok}: expected a string, boolean, decimal integer, array or table"
   | none => fail "expected a value"
 
+/-- The rest of an array after `[`, appended to `acc`. -/
 partial def arrayItems (acc : Array Value) : P (List Value) := do
   wsnl
   if (← peek) == some ']' then discard next; return acc.toList
@@ -242,6 +268,7 @@ partial def arrayItems (acc : Array Value) : P (List Value) := do
   | some ']' => discard next; return (acc.push v).toList
   | _ => fail "expected ',' or ']'"
 
+/-- The rest of an inline table after `{`, appended to `acc`. -/
 partial def inlineItems (acc : Table) : P Table := do
   if acc.isEmpty && (← peek) == some '}' then discard next; return acc
   let k ← key
@@ -258,7 +285,9 @@ end
 /-! A document is the top-level table followed by sections. The section being
 read is held apart and added to the root when the next header starts. -/
 
+/-- The state of the parser between lines of a document. -/
 structure Doc where
+  /-- The tables and arrays complete so far. -/
   root : Table := []
   /-- Names created by `[[name]]` headers. -/
   arrays : List String := []
@@ -267,6 +296,7 @@ structure Doc where
   /-- The keys read since the last header. -/
   kvs : Table := []
 
+/-- Add the open section to the root, or fail if its name is already defined. -/
 def flush (d : Doc) : Except String Doc := do
   match d.cur with
   | none => pure { d with root := d.root ++ d.kvs, kvs := [] }
@@ -281,10 +311,12 @@ def flush (d : Doc) : Except String Doc := do
     else if isArr then pure { d with root := d.root ++ [(name, .arr [.table kvs])], arrays := name :: d.arrays }
     else pure { d with root := d.root ++ [(name, .table kvs)] }
 
+/-- Lift an `Except` into the parser. -/
 def liftE (x : Except String α) : P α := match x with
   | .ok a => pure a
   | .error e => throw e
 
+/-- The rest of a document, from state `d`. -/
 partial def doc (d : Doc) : P Doc := do
   wsnl
   match ← peek with
@@ -317,47 +349,57 @@ def parse (text : String) : Except String Table :=
   | .ok (d, _) => .ok d.root
   | .error e => .error e
 
+/-- Fail unless every key of `t` is in `allowed`; `what` names `t` in the error. -/
 def checkKeys (what : String) (t : Table) (allowed : List String) : Build Unit := do
   for (k, _) in t do
     unless allowed.contains k do throw s!"{what}: unknown key {repr k}"
 
+/-- The string in a value, or an error naming `what`. -/
 def asStr (what : String) : Value → Build String
   | .str s => pure s
   | _ => throw s!"{what}: expected a string"
 
+/-- The strings in an array value, or an error naming `what`. -/
 def asStrs (what : String) : Value → Build (List String)
   | .arr xs => xs.mapM (asStr what)
   | _ => throw s!"{what}: expected an array of strings"
 
+/-- The table in a value, or an error naming `what`. -/
 def asTable (what : String) : Value → Build Table
   | .table t => pure t
   | _ => throw s!"{what}: expected a table"
 
+/-- The tables in an array value, or an error naming `what`. -/
 def asTables (what : String) : Value → Build (List Table)
   | .arr xs => xs.mapM (asTable what)
   | _ => throw s!"{what}: expected an array of tables"
 
+/-- The string at key `k` of `t`, which must be present. -/
 def reqStr (what : String) (t : Table) (k : String) : Build String :=
   match find? t k with
   | some v => asStr s!"{what}: {k}" v
   | none => throw s!"{what}: missing {k}"
 
+/-- The string at key `k` of `t`, or `d` if it is absent. -/
 def optStr (what : String) (t : Table) (k : String) (d : String) : Build String :=
   match find? t k with
   | some v => asStr s!"{what}: {k}" v
   | none => pure d
 
+/-- The boolean at key `k` of `t`, or `false` if it is absent. -/
 def optBool (what : String) (t : Table) (k : String) : Build Bool :=
   match find? t k with
   | some (.bool b) => pure b
   | some _ => throw s!"{what}: {k}: expected true or false"
   | none => pure false
 
+/-- The strings at key `k` of `t`, or none if it is absent. -/
 def optStrs (what : String) (t : Table) (k : String) : Build (List String) :=
   match find? t k with
   | some v => asStrs s!"{what}: {k}" v
   | none => pure []
 
+/-- The tables at key `k` of `t`, or none if it is absent. -/
 def optTables (t : Table) (k : String) : Build (List Table) :=
   match find? t k with
   | some v => asTables k v
@@ -387,13 +429,21 @@ def globPatterns (t : Table) : Except String (List String) :=
 
 /-- A `[[build]]` with its paths as strings, before handles are made. -/
 structure Decl where
+  /-- A description of the build, for error messages. -/
   what : String
+  /-- The name of the rule. -/
   rule : String
+  /-- The explicit outputs. -/
   outs : List Path
+  /-- The implicit outputs. -/
   implicitOuts : List Path
+  /-- The explicit inputs. -/
   ins : List Path
+  /-- The implicit inputs. -/
   implicitIns : List Path
+  /-- The order-only inputs. -/
   orderOnly : List Path
+  /-- The edge variables and their values. -/
   vars : List (String × String)
   deriving Inhabited
 

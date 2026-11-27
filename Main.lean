@@ -2,6 +2,7 @@ import Mise.Frontend.Toml
 
 open Mise.Frontend
 
+/-- The command-line usage message. -/
 def usage : String :=
   "usage: mise gen [--commands] [--set KEY=VALUE]... [DIR]
        mise build [--set KEY=VALUE]... [DIR] [-- NINJA_ARGS...]
@@ -10,9 +11,13 @@ def usage : String :=
   build  does the same, then runs ninja in DIR with NINJA_ARGS
   DIR defaults to the current directory."
 
+/-- The command-line options before `--`. -/
 structure Opts where
+  /-- `--commands`: print each edge's command instead of writing `build.ninja`. -/
   commands : Bool := false
+  /-- The parameters given with `--set KEY=VALUE`. -/
   params : Params := []
+  /-- The directories given; at most one is allowed. -/
   dirs : List String := []
 
 /-- Read the options before `--`. -/
@@ -58,6 +63,7 @@ def generate (dir : System.FilePath) (ps : Params) : IO (Except UInt32 ValidGrap
       IO.println s!"mise: wrote {out}"
     return .ok g
 
+/-- Run `mise gen` or `mise build` and return the exit code. -/
 def main (args : List String) : IO UInt32 := do
   let (cmd, rest) := match args with
     | c :: r => (c, r)

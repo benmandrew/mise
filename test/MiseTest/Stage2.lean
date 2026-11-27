@@ -5,8 +5,10 @@ import Mise.Spec.Basic
 namespace MiseTest.Stage2
 open Mise
 
+/-- The two built files. -/
 def targets : List String := ["lib.o", "app"]
 
+/-- The build specification: `lib.o` from `a.c` and `c.h`, then `app` from `lib.o` and `main.c`. -/
 def spec : BuildSpec String String where
   isSource k := !targets.contains k
   task
@@ -20,11 +22,13 @@ def spec : BuildSpec String String where
         pure s!"link({o},{m})"
     | _ => pure ""
 
+/-- The rank of a key: zero for a source, one for `lib.o`, two for `app`. -/
 def rank : String → Nat
   | "lib.o" => 1
   | "app" => 2
   | _ => 0
 
+/-- Proof that `spec` is acyclic, by `rank`. -/
 def acyclic : spec.Acyclic where
   rank := rank
   fetches k hk := by
@@ -34,6 +38,7 @@ def acyclic : spec.Acyclic where
       exact (fetch_fetchesOnly (by decide)).bind fun _ =>
         (fetch_fetchesOnly (by decide)).bind fun _ => .pure _
 
+/-- A store with a one-letter value for each source. -/
 def sources : Store String String
   | "a.c" => "A"
   | "c.h" => "H"
